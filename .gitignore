@@ -20,6 +20,8 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
+sidecar/.venv/
 *.egg-info/
 dist/
 build/
