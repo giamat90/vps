@@ -141,7 +141,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None) ->
             })
 
     # --- Stage 2: Onset detection (0.50 – 0.70) ---
-    on_progress(0.50, "onset-detection")
+    on_progress(0.60, "onset-detection")
     print("Detecting onsets...", file=sys.stderr)
 
     audio_lr, sr_lr = librosa.load(recording_path, sr=SAMPLE_RATE, mono=True)
@@ -151,7 +151,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None) ->
     on_progress(0.70, "onset-detection")
 
     # --- Stage 3: Dynamics / RMS (0.70 – 0.85) ---
-    on_progress(0.70, "dynamics")
+    on_progress(0.80, "dynamics")
     print("Computing dynamics...", file=sys.stderr)
 
     rms = librosa.feature.rms(y=audio_lr)[0]
@@ -165,7 +165,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None) ->
     on_progress(0.85, "dynamics")
 
     # --- Stage 4: Vibrato detection (0.85 – 1.0) ---
-    on_progress(0.85, "vibrato-detection")
+    on_progress(0.90, "vibrato-detection")
     print("Analyzing vibrato...", file=sys.stderr)
 
     vibrato = _detect_vibrato(frequency, confidence, CREPE_STEP_MS)

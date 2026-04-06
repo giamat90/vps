@@ -1,18 +1,18 @@
 """
 Core processing pipeline for uploaded songs.
-Demucs stem separation → CREPE pitch → librosa onsets/dynamics/BPM → key detection.
+Demucs stem separation → pyin pitch → librosa onsets/dynamics/BPM → key detection.
 """
 
 import os
 import sys
+import gc
+import time
 import traceback
 import numpy as np
 import soundfile as sf
 import librosa
 
 SAMPLE_RATE = 44100
-CREPE_STEP_MS = 10
-CREPE_MODEL = "small"
 CONFIDENCE_THRESHOLD = 0.5
 
 # Krumhansl-Kessler key profiles
@@ -21,8 +21,11 @@ MINOR_PROFILE = np.array([6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 
 NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 
+def _log(msg: str):
+    print(msg, file=sys.stderr, flush=True)
+
+
 def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
-    """Detect musical key from pitch data using pitch class histogram."""
     valid = (confidence >= CONFIDENCE_THRESHOLD) & (pitch_hz > 0)
     freqs = pitch_hz[valid]
     if len(freqs) < 50:
@@ -50,25 +53,17 @@ def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
 
 
 def process(input_path: str, output_dir: str, on_progress=None) -> dict:
-    """
-    Full processing pipeline for an uploaded song.
-
-    Args:
-        input_path: Path to audio file (mp3, wav, etc.)
-        output_dir: Directory to write stems and analysis data.
-        on_progress: Callback(value: float, stage: str) for progress updates.
-
-    Returns:
-        Dict with vocals/instrumental paths, pitchData, onsets, dynamics, detectedBpm, detectedKey.
-    """
+    """Full processing pipeline for an uploaded song."""
     if on_progress is None:
         on_progress = lambda v, s: None
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # --- Stage 1: Demucs stem separation (0.0 – 0.50) ---
+    # ===================================================================
+    # Stage 1: Demucs stem separation (0.00 – 0.50)
+    # ===================================================================
     on_progress(0.0, "stem-separation")
-    print("Loading Demucs separator...", file=sys.stderr)
+    _log("Loading Demucs model...")
 
     import torch
     from demucs.pretrained import get_model
@@ -79,114 +74,132 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     model.eval()
     on_progress(0.05, "stem-separation")
 
-    # Load audio at model's sample rate
-    wav = AudioFile(input_path).read(streams=0, samplerate=model.samplerate, channels=model.audio_channels)
+    wav = AudioFile(input_path).read(
+        streams=0, samplerate=model.samplerate, channels=model.audio_channels
+    )
     ref = wav.mean(0)
     wav = (wav - ref.mean()) / ref.std()
     on_progress(0.10, "stem-separation")
 
+    _log("Running Demucs separation...")
     with torch.no_grad():
         sources = apply_model(model, wav[None], progress=False)[0]
     on_progress(0.45, "stem-separation")
 
-    # sources shape: (num_sources, channels, samples)
-    # model.sources: ['drums', 'bass', 'other', 'vocals']
     source_names = model.sources
     vocals_idx = source_names.index("vocals")
     vocals_tensor = sources[vocals_idx]
+    instrumental_tensor = sum(
+        sources[i] for i in range(len(source_names)) if i != vocals_idx
+    )
 
-    # Sum all non-vocal sources for instrumental
-    instrumental_tensor = sum(sources[i] for i in range(len(source_names)) if i != vocals_idx)
-
-    # Denormalize
     vocals_tensor = vocals_tensor * ref.std() + ref.mean()
     instrumental_tensor = instrumental_tensor * ref.std() + ref.mean()
 
-    vocals_np = vocals_tensor.numpy()
-    instrumental_np = instrumental_tensor.numpy()
-
-    # Shape: (channels, samples). Transpose for soundfile (samples, channels).
     vocals_path = os.path.join(output_dir, "vocals.wav")
     instrumental_path = os.path.join(output_dir, "instrumental.wav")
-    sf.write(vocals_path, vocals_np.T, model.samplerate)
-    sf.write(instrumental_path, instrumental_np.T, model.samplerate)
+    sf.write(vocals_path, vocals_tensor.numpy().T, model.samplerate)
+    sf.write(instrumental_path, instrumental_tensor.numpy().T, model.samplerate)
     on_progress(0.50, "stem-separation")
 
-    # --- Stage 2: CREPE pitch extraction on vocals (0.50 – 0.70) ---
+    _log("Freeing Demucs from memory...")
+    del model, sources, wav, ref, vocals_tensor, instrumental_tensor
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    # ===================================================================
+    # Stage 2: pyin pitch extraction (0.50 – 0.70)
+    # ===================================================================
     on_progress(0.50, "pitch-extraction")
-    print("Running CREPE pitch extraction...", file=sys.stderr)
+    _log("Running pitch detection (pyin)...")
 
-    import torch
-    import torchcrepe
-
-    # Load vocals as mono at 16kHz for CREPE
-    vocals_mono, sr_vocals = librosa.load(vocals_path, sr=16000, mono=True)
-    audio_tensor = torch.tensor(vocals_mono).unsqueeze(0)  # (1, samples)
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    frequency, confidence = torchcrepe.predict(
-        audio_tensor, sr_vocals,
-        hop_length=int(sr_vocals * CREPE_STEP_MS / 1000),
-        model="tiny",
-        device=device,
-        return_periodicity=True,
-        batch_size=512,
-    )
-    frequency = frequency.squeeze(0).numpy()
-    confidence = confidence.squeeze(0).numpy()
-    on_progress(0.70, "pitch-extraction")
-
-    # Build pitchData array (matching frontend PitchPoint interface)
-    times = np.arange(len(frequency)) * (CREPE_STEP_MS / 1000.0)
     pitch_data = []
-    for i in range(len(frequency)):
-        if confidence[i] >= CONFIDENCE_THRESHOLD and frequency[i] > 0:
-            pitch_data.append({
-                "time": round(float(times[i]), 4),
-                "frequency": round(float(frequency[i]), 2),
-                "confidence": round(float(confidence[i]), 3),
-            })
 
-    # --- Stage 3: Onset detection (0.70 – 0.80) ---
+    try:
+        vocals_pyin, sr_pyin = librosa.load(vocals_path, sr=22050, mono=True)
+
+        f0, voiced_flag, voiced_probs = librosa.pyin(
+            vocals_pyin,
+            fmin=librosa.note_to_hz('C2'),
+            fmax=librosa.note_to_hz('C7'),
+            sr=sr_pyin,
+            hop_length=512,
+        )
+
+        times = librosa.times_like(f0, sr=sr_pyin, hop_length=512)
+
+        for i in range(len(f0)):
+            if voiced_flag[i] and not np.isnan(f0[i]):
+                pitch_data.append({
+                    "time": round(float(times[i]), 4),
+                    "frequency": round(float(f0[i]), 2),
+                    "confidence": round(float(voiced_probs[i]), 3),
+                })
+
+        _log(f"Pitch detection complete: {len(pitch_data)} voiced frames")
+
+    except Exception as e:
+        _log(f"pyin error: {e}\n{traceback.format_exc()}")
+
+    on_progress(0.70, "pitch-extraction")
+    gc.collect()
+
+    # ===================================================================
+    # Stage 3: Onset detection (0.70 – 0.82)
+    # ===================================================================
     on_progress(0.70, "onset-detection")
-    print("Detecting onsets...", file=sys.stderr)
+    _log("Detecting onsets...")
 
     vocals_lr, sr_lr = librosa.load(vocals_path, sr=SAMPLE_RATE, mono=True)
     onset_frames = librosa.onset.onset_detect(y=vocals_lr, sr=sr_lr, units="frames")
     onsets = librosa.frames_to_time(onset_frames, sr=sr_lr).tolist()
     onsets = [round(t, 4) for t in onsets]
-    on_progress(0.80, "onset-detection")
+    on_progress(0.82, "onset-detection")
 
-    # --- Stage 4: Dynamics / RMS (0.80 – 0.85) ---
-    on_progress(0.80, "dynamics")
-    print("Computing dynamics...", file=sys.stderr)
+    # ===================================================================
+    # Stage 4: Dynamics / RMS (0.82 – 0.88)
+    # ===================================================================
+    on_progress(0.82, "dynamics")
+    _log("Computing dynamics...")
 
     rms = librosa.feature.rms(y=vocals_lr)[0]
     rms_times = librosa.frames_to_time(np.arange(len(rms)), sr=sr_lr)
-    dynamics = []
-    for i in range(len(rms)):
-        dynamics.append({
-            "time": round(float(rms_times[i]), 4),
-            "rms": round(float(rms[i]), 6),
-        })
-    on_progress(0.85, "dynamics")
+    dynamics = [
+        {"time": round(float(rms_times[i]), 4), "rms": round(float(rms[i]), 6)}
+        for i in range(len(rms))
+    ]
+    on_progress(0.88, "dynamics")
 
-    # --- Stage 5: BPM detection (0.85 – 0.90) ---
-    on_progress(0.85, "bpm-detection")
-    print("Estimating BPM...", file=sys.stderr)
+    # ===================================================================
+    # Stage 5: BPM detection (0.88 – 0.93)
+    # ===================================================================
+    on_progress(0.88, "bpm-detection")
+    _log("Estimating BPM...")
 
-    # Load original (full mix) for BPM — more rhythmic content
     full_mix, sr_full = librosa.load(input_path, sr=SAMPLE_RATE, mono=True)
     tempo = librosa.beat.tempo(y=full_mix, sr=sr_full)
     detected_bpm = round(float(tempo[0]), 1) if len(tempo) > 0 else None
-    on_progress(0.90, "bpm-detection")
+    on_progress(0.93, "bpm-detection")
 
-    # --- Stage 6: Key detection (0.90 – 1.0) ---
-    on_progress(0.90, "key-detection")
-    print("Detecting key...", file=sys.stderr)
+    del full_mix, vocals_lr
+    gc.collect()
 
-    detected_key = _detect_key(frequency, confidence)
+    # ===================================================================
+    # Stage 6: Key detection (0.93 – 1.0)
+    # ===================================================================
+    on_progress(0.93, "key-detection")
+    _log("Detecting key...")
+
+    if pitch_data:
+        freq_array = np.array([p["frequency"] for p in pitch_data])
+        conf_array = np.array([p["confidence"] for p in pitch_data])
+        detected_key = _detect_key(freq_array, conf_array)
+    else:
+        detected_key = "Unknown"
+
     on_progress(1.0, "complete")
+    _log("Processing complete.")
 
     return {
         "vocals": vocals_path,
