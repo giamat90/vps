@@ -75,14 +75,19 @@ export class AudioEngine {
 
     this._duration = this.vocals.getDuration();
 
-    // Sync: when user clicks on one waveform, seek the other
-    this.vocals.on("seeking", (time) => {
-      const progress = time / this._duration;
+    // Sync: when user clicks on one waveform, seek the other.
+    // "interaction" fires ONLY on user clicks — never on programmatic seekTo() calls.
+    // Using "seeking" (the proxied HTML5 event) here caused an infinite async loop:
+    // seekTo(0) → vocals fires "seeking" → instrumental.seekTo(0) → instrumental fires
+    // "seeking" → vocals.seekTo(0) → … each iteration queued a new async task,
+    // growing the task queue and RAM indefinitely after every stop.
+    this.vocals.on("interaction", (newTime) => {
+      const progress = newTime / this._duration;
       this.instrumental?.seekTo(progress);
     });
 
-    this.instrumental.on("seeking", (time) => {
-      const progress = time / this._duration;
+    this.instrumental.on("interaction", (newTime) => {
+      const progress = newTime / this._duration;
       this.vocals?.seekTo(progress);
     });
 
