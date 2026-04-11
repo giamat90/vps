@@ -2,6 +2,7 @@ import WaveSurfer from "wavesurfer.js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
 export type TimeUpdateCallback = (currentTime: number) => void;
+export type FinishCallback = () => void;
 
 export class AudioEngine {
   vocals: WaveSurfer | null = null;
@@ -11,7 +12,10 @@ export class AudioEngine {
   private _loopStart: number | null = null;
   private _loopEnd: number | null = null;
   private _timeUpdateCb: TimeUpdateCallback | null = null;
+  private _finishCb: FinishCallback | null = null;
   private _rafId: number | null = null;
+  // Throttle store updates to ~30fps — halves React re-render rate vs 60fps rAF
+  private _lastNotifyTime = 0;
 
   async load(
     songDir: string,
@@ -86,6 +90,7 @@ export class AudioEngine {
     this.vocals.on("finish", () => {
       this._isPlaying = false;
       this._stopTimeUpdate();
+      this._finishCb?.();
     });
   }
 
@@ -170,6 +175,10 @@ export class AudioEngine {
     this._timeUpdateCb = cb;
   }
 
+  onFinish(cb: FinishCallback): void {
+    this._finishCb = cb;
+  }
+
   destroy(): void {
     this._stopTimeUpdate();
     this.vocals?.destroy();
@@ -187,7 +196,7 @@ export class AudioEngine {
 
       const time = this.getCurrentTime();
 
-      // Handle loop
+      // Handle loop — must run every frame for accurate looping
       if (
         this._loopStart !== null &&
         this._loopEnd !== null &&
@@ -196,7 +205,14 @@ export class AudioEngine {
         this.seekTo(this._loopStart);
       }
 
-      this._timeUpdateCb?.(time);
+      // Throttle store/UI notifications to ~30fps to halve React re-render rate.
+      // rAF still runs at 60fps so loop detection stays frame-accurate.
+      const now = performance.now();
+      if (now - this._lastNotifyTime >= 33) {
+        this._lastNotifyTime = now;
+        this._timeUpdateCb?.(time);
+      }
+
       this._rafId = requestAnimationFrame(tick);
     };
     this._rafId = requestAnimationFrame(tick);

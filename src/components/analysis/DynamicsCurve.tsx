@@ -52,20 +52,19 @@ export default function DynamicsCurve() {
       const rmsToY = (rms: number) => H - Math.min(rms / 0.4, 1) * (H - 4) - 2;
 
       const drawCurve = (data: typeof songDynamics, color: string) => {
-        const visible = data.filter((p) => p.time >= t0 && p.time <= t1);
-        if (visible.length === 0) return;
-
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
         ctx.lineJoin = "round";
         ctx.beginPath();
-        visible.forEach((p, i) => {
+        let started = false;
+        for (const p of data) {
+          if (p.time < t0 || p.time > t1) continue;
           const x = timeToX(p.time);
           const y = rmsToY(p.rms);
-          if (i === 0) ctx.moveTo(x, y);
+          if (!started) { ctx.moveTo(x, y); started = true; }
           else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
+        }
+        if (started) ctx.stroke();
       };
 
       // Baseline

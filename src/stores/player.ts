@@ -89,6 +89,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     eng.onTimeUpdate((time) => {
       set({ currentTime: time, isPlaying: eng.isPlaying });
     });
+    eng.onFinish(() => {
+      set({ isPlaying: false });
+    });
     set({
       song,
       duration: eng.getDuration(),
