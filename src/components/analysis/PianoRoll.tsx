@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { usePlayerStore } from "../../stores/player";
+import { getEngine } from "../../stores/player";
 import { frequencyToMidi } from "../../lib/constants";
 
 const WINDOW_S = 10;
@@ -12,14 +12,13 @@ export default function PianoRoll() {
   const songPitch = useAnalysisStore((s) => s.songPitch);
   const takePitch = useAnalysisStore((s) => s.takePitch);
   const isLoaded = useAnalysisStore((s) => s.isLoaded);
-  const currentTime = usePlayerStore((s) => s.currentTime);
 
-  // Stable ref to the latest draw function — updated on every state change,
-  // but the ResizeObserver always calls through this ref (no churn).
+  // Stable ref to the latest draw function — updated when data changes,
+  // called every rAF tick without React re-renders.
   const drawRef = useRef<() => void>(() => {});
 
-  // Effect 1: rebuild draw fn and redraw whenever data or playhead changes.
-  // This runs at 60fps but only assigns a closure + calls it — no objects created.
+  // Effect 1: rebuild draw fn when analysis data changes (NOT on currentTime).
+  // currentTime is read directly from the engine inside the draw fn.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -30,8 +29,6 @@ export default function PianoRoll() {
 
       const W = canvas.offsetWidth || 600;
       const H = canvas.offsetHeight || 120;
-      // Only reallocate backing buffer when size actually changes — unconditional
-      // assignment forces a full GPU/CPU buffer realloc every frame (~60fps = ~30MB/s).
       if (canvas.width !== W || canvas.height !== H) {
         canvas.width = W;
         canvas.height = H;
@@ -47,6 +44,8 @@ export default function PianoRoll() {
         ctx.fillText("No pitch data", W / 2, H / 2);
         return;
       }
+
+      const currentTime = getEngine().getCurrentTime();
 
       const timeToX = (t: number) =>
         ((t - currentTime + WINDOW_S / 2) / WINDOW_S) * W;
@@ -106,9 +105,22 @@ export default function PianoRoll() {
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, currentTime, isLoaded]);
+  }, [songPitch, takePitch, isLoaded]);
 
-  // Effect 2: wire ResizeObserver once per canvas lifetime — no deps.
+  // Effect 2: drive canvas at native frame rate via rAF — bypasses React entirely
+  // during playback so no re-renders, no closure allocation, no GC pressure.
+  useEffect(() => {
+    if (!isLoaded) return;
+    let rafId: number;
+    const tick = () => {
+      drawRef.current();
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [isLoaded]);
+
+  // Effect 3: wire ResizeObserver once per canvas lifetime — no deps.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
