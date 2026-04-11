@@ -14,7 +14,7 @@ export class PitchDetector {
   private ctx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private source: MediaStreamAudioSourceNode | null = null;
-  private buffer: Float32Array<ArrayBuffer> = new Float32Array(0);
+  private buffer: Float32Array<ArrayBuffer> = new Float32Array(0) as Float32Array<ArrayBuffer>;
 
   start(stream: MediaStream): void {
     this.stop();

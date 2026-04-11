@@ -20,8 +20,10 @@ export class AudioEngine {
   ): Promise<void> {
     this.destroy();
 
-    const vocalsUrl = convertFileSrc(songDir + "/vocals.wav");
-    const instrumentalUrl = convertFileSrc(songDir + "/instrumental.wav");
+    // Normalize to forward slashes so convertFileSrc works correctly on Windows
+    const dir = songDir.replace(/\\/g, "/");
+    const vocalsUrl = convertFileSrc(dir + "/vocals.wav");
+    const instrumentalUrl = convertFileSrc(dir + "/instrumental.wav");
 
     const waveOptions = {
       height: 80,
@@ -50,11 +52,22 @@ export class AudioEngine {
       progressColor: "#4ade80",
     });
 
-    // Wait for both to be ready
+    // Wait for both to be ready; reject immediately on WaveSurfer error
     await Promise.all([
-      new Promise<void>((resolve) => this.vocals!.on("ready", () => resolve())),
-      new Promise<void>((resolve) => this.instrumental!.on("ready", () => resolve())),
+      new Promise<void>((resolve, reject) => {
+        this.vocals!.on("ready", () => resolve());
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.vocals!.on("error", (err: any) => reject(new Error("Vocals failed to load: " + (err?.message ?? err))));
+      }),
+      new Promise<void>((resolve, reject) => {
+        this.instrumental!.on("ready", () => resolve());
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.instrumental!.on("error", (err: any) => reject(new Error("Instrumental failed to load: " + (err?.message ?? err))));
+      }),
     ]);
+
+    // Guard: destroy() may have been called (e.g. by React StrictMode cleanup) during the await.
+    if (!this.vocals || !this.instrumental) return;
 
     this._duration = this.vocals.getDuration();
 
@@ -127,7 +140,7 @@ export class AudioEngine {
 
   loadVocalsFromPath(filePath: string): void {
     if (!this.vocals) return;
-    const url = convertFileSrc(filePath);
+    const url = convertFileSrc(filePath.replace(/\\/g, "/"));
     this.vocals.load(url);
   }
 

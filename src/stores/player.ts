@@ -188,7 +188,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     if (!song) return;
 
     const rec = getRecorder();
-    await rec.init();
+    try {
+      await rec.init();
+    } catch (e) {
+      throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
+    }
 
     // Mute vocals during recording, play instrumental
     const eng = getEngine();
@@ -208,22 +212,29 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const eng = getEngine();
     eng.pause();
 
-    const blob = await rec.stop();
+    try {
+      const blob = await rec.stop();
 
-    // Convert blob to byte array for Tauri
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioData = Array.from(new Uint8Array(arrayBuffer));
+      // Convert blob to byte array for Tauri
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioData = Array.from(new Uint8Array(arrayBuffer));
 
-    const take = await saveTake(song.id, audioData);
+      const take = await saveTake(song.id, audioData);
 
-    // Restore vocals volume
-    eng.setVocalsVolume(get().vocalsVolume);
+      // Restore vocals volume
+      eng.setVocalsVolume(get().vocalsVolume);
 
-    set((state) => ({
-      isRecording: false,
-      isPlaying: false,
-      takes: [...state.takes, take],
-    }));
+      set((state) => ({
+        isRecording: false,
+        isPlaying: false,
+        takes: [...state.takes, take],
+      }));
+    } catch (e) {
+      // Ensure UI is reset even if save fails
+      eng.setVocalsVolume(get().vocalsVolume);
+      set({ isRecording: false, isPlaying: false });
+      throw e;
+    }
   },
 
   fetchTakes: async () => {
@@ -260,7 +271,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       }
     } else if (mode === "original" && song) {
       // Reload original vocals
-      eng.loadVocalsFromPath(song.directory + "/vocals.wav");
+      eng.loadVocalsFromPath(song.directory.replace(/\\/g, "/") + "/vocals.wav");
     }
 
     set({ abMode: mode });

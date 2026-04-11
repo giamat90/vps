@@ -41,6 +41,12 @@ export default function DualTuner() {
   const rafRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
 
+  // Refs to always have latest values inside the animation frame loop
+  const currentTimeRef = useRef(currentTime);
+  const songPitchRef = useRef(songPitch);
+  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
+  useEffect(() => { songPitchRef.current = songPitch; }, [songPitch]);
+
   // Start/stop live pitch detection during recording
   useEffect(() => {
     if (!isRecording) {
@@ -70,8 +76,8 @@ export default function DualTuner() {
         const reading = det.getCurrentPitch();
         if (reading) {
           setLiveNote(reading.name);
-          // Compare to song reference
-          const ref = pitchAtTime(songPitch, currentTime);
+          // Use refs to get the current time and pitch data without stale closure
+          const ref = pitchAtTime(songPitchRef.current, currentTimeRef.current);
           if (ref && ref.frequency > 0) {
             setLiveCents(centsDeviation(reading.frequency, ref.frequency));
           } else {
