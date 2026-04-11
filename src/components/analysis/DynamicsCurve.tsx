@@ -27,8 +27,12 @@ export default function DynamicsCurve() {
 
       const W = canvas.offsetWidth || 600;
       const H = canvas.offsetHeight || 80;
-      canvas.width = W;
-      canvas.height = H;
+      // Only reallocate backing buffer when size actually changes — unconditional
+      // assignment forces a full GPU/CPU buffer realloc every frame (~60fps = ~30MB/s).
+      if (canvas.width !== W || canvas.height !== H) {
+        canvas.width = W;
+        canvas.height = H;
+      }
 
       ctx.clearRect(0, 0, W, H);
 
