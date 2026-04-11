@@ -11,11 +11,17 @@ export default function DynamicsCurve() {
   const isLoaded = useAnalysisStore((s) => s.isLoaded);
   const currentTime = usePlayerStore((s) => s.currentTime);
 
+  // Stable ref to the latest draw function — updated on every state change,
+  // but the ResizeObserver always calls through this ref (no churn).
+  const drawRef = useRef<() => void>(() => {});
+
+  // Effect 1: rebuild draw fn and redraw whenever data or playhead changes.
+  // This runs at 60fps but only assigns a closure + calls it — no objects created.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const draw = () => {
+    drawRef.current = () => {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
@@ -81,11 +87,17 @@ export default function DynamicsCurve() {
       ctx.setLineDash([]);
     };
 
-    const ro = new ResizeObserver(draw);
-    ro.observe(canvas);
-    draw();
-    return () => ro.disconnect();
+    drawRef.current();
   }, [songDynamics, takeDynamics, currentTime, isLoaded]);
+
+  // Effect 2: wire ResizeObserver once per canvas lifetime — no deps.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ro = new ResizeObserver(() => drawRef.current());
+    ro.observe(canvas);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <div className="analysis-panel">
