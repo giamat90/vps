@@ -41,6 +41,14 @@ export async function loadAnalysis(songId: string): Promise<{
   return invoke("load_analysis", { songId });
 }
 
+/** Pitch-shift both tracks for a song; returns paths to the shifted WAV files */
+export async function pitchShiftSong(
+  songDir: string,
+  nSteps: number,
+): Promise<{ vocalsPath: string; instrumentalPath: string }> {
+  return invoke("pitch_shift_song", { songDir, nSteps });
+}
+
 /** Listen for processing progress events */
 export function onProcessingProgress(
   callback: (status: ProcessingStatus) => void

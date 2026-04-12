@@ -210,3 +210,47 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
         "detectedBpm": detected_bpm,
         "detectedKey": detected_key,
     }
+
+
+def pitch_shift_song(song_dir: str, cache_dir: str, n_steps: float, on_progress=None):
+    """Pitch-shift vocals.wav and instrumental.wav by n_steps semitones.
+
+    Results are written to cache_dir/vocals.wav and cache_dir/instrumental.wav.
+    Uses the phase vocoder so tempo is preserved.
+    """
+    if on_progress is None:
+        on_progress = lambda v, s: None
+
+    tracks = ["vocals.wav", "instrumental.wav"]
+    paths = {}
+
+    for i, name in enumerate(tracks):
+        input_path = os.path.join(song_dir, name)
+        output_path = os.path.join(cache_dir, name)
+
+        on_progress(i / len(tracks), f"loading-{name}")
+        audio, sr = librosa.load(input_path, sr=None, mono=False)
+
+        on_progress((i + 0.5) / len(tracks), f"shifting-{name}")
+        if audio.ndim == 1:
+            shifted = librosa.effects.pitch_shift(
+                audio, sr=sr, n_steps=n_steps, res_type="kaiser_fast"
+            )
+        else:
+            shifted = np.stack([
+                librosa.effects.pitch_shift(
+                    audio[ch], sr=sr, n_steps=n_steps, res_type="kaiser_fast"
+                )
+                for ch in range(audio.shape[0])
+            ])
+
+        sf.write(output_path, shifted.T if shifted.ndim > 1 else shifted, sr)
+        paths[name] = output_path
+        del audio, shifted
+        gc.collect()
+
+    on_progress(1.0, "complete")
+    return {
+        "vocalsPath": paths["vocals.wav"],
+        "instrumentalPath": paths["instrumental.wav"],
+    }

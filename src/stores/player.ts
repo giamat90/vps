@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { AudioEngine } from "../audio/engine";
 import { VocalRecorder } from "../audio/recorder";
 import type { Song, Take } from "../lib/types";
-import { saveTake, listTakes, deleteTakeApi } from "../lib/tauri";
+import { saveTake, listTakes, deleteTakeApi, pitchShiftSong } from "../lib/tauri";
 
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
@@ -33,6 +33,9 @@ interface PlayerState {
   loopStart: number | null;
   loopEnd: number | null;
   isLooping: boolean;
+  // Transpose state
+  transpose: number;
+  isTransposing: boolean;
   // Recording state
   isRecording: boolean;
   takes: Take[];
@@ -58,6 +61,8 @@ interface PlayerActions {
   toggleLoop: () => void;
   clearLoop: () => void;
   cleanup: () => void;
+  // Transpose action
+  setTranspose: (semitones: number) => Promise<void>;
   // Recording actions
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
@@ -78,6 +83,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   loopStart: null,
   loopEnd: null,
   isLooping: false,
+  transpose: 0,
+  isTransposing: false,
   isRecording: false,
   takes: [],
   activeTakeId: null,
@@ -101,6 +108,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       loopStart: null,
       loopEnd: null,
       isLooping: false,
+      transpose: 0,
+      isTransposing: false,
       isRecording: false,
       activeTakeId: null,
       abMode: "original",
@@ -179,11 +188,44 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isPlaying: false,
       currentTime: 0,
       duration: 0,
+      transpose: 0,
+      isTransposing: false,
       isRecording: false,
       takes: [],
       activeTakeId: null,
       abMode: "original",
     });
+  },
+
+  setTranspose: async (semitones) => {
+    const { song } = get();
+    if (!song) return;
+
+    getEngine().pause();
+    set({ isTransposing: true, isPlaying: false });
+
+    try {
+      let vocalsPath: string;
+      let instrumentalPath: string;
+
+      if (semitones === 0) {
+        const dir = song.directory.replace(/\\/g, "/");
+        vocalsPath = dir + "/vocals.wav";
+        instrumentalPath = dir + "/instrumental.wav";
+      } else {
+        const result = await pitchShiftSong(song.directory, semitones);
+        vocalsPath = result.vocalsPath;
+        instrumentalPath = result.instrumentalPath;
+      }
+
+      const eng = getEngine();
+      eng.loadVocalsFromPath(vocalsPath);
+      eng.loadInstrumentalFromPath(instrumentalPath);
+      set({ transpose: semitones, isTransposing: false });
+    } catch (e) {
+      set({ isTransposing: false });
+      throw e;
+    }
   },
 
   startRecording: async () => {

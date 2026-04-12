@@ -1,10 +1,21 @@
-import { useState } from "react";
+import { usePlayerStore } from "../../stores/player";
 
 function KeyTranspose() {
-  const [semitones, setSemitones] = useState(0);
+  const transpose = usePlayerStore((s) => s.transpose);
+  const isTransposing = usePlayerStore((s) => s.isTransposing);
+  const song = usePlayerStore((s) => s.song);
+  const setTranspose = usePlayerStore((s) => s.setTranspose);
 
-  // Transpose via Web Audio detune is deferred — for now this is a UI placeholder
-  // that will be wired in when pitch-shifting DSP is added
+  const disabled = isTransposing || !song;
+
+  const shift = (delta: number) => {
+    const next = Math.max(-6, Math.min(6, transpose + delta));
+    if (next !== transpose) {
+      setTranspose(next).catch((e: unknown) =>
+        console.error("[KeyTranspose] setTranspose failed:", e)
+      );
+    }
+  };
 
   return (
     <div className="key-transpose">
@@ -12,23 +23,30 @@ function KeyTranspose() {
       <div className="key-transpose__controls">
         <button
           className="key-transpose__btn"
-          onClick={() => setSemitones((s) => Math.max(-6, s - 1))}
+          onClick={() => shift(-1)}
+          disabled={disabled}
         >
           -
         </button>
         <span className="key-transpose__value">
-          {semitones > 0 ? `+${semitones}` : semitones} st
+          {isTransposing ? "…" : transpose > 0 ? `+${transpose}` : transpose} st
         </span>
         <button
           className="key-transpose__btn"
-          onClick={() => setSemitones((s) => Math.min(6, s + 1))}
+          onClick={() => shift(1)}
+          disabled={disabled}
         >
           +
         </button>
-        {semitones !== 0 && (
+        {transpose !== 0 && !isTransposing && (
           <button
             className="key-transpose__btn key-transpose__reset"
-            onClick={() => setSemitones(0)}
+            onClick={() =>
+              setTranspose(0).catch((e: unknown) =>
+                console.error("[KeyTranspose] reset failed:", e)
+              )
+            }
+            disabled={disabled}
           >
             Reset
           </button>

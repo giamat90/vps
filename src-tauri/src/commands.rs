@@ -167,6 +167,49 @@ pub async fn process_song(
 }
 
 #[tauri::command]
+pub async fn pitch_shift_song(
+    state: State<'_, SidecarState>,
+    song_dir: String,
+    n_steps: i32,
+) -> Result<serde_json::Value, String> {
+    let cache_dir = std::path::Path::new(&song_dir)
+        .join("pitched")
+        .join(n_steps.to_string());
+    let vocals_cache = cache_dir.join("vocals.wav");
+    let instr_cache = cache_dir.join("instrumental.wav");
+
+    // Return cached result without touching the sidecar
+    if vocals_cache.exists() && instr_cache.exists() {
+        return Ok(serde_json::json!({
+            "vocalsPath": vocals_cache.to_string_lossy(),
+            "instrumentalPath": instr_cache.to_string_lossy(),
+        }));
+    }
+
+    std::fs::create_dir_all(&cache_dir).map_err(|e| format!("mkdir: {e}"))?;
+
+    let cmd = serde_json::json!({
+        "cmd": "pitch_shift",
+        "songDir": song_dir,
+        "cacheDir": cache_dir.to_string_lossy(),
+        "nSteps": n_steps,
+    });
+    let guard = ensure_sidecar(&state)?;
+    let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
+    sidecar.send_command(&cmd)?;
+
+    let timeout = Duration::from_secs(300);
+    loop {
+        let msg = sidecar.recv_timeout(timeout)?;
+        match msg {
+            SidecarMessage::Result { data, .. } => return Ok(data),
+            SidecarMessage::Error { message, .. } => return Err(message),
+            _ => {}
+        }
+    }
+}
+
+#[tauri::command]
 pub async fn list_songs() -> Result<Vec<Song>, String> {
     library::load()
 }

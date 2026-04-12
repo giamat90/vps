@@ -154,6 +154,12 @@ export class AudioEngine {
     this.vocals.load(url);
   }
 
+  loadInstrumentalFromPath(filePath: string): void {
+    if (!this.instrumental) return;
+    const url = convertFileSrc(filePath.replace(/\\/g, "/"));
+    this.instrumental.load(url);
+  }
+
   setLoop(start: number, end: number): void {
     this._loopStart = start;
     this._loopEnd = end;
