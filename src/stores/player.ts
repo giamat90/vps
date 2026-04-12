@@ -112,6 +112,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     });
     eng.onFinish(() => {
       set({ isPlaying: false });
+      if (get().isRecording) {
+        get().stopRecording().catch((e: unknown) =>
+          console.error("[player] auto-stop recording failed:", e)
+        );
+      }
     });
     set({
       song,
