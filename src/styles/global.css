@@ -489,6 +489,38 @@ body,
   color: var(--text-secondary);
 }
 
+/* Output Selector */
+.output-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.output-selector__label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.output-selector__select {
+  background: var(--bg-surface);
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+  cursor: pointer;
+  max-width: 180px;
+}
+
+.output-selector__select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Mic Selector */
 .mic-selector {
   display: flex;

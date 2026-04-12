@@ -36,6 +36,8 @@ interface PlayerState {
   // Audio device state
   audioDevices: MediaDeviceInfo[];
   selectedDeviceId: string | null;
+  outputDevices: MediaDeviceInfo[];
+  selectedOutputDeviceId: string | null;
   // Transpose state
   transpose: number;
   isTransposing: boolean;
@@ -67,6 +69,8 @@ interface PlayerActions {
   // Audio device actions
   fetchAudioDevices: () => Promise<void>;
   setAudioDevice: (deviceId: string | null) => void;
+  fetchOutputDevices: () => Promise<void>;
+  setOutputDevice: (deviceId: string | null) => Promise<void>;
   // Transpose action
   setTranspose: (semitones: number) => Promise<void>;
   // Recording actions
@@ -91,6 +95,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   isLooping: false,
   audioDevices: [],
   selectedDeviceId: null,
+  outputDevices: [],
+  selectedOutputDeviceId: null,
   transpose: 0,
   isTransposing: false,
   isRecording: false,
@@ -197,6 +203,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       currentTime: 0,
       duration: 0,
       audioDevices: [],
+      outputDevices: [],
       transpose: 0,
       isTransposing: false,
       isRecording: false,
@@ -213,6 +220,16 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
   setAudioDevice: (deviceId) => {
     set({ selectedDeviceId: deviceId });
+  },
+
+  fetchOutputDevices: async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    set({ outputDevices: devices.filter((d) => d.kind === "audiooutput") });
+  },
+
+  setOutputDevice: async (deviceId) => {
+    await getEngine().setOutputDevice(deviceId ?? "");
+    set({ selectedOutputDeviceId: deviceId });
   },
 
   setTranspose: async (semitones) => {

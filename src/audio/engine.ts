@@ -140,6 +140,13 @@ export class AudioEngine {
     this.instrumental?.setPlaybackRate(rate);
   }
 
+  async setOutputDevice(deviceId: string): Promise<void> {
+    await Promise.all([
+      this.vocals?.setSinkId(deviceId),
+      this.instrumental?.setSinkId(deviceId),
+    ]);
+  }
+
   setVocalsVolume(volume: number): void {
     this.vocals?.setVolume(volume);
   }
