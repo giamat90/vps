@@ -4,8 +4,10 @@ export class VocalRecorder {
   private chunks: Blob[] = [];
   private _isRecording = false;
 
-  async init(): Promise<void> {
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  async init(deviceId?: string | null): Promise<void> {
+    this.stream = await navigator.mediaDevices.getUserMedia({
+      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+    });
   }
 
   start(): void {

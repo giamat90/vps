@@ -4,6 +4,7 @@ import TransportControls from "../components/player/TransportControls";
 import TempoControl from "../components/player/TempoControl";
 import KeyTranspose from "../components/player/KeyTranspose";
 import RecordButton from "../components/recording/RecordButton";
+import MicSelector from "../components/recording/MicSelector";
 import ABToggle from "../components/recording/ABToggle";
 import TakeList from "../components/recording/TakeList";
 import PianoRoll from "../components/analysis/PianoRoll";
@@ -97,6 +98,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
           <div className="practice-room__transport">
             <TransportControls />
+            <MicSelector />
             <RecordButton />
           </div>
 

@@ -33,6 +33,9 @@ interface PlayerState {
   loopStart: number | null;
   loopEnd: number | null;
   isLooping: boolean;
+  // Audio device state
+  audioDevices: MediaDeviceInfo[];
+  selectedDeviceId: string | null;
   // Transpose state
   transpose: number;
   isTransposing: boolean;
@@ -61,6 +64,9 @@ interface PlayerActions {
   toggleLoop: () => void;
   clearLoop: () => void;
   cleanup: () => void;
+  // Audio device actions
+  fetchAudioDevices: () => Promise<void>;
+  setAudioDevice: (deviceId: string | null) => void;
   // Transpose action
   setTranspose: (semitones: number) => Promise<void>;
   // Recording actions
@@ -83,6 +89,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   loopStart: null,
   loopEnd: null,
   isLooping: false,
+  audioDevices: [],
+  selectedDeviceId: null,
   transpose: 0,
   isTransposing: false,
   isRecording: false,
@@ -188,6 +196,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isPlaying: false,
       currentTime: 0,
       duration: 0,
+      audioDevices: [],
       transpose: 0,
       isTransposing: false,
       isRecording: false,
@@ -195,6 +204,15 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       activeTakeId: null,
       abMode: "original",
     });
+  },
+
+  fetchAudioDevices: async () => {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    set({ audioDevices: devices.filter((d) => d.kind === "audioinput") });
+  },
+
+  setAudioDevice: (deviceId) => {
+    set({ selectedDeviceId: deviceId });
   },
 
   setTranspose: async (semitones) => {
@@ -234,7 +252,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
     const rec = getRecorder();
     try {
-      await rec.init();
+      await rec.init(get().selectedDeviceId);
+      // Re-enumerate after getUserMedia succeeds — browser now populates device labels
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      set({ audioDevices: devices.filter((d) => d.kind === "audioinput") });
     } catch (e) {
       throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
     }
