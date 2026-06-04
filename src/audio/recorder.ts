@@ -6,7 +6,7 @@ export class VocalRecorder {
 
   async init(deviceId?: string | null): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: deviceId ? { deviceId: { exact: deviceId } } : true,
+      audio: deviceId ? { deviceId: { ideal: deviceId } } : true,
     });
   }
 

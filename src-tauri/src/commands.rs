@@ -229,6 +229,9 @@ pub struct Take {
     pub song_id: String,
     pub recorded_at: String,
     pub filepath: String,
+    /// Song position (seconds) where recording started; 0 for full-song takes.
+    #[serde(default)]
+    pub start_position: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pitch_data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -263,6 +266,7 @@ pub async fn save_take(
     state: State<'_, SidecarState>,
     song_id: String,
     audio_data: Vec<u8>,
+    start_position: f64,
 ) -> Result<Take, String> {
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::song_dir(&song_id).join("takes");
@@ -320,6 +324,7 @@ pub async fn save_take(
         song_id: song_id.clone(),
         recorded_at: chrono::Utc::now().to_rfc3339(),
         filepath: file_path_str,
+        start_position,
         pitch_data,
         onsets,
         dynamics,

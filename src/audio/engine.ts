@@ -16,6 +16,10 @@ export class AudioEngine {
   private _rafId: number | null = null;
   // Throttle store updates to ~30fps — halves React re-render rate vs 60fps rAF
   private _lastNotifyTime = 0;
+  // Offset (seconds) into the song where the vocals/take file starts
+  private _vocalsOffset = 0;
+  // Duration of the vocals/take file (may differ from _duration for partial takes)
+  private _vocalsDuration = 0;
 
   async load(
     songDir: string,
@@ -73,7 +77,11 @@ export class AudioEngine {
     // Guard: destroy() may have been called (e.g. by React StrictMode cleanup) during the await.
     if (!this.vocals || !this.instrumental) return;
 
-    this._duration = this.vocals.getDuration();
+    // Duration is always based on the instrumental (the reference track).
+    // Vocals/take may be shorter when recording starts mid-song.
+    this._duration = this.instrumental.getDuration();
+    this._vocalsDuration = this.vocals.getDuration();
+    this._vocalsOffset = 0;
 
     // Sync: when user clicks on one waveform, seek the other.
     // "interaction" fires ONLY on user clicks — never on programmatic seekTo() calls.
@@ -82,17 +90,19 @@ export class AudioEngine {
     // "seeking" → vocals.seekTo(0) → … each iteration queued a new async task,
     // growing the task queue and RAM indefinitely after every stop.
     this.vocals.on("interaction", (newTime) => {
-      const progress = newTime / this._duration;
-      this.instrumental?.seekTo(progress);
+      // Map vocals file time → instrumental song time, then seek instrumental
+      const instrTime = newTime + this._vocalsOffset;
+      const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
+      this.instrumental?.seekTo(instrProgress);
     });
 
     this.instrumental.on("interaction", (newTime) => {
-      const progress = newTime / this._duration;
-      this.vocals?.seekTo(progress);
+      // Map instrumental song time → vocals file time, accounting for start offset
+      this._seekVocals(newTime);
     });
 
-    // Handle end of playback
-    this.vocals.on("finish", () => {
+    // Finish fires on the instrumental so partial takes don't prematurely end playback
+    this.instrumental.on("finish", () => {
       this._isPlaying = false;
       this._stopTimeUpdate();
       this._finishCb?.();
@@ -130,9 +140,17 @@ export class AudioEngine {
 
   seekTo(time: number): void {
     if (!this.vocals || !this.instrumental) return;
-    const progress = Math.max(0, Math.min(1, time / this._duration));
-    this.vocals.seekTo(progress);
-    this.instrumental.seekTo(progress);
+    const instrProgress = Math.max(0, Math.min(1, time / this._duration));
+    this.instrumental.seekTo(instrProgress);
+    this._seekVocals(time);
+  }
+
+  // Seek the vocals/take to the position that corresponds to the given song time.
+  private _seekVocals(instrTime: number): void {
+    if (!this.vocals) return;
+    const dur = this._vocalsDuration > 0 ? this._vocalsDuration : this._duration;
+    const vocalsTime = Math.max(0, instrTime - this._vocalsOffset);
+    this.vocals.seekTo(Math.min(1, vocalsTime / dur));
   }
 
   setPlaybackRate(rate: number): void {
@@ -155,10 +173,39 @@ export class AudioEngine {
     this.instrumental?.setVolume(volume);
   }
 
-  loadVocalsFromPath(filePath: string): void {
+  setInteract(enabled: boolean): void {
+    this.vocals?.setOptions({ interact: enabled });
+    this.instrumental?.setOptions({ interact: enabled });
+  }
+
+  async loadVocalsFromPath(filePath: string, startOffset = 0): Promise<void> {
     if (!this.vocals) return;
+    const wasPlaying = this._isPlaying;
     const url = convertFileSrc(filePath.replace(/\\/g, "/"));
-    this.vocals.load(url);
+
+    await new Promise<void>((resolve, reject) => {
+      const unsubReady = this.vocals!.on("ready", () => {
+        unsubReady();
+        unsubError();
+        resolve();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const unsubError = this.vocals!.on("error", (err: any) => {
+        unsubReady();
+        unsubError();
+        reject(new Error(err?.message ?? String(err)));
+      });
+      this.vocals!.load(url);
+    });
+
+    this._vocalsOffset = startOffset;
+    this._vocalsDuration = this.vocals!.getDuration();
+
+    // Re-sync to instrumental's current position (with the new offset applied)
+    if (this.instrumental) {
+      this._seekVocals(this.instrumental.getCurrentTime());
+      if (wasPlaying) this.vocals!.play();
+    }
   }
 
   loadInstrumentalFromPath(filePath: string): void {
@@ -178,7 +225,8 @@ export class AudioEngine {
   }
 
   getCurrentTime(): number {
-    return this.vocals?.getCurrentTime() ?? 0;
+    // Use the instrumental as the time reference — it always plays the full song.
+    return this.instrumental?.getCurrentTime() ?? 0;
   }
 
   getDuration(): number {
@@ -205,6 +253,8 @@ export class AudioEngine {
     this.instrumental = null;
     this._isPlaying = false;
     this._duration = 0;
+    this._vocalsOffset = 0;
+    this._vocalsDuration = 0;
   }
 
   private _startTimeUpdate(): void {

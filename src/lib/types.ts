@@ -32,6 +32,8 @@ export interface Take {
   songId: string;
   recordedAt: string;
   filepath: string;
+  /** Song position (seconds) where recording started; 0 for full-song takes. */
+  startPosition: number;
   pitchData?: PitchPoint[];
   onsets?: number[];
   dynamics?: DynamicsPoint[];

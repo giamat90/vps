@@ -12,6 +12,9 @@ function TransportControls() {
   const duration = usePlayerStore((s) => s.duration);
   const togglePlay = usePlayerStore((s) => s.togglePlay);
   const stop = usePlayerStore((s) => s.stop);
+  const stopRecording = usePlayerStore((s) => s.stopRecording);
+  const isRecording = usePlayerStore((s) => s.isRecording);
+  const vocalsLoading = usePlayerStore((s) => s.vocalsLoading);
   const vocalsVolume = usePlayerStore((s) => s.vocalsVolume);
   const instrumentalVolume = usePlayerStore((s) => s.instrumentalVolume);
   const setVocalsVolume = usePlayerStore((s) => s.setVocalsVolume);
@@ -20,12 +23,13 @@ function TransportControls() {
   return (
     <div className="transport">
       <div className="transport__playback">
-        <button className="transport__btn" onClick={stop} title="Stop">
+        <button className="transport__btn" onClick={isRecording ? () => void stopRecording() : stop} title="Stop">
           &#9632;
         </button>
         <button
           className="transport__btn transport__btn--play"
           onClick={togglePlay}
+          disabled={vocalsLoading}
           title={isPlaying ? "Pause" : "Play"}
         >
           {isPlaying ? "\u275A\u275A" : "\u25B6"}

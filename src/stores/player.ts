@@ -7,6 +7,8 @@ import { saveTake, listTakes, deleteTakeApi, pitchShiftSong } from "../lib/tauri
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
 let recorder: VocalRecorder | null = null;
+// Captured when recording starts so stopRecording can pass it to saveTake
+let recordingStartPos = 0;
 
 export function getEngine(): AudioEngine {
   if (!engine) {
@@ -46,6 +48,7 @@ interface PlayerState {
   takes: Take[];
   activeTakeId: string | null;
   abMode: "original" | "take";
+  vocalsLoading: boolean;
 }
 
 interface PlayerActions {
@@ -79,7 +82,7 @@ interface PlayerActions {
   fetchTakes: () => Promise<void>;
   deleteTake: (takeId: string) => Promise<void>;
   setActiveTake: (takeId: string) => void;
-  setABMode: (mode: "original" | "take") => void;
+  setABMode: (mode: "original" | "take") => Promise<void>;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -103,6 +106,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   takes: [],
   activeTakeId: null,
   abMode: "original",
+  vocalsLoading: false,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -157,6 +161,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   seek: (time) => {
+    if (get().isRecording) return;
     getEngine().seekTo(time);
     set({ currentTime: time });
   },
@@ -282,10 +287,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
     }
 
-    // Mute vocals during recording, play instrumental
     const eng = getEngine();
     eng.setVocalsVolume(0);
-    eng.seekTo(0);
+    eng.setInteract(false);
+    recordingStartPos = eng.getCurrentTime();
     eng.play();
     rec.start();
 
@@ -298,7 +303,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
     const rec = getRecorder();
     const eng = getEngine();
-    eng.pause();
+    eng.stop();
+    eng.setInteract(true);
 
     try {
       const blob = await rec.stop();
@@ -307,7 +313,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const arrayBuffer = await blob.arrayBuffer();
       const audioData = Array.from(new Uint8Array(arrayBuffer));
 
-      const take = await saveTake(song.id, audioData);
+      const take = await saveTake(song.id, audioData, recordingStartPos);
 
       // Restore vocals volume
       eng.setVocalsVolume(get().vocalsVolume);
@@ -315,12 +321,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       set((state) => ({
         isRecording: false,
         isPlaying: false,
+        currentTime: 0,
         takes: [...state.takes, take],
       }));
     } catch (e) {
       // Ensure UI is reset even if save fails
       eng.setVocalsVolume(get().vocalsVolume);
-      set({ isRecording: false, isPlaying: false });
+      set({ isRecording: false, isPlaying: false, currentTime: 0 });
       throw e;
     }
   },
@@ -347,21 +354,22 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set({ activeTakeId: takeId });
   },
 
-  setABMode: (mode) => {
+  setABMode: async (mode) => {
     const { activeTakeId, song } = get();
     const eng = getEngine();
-
-    if (mode === "take" && activeTakeId && song) {
-      // Load the take into the vocals waveform
-      const take = get().takes.find((t) => t.id === activeTakeId);
-      if (take) {
-        eng.loadVocalsFromPath(take.filepath);
+    set({ abMode: mode, vocalsLoading: true });
+    try {
+      if (mode === "take" && activeTakeId && song) {
+        const take = get().takes.find((t) => t.id === activeTakeId);
+        if (take) await eng.loadVocalsFromPath(take.filepath, take.startPosition);
+      } else if (mode === "original" && song) {
+        await eng.loadVocalsFromPath(
+          song.directory.replace(/\\/g, "/") + "/vocals.wav",
+          0,
+        );
       }
-    } else if (mode === "original" && song) {
-      // Reload original vocals
-      eng.loadVocalsFromPath(song.directory.replace(/\\/g, "/") + "/vocals.wav");
+    } finally {
+      set({ vocalsLoading: false });
     }
-
-    set({ abMode: mode });
   },
 }));
