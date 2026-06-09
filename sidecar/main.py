@@ -66,6 +66,15 @@ def main():
                 )
                 send({"type": "result", "cmd": "pitch_shift", "data": result})
 
+            elif cmd.get("cmd") == "import_yt":
+                from yt_importer import import_yt
+                result = import_yt(
+                    cmd["url"],
+                    cmd["outputDir"],
+                    on_progress=make_progress_callback("import_yt"),
+                )
+                send({"type": "result", "cmd": "import_yt", "data": result})
+
             elif cmd.get("cmd") == "ping":
                 send({"type": "pong"})
 

@@ -365,3 +365,153 @@ pub async fn delete_take(song_id: String, take_id: String) -> Result<(), String>
     let filtered: Vec<Take> = takes.into_iter().filter(|t| t.id != take_id).collect();
     save_takes(&song_id, &filtered)
 }
+
+#[tauri::command]
+pub async fn import_youtube(
+    app: AppHandle,
+    state: State<'_, SidecarState>,
+    url: String,
+) -> Result<Song, String> {
+    if !url.contains("youtube.com/") && !url.contains("youtu.be/") {
+        return Err("Not a valid YouTube URL".to_string());
+    }
+
+    let song_id = uuid::Uuid::new_v4().to_string();
+    let output_dir = storage::song_dir(&song_id);
+    let output_dir_str = output_dir.to_string_lossy().to_string();
+
+    let cmd = serde_json::json!({
+        "cmd": "import_yt",
+        "url": url,
+        "outputDir": output_dir_str,
+    });
+
+    let guard = ensure_sidecar(&state)?;
+    let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
+    sidecar.send_command(&cmd)?;
+
+    let timeout = Duration::from_secs(900);
+    loop {
+        let msg = sidecar.recv_timeout(timeout)?;
+        match msg {
+            SidecarMessage::Progress { value, stage, .. } => {
+                let _ = app.emit(
+                    "processing-progress",
+                    ProcessingStatus {
+                        song_id: song_id.clone(),
+                        progress: value,
+                        stage,
+                        is_complete: false,
+                        error: None,
+                    },
+                );
+            }
+            SidecarMessage::Result { data, .. } => {
+                let _ = app.emit(
+                    "processing-progress",
+                    ProcessingStatus {
+                        song_id: song_id.clone(),
+                        progress: 1.0,
+                        stage: "complete".to_string(),
+                        is_complete: true,
+                        error: None,
+                    },
+                );
+
+                let title = data
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Unknown")
+                    .to_string();
+                let detected_bpm = data.get("detectedBpm").and_then(|v| v.as_f64());
+                let detected_key = data
+                    .get("detectedKey")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let duration = data
+                    .get("pitchData")
+                    .and_then(|v| v.as_array())
+                    .and_then(|arr| arr.last())
+                    .and_then(|p| p.get("time"))
+                    .and_then(|t| t.as_f64())
+                    .unwrap_or(0.0);
+
+                let song = Song {
+                    id: song_id,
+                    title,
+                    artist: None,
+                    duration,
+                    detected_key,
+                    detected_bpm,
+                    processed_at: chrono::Utc::now().to_rfc3339(),
+                    directory: output_dir_str,
+                };
+
+                let analysis = serde_json::json!({
+                    "pitchData": data.get("pitchData").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                    "onsets":    data.get("onsets").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                    "dynamics":  data.get("dynamics").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                });
+                let analysis_path = output_dir.join("analysis.json");
+                if let Ok(json) = serde_json::to_string_pretty(&analysis) {
+                    let _ = std::fs::write(&analysis_path, json);
+                }
+
+                library::add(song.clone())?;
+                return Ok(song);
+            }
+            SidecarMessage::Error {
+                message, traceback, ..
+            } => {
+                let detail = traceback.unwrap_or_default();
+                log::error!("YT import error: {message}\n{detail}");
+                let _ = app.emit(
+                    "processing-progress",
+                    ProcessingStatus {
+                        song_id: song_id.clone(),
+                        progress: 0.0,
+                        stage: "error".to_string(),
+                        is_complete: true,
+                        error: Some(message.clone()),
+                    },
+                );
+                return Err(message);
+            }
+            _ => {}
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn export_stem(
+    app: AppHandle,
+    stem_path: String,
+    suggested_name: String,
+) -> Result<(), String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let src = std::path::Path::new(&stem_path);
+    if !src.exists() {
+        return Err(format!("Stem not found: {stem_path}"));
+    }
+
+    let dest = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        let suggested_name = suggested_name.clone();
+        move || {
+            app.dialog()
+                .file()
+                .set_file_name(&suggested_name)
+                .add_filter("Audio", &["wav"])
+                .blocking_save_file()
+        }
+    })
+    .await
+    .map_err(|e| format!("Dialog task: {e}"))?;
+
+    if let Some(path) = dest {
+        std::fs::copy(src, path.as_path().ok_or("Invalid path")?)
+            .map_err(|e| format!("Copy failed: {e}"))?;
+    }
+    Ok(())
+}

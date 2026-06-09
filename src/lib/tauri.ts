@@ -49,6 +49,19 @@ export async function pitchShiftSong(
   return invoke("pitch_shift_song", { songDir, nSteps });
 }
 
+/** Import a YouTube URL through yt-dlp + Demucs pipeline */
+export async function importYoutube(url: string): Promise<Song> {
+  return invoke<Song>("import_youtube", { url });
+}
+
+/** Open a native Save As dialog and copy a stem WAV to user-chosen location */
+export async function exportStem(
+  stemPath: string,
+  suggestedName: string,
+): Promise<void> {
+  return invoke("export_stem", { stemPath, suggestedName });
+}
+
 /** Listen for processing progress events */
 export function onProcessingProgress(
   callback: (status: ProcessingStatus) => void

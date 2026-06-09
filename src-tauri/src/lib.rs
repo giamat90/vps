@@ -12,6 +12,8 @@ pub fn run() {
         .manage(SidecarState(std::sync::Mutex::new(None)))
         .invoke_handler(tauri::generate_handler![
             commands::process_song,
+            commands::import_youtube,
+            commands::export_stem,
             commands::pitch_shift_song,
             commands::list_songs,
             commands::delete_song,

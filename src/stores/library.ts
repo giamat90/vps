@@ -2,6 +2,7 @@ import { create } from "zustand";
 import type { ProcessingStatus, Song } from "../lib/types";
 import {
   deleteSong as apiDeleteSong,
+  importYoutube as importYoutubeApi,
   listSongs,
   onProcessingProgress,
   processSong,
@@ -14,6 +15,7 @@ interface LibraryState {
 
   fetchSongs: () => Promise<void>;
   uploadSong: (filePath: string) => Promise<void>;
+  importYoutube: (url: string) => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
   initProgressListener: () => Promise<() => void>;
 }
@@ -43,6 +45,19 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       }));
     } catch (e) {
       console.error("Failed to process song:", e);
+      set({ processing: null });
+    }
+  },
+
+  importYoutube: async (url: string) => {
+    try {
+      const song = await importYoutubeApi(url);
+      set((state) => ({
+        songs: [...state.songs, song],
+        processing: null,
+      }));
+    } catch (e) {
+      console.error("YouTube import failed:", e);
       set({ processing: null });
     }
   },

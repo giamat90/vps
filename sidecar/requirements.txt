@@ -6,3 +6,4 @@ librosa
 soundfile
 numpy
 scipy
+yt-dlp

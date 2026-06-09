@@ -1,5 +1,7 @@
 import { useEffect } from "react";
 import DropZone from "../components/upload/DropZone";
+import YouTubeImport from "../components/upload/YouTubeImport";
+import { exportStem } from "../lib/tauri";
 import { useLibraryStore } from "../stores/library";
 
 interface LibraryPageProps {
@@ -33,7 +35,10 @@ function LibraryPage({ onSelectSong }: LibraryPageProps) {
         <h1>Vocal Practice Studio</h1>
       </header>
 
-      <DropZone />
+      <div className="library-page__import">
+        <DropZone />
+        <YouTubeImport />
+      </div>
 
       <section className="library-page__list">
         {isLoading && <p className="library-page__loading">Loading...</p>}
@@ -60,16 +65,39 @@ function LibraryPage({ onSelectSong }: LibraryPageProps) {
                 <span>{formatDuration(song.duration)}</span>
               </div>
             </div>
-            <button
-              className="song-card__delete"
-              onClick={(e) => {
-                e.stopPropagation();
-                deleteSong(song.id);
-              }}
-              title="Delete song"
-            >
-              &times;
-            </button>
+            <div className="song-card__actions" onClick={(e) => e.stopPropagation()}>
+              <button
+                className="song-card__export-btn"
+                title="Download vocals stem"
+                onClick={() =>
+                  exportStem(
+                    `${song.directory}/vocals.wav`,
+                    `${song.title} - Vocals.wav`,
+                  )
+                }
+              >
+                ↓ Vocals
+              </button>
+              <button
+                className="song-card__export-btn"
+                title="Download instrumental stem"
+                onClick={() =>
+                  exportStem(
+                    `${song.directory}/instrumental.wav`,
+                    `${song.title} - Instrumental.wav`,
+                  )
+                }
+              >
+                ↓ Instr.
+              </button>
+              <button
+                className="song-card__delete"
+                onClick={() => deleteSong(song.id)}
+                title="Delete song"
+              >
+                &times;
+              </button>
+            </div>
           </div>
         ))}
       </section>
