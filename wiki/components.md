@@ -117,6 +117,30 @@ Call `fetchAudioDevices()` / `fetchOutputDevices()` on mount to populate device 
 
 Displays the current `transpose` value in semitones with ±12 range. Triggers `setTranspose(n)` which pauses playback, calls the Python sidecar to generate shifted WAVs, then reloads the engine with the new files.
 
+### PianoRoll
+
+VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `requestAnimationFrame` loop that reads `getEngine().getCurrentTime()` directly — no React re-renders during playback.
+
+**Layout (single canvas):**
+
+```
+|── 36px piano strip ──|────── scrolling pitch roll ─────|
+│  C5 key label        │                                  │
+│  white/black keys    │  song ribbon (blue)              │
+│                      │  take ribbon (red)               │
+│                      │       ╎ playhead                 │
+```
+
+**Drawing passes (in order):**
+1. Lane backgrounds — black-key rows slightly darker, C-octave boundaries marked with a brighter rule
+2. Song pitch ribbon — `rgba(74,158,255,0.88)` thick polyline following the raw CREPE pitch (no snapping); line breaks on gaps > 80ms or confidence < 0.5
+3. Take pitch ribbon — `rgba(233,69,96,0.92)` same style, drawn over the song ribbon
+4. Playhead — dashed vertical line at canvas center
+5. Note label — current note name(s) shown in matching colors at top-left of the roll (e.g. "A4 G#4")
+6. Piano key strip — drawn last so it sits on top of any ribbon that bleeds into the left column
+
+**Constants:** MIDI 45–84 (A2–C6, 40 semitones), 8-second window, `15rem` canvas height.
+
 ### YouTubeImport
 
 Input + button for pasting a YouTube URL. Validates the URL client-side with a regex before calling `importYoutube(url)` on the library store. Disabled while any processing job is active. Errors from the store are shown as a dismissible red banner in `LibraryPage`.
