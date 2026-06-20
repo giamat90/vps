@@ -8,6 +8,8 @@ import os
 import yt_dlp
 from processor import process
 
+_BROWSERS = ["chrome", "firefox", "edge", "brave", "opera"]
+
 
 def import_yt(url: str, output_dir: str, on_progress=None) -> dict:
     """
@@ -28,7 +30,7 @@ def import_yt(url: str, output_dir: str, on_progress=None) -> dict:
         elif d["status"] == "finished":
             on_progress(0.15, "downloading")
 
-    ydl_opts = {
+    base_opts = {
         "format": "bestaudio/best",
         "outtmpl": os.path.join(output_dir, "source.%(ext)s"),
         "postprocessors": [{"key": "FFmpegExtractAudio", "preferredcodec": "wav"}],
@@ -37,9 +39,33 @@ def import_yt(url: str, output_dir: str, on_progress=None) -> dict:
         "progress_hooks": [ydl_hook],
     }
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        title = info.get("title", "Unknown")
+    # Try without cookies first, then fall back through installed browsers.
+    attempts = [{}] + [{"cookiesfrombrowser": (b,)} for b in _BROWSERS]
+    last_error: Exception | None = None
+
+    for extra in attempts:
+        opts = {**base_opts, **extra}
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                title = info.get("title", "Unknown")
+            last_error = None
+            break
+        except yt_dlp.utils.DownloadError as exc:
+            last_error = exc
+            # Only retry on bot-detection; bail immediately for other errors.
+            if "Sign in to confirm" not in str(exc) and "bot" not in str(exc).lower():
+                raise
+            # Clean up any partial file before next attempt.
+            for f in os.listdir(output_dir):
+                if f.startswith("source."):
+                    try:
+                        os.remove(os.path.join(output_dir, f))
+                    except OSError:
+                        pass
+
+    if last_error is not None:
+        raise last_error
 
     source_wav = os.path.join(output_dir, "source.wav")
     if not os.path.exists(source_wav):
