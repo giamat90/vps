@@ -909,7 +909,11 @@ body,
 }
 
 .analysis-panel__canvas--sm {
-  height: 80px;
+  height: 5rem;
+}
+
+.analysis-panel__canvas--piano-roll {
+  height: 15rem;
 }
 
 /* Vibrato Card */
