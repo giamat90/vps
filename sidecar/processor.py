@@ -11,6 +11,8 @@ import traceback
 import numpy as np
 import soundfile as sf
 import librosa
+from scipy.signal import butter, sosfilt, resample_poly
+from scipy.ndimage import median_filter, gaussian_filter1d
 
 SAMPLE_RATE = 44100
 CONFIDENCE_THRESHOLD = 0.5
@@ -23,6 +25,220 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 def _log(msg: str):
     print(msg, file=sys.stderr, flush=True)
+
+
+def _correct_octave_errors_spectral(
+    y: np.ndarray,
+    sr: int,
+    f0: np.ndarray,
+    voiced_flag: np.ndarray,
+    hop_length: int = 512,
+    n_fft: int = 2048,
+    fmin_hz: float = 65.0,
+) -> np.ndarray:
+    """
+    Spectral subharmonic check for octave errors.
+
+    When pyin locks onto 2F0 instead of F0 (common on powerful high notes),
+    the true fundamental F0 = detected/2 is still present in the spectrum,
+    along with its 3rd harmonic at 3·F0/2.  A correctly detected F0 has no
+    energy at F0/2 (singing voice has no subharmonics).
+
+    This check is per-frame and independent of neighbours, so sustained
+    octave errors (where the local median is also wrong) are caught.
+    """
+    D = np.abs(librosa.stft(y, n_fft=n_fft, hop_length=hop_length))
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=n_fft)
+    corrected = f0.copy()
+    n = min(len(f0), D.shape[1])
+
+    def energy_near(freq: float, frame: int) -> float:
+        # Sum energy within ±1 semitone of freq
+        lo = freq * 2 ** (-1 / 12)
+        hi = freq * 2 ** (1 / 12)
+        mask = (freqs >= lo) & (freqs <= hi)
+        return float(D[mask, frame].sum()) if mask.any() else 0.0
+
+    for i in range(n):
+        if not voiced_flag[i] or np.isnan(f0[i]) or f0[i] <= 0:
+            continue
+        f_sub = f0[i] / 2.0
+        if f_sub < fmin_hz:
+            continue
+
+        e_det  = energy_near(f0[i],         i)
+        e_sub  = energy_near(f_sub,          i)   # candidate true F0
+        e_3sub = energy_near(3.0 * f_sub,    i)   # 3rd harmonic of candidate F0
+
+        # Subharmonic AND its odd harmonic present → detected pitch is 2F0, not F0
+        if e_sub > 0.2 * e_det and e_3sub > 0.1 * e_det:
+            corrected[i] = f_sub
+
+    return corrected
+
+
+def detect_pitch(audio: np.ndarray, sr: int) -> dict:
+    """
+    Deterministic pitch detection using pYIN + spectral subharmonic correction.
+    pYIN is autocorrelation-based and robust to strong harmonics; the spectral
+    correction adds a second-pass octave check for edge cases.
+    """
+    f0, voiced_flag, voiced_probs = librosa.pyin(
+        audio,
+        fmin=librosa.note_to_hz('C2'),
+        fmax=librosa.note_to_hz('C7'),
+        sr=sr,
+        frame_length=2048,
+        hop_length=512,
+        beta_parameters=(2, 6),
+    )
+    f0 = _correct_octave_errors_spectral(audio, sr, f0, voiced_flag)
+    times = librosa.times_like(f0, sr=sr, hop_length=512)
+    f0_clean = np.where(voiced_flag, f0, 0.0)
+    return {
+        "times": times.tolist(),
+        "f0": f0_clean.tolist(),
+        "voiced": voiced_flag.tolist(),
+        "confidence": voiced_probs.tolist(),
+    }
+
+
+def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
+    """
+    Summation of Residual Harmonics (SRH) pitch detection.
+
+    For each candidate F0, SRH sums spectral energy at harmonics
+    and subtracts energy at inter-harmonic frequencies:
+
+        SRH(f) = sum_n [ X(n*f) - X((n+0.5)*f) ]  for n = 1..N
+
+    The true F0 maximizes this score. More stable than HPS because:
+    - Addition is robust to weak/missing harmonics (HPS multiplication is not)
+    - Inter-harmonic subtraction actively suppresses non-fundamental candidates
+    - Sub-bin precision via parabolic interpolation on the SRH score curve
+    """
+
+    # Resample to 22050 Hz for consistent bin resolution
+    # Demucs outputs 44100 — halving gives 5.4 Hz/bin at frame_length=4096
+    target_sr = 22050
+    if sr != target_sr:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    frame_length = 4096
+    hop_length = 512
+    n_harmonics = 5
+    fmin = librosa.note_to_hz('C2')   # ~65 Hz
+    fmax = librosa.note_to_hz('C7')   # ~2093 Hz
+    voicing_threshold = 0.15
+
+    # Pad audio
+    audio = np.pad(audio, frame_length // 2, mode='reflect')
+    frames = librosa.util.frame(
+        audio,
+        frame_length=frame_length,
+        hop_length=hop_length
+    )
+    n_frames = frames.shape[1]
+
+    # Frequency axis
+    freqs = np.fft.rfftfreq(frame_length, d=1.0 / sr)
+    bin_width = sr / frame_length  # Hz per bin
+
+    # Candidate F0 range — evaluate SRH at each candidate
+    # Use fine resolution: 0.5 Hz steps for sub-Hz precision
+    f0_candidates = np.arange(fmin, fmax, 0.5)
+
+    # Precompute candidate bin indices for harmonics and inter-harmonics
+    # Shape: (n_candidates, n_harmonics)
+    harmonic_bins = np.array([
+        np.round(f0_candidates * n / bin_width).astype(int)
+        for n in range(1, n_harmonics + 1)
+    ]).T  # (n_candidates, n_harmonics)
+
+    inter_bins = np.array([
+        np.round(f0_candidates * (n + 0.5) / bin_width).astype(int)
+        for n in range(1, n_harmonics + 1)
+    ]).T  # (n_candidates, n_harmonics)
+
+    # Clip to valid spectrum range
+    max_bin = len(freqs) - 1
+    harmonic_bins = np.clip(harmonic_bins, 0, max_bin)
+    inter_bins = np.clip(inter_bins, 0, max_bin)
+
+    f0 = np.zeros(n_frames)
+    confidence = np.zeros(n_frames)
+
+    for i in range(n_frames):
+        frame = frames[:, i] * np.hanning(frame_length)
+        spectrum = np.abs(np.fft.rfft(frame))
+
+        # Normalize spectrum
+        spectrum = spectrum / (spectrum.max() + 1e-8)
+
+        # Compute SRH score for each candidate
+        # SRH(f) = sum_n [ X(n*f) - X((n+0.5)*f) ]
+        harmonic_energy = spectrum[harmonic_bins].sum(axis=1)
+        inter_energy = spectrum[inter_bins].sum(axis=1)
+        srh_scores = harmonic_energy - inter_energy
+
+        # Find best candidate
+        best_idx = np.argmax(srh_scores)
+        best_score = srh_scores[best_idx]
+
+        # Parabolic interpolation on SRH score curve for sub-Hz precision
+        if 0 < best_idx < len(srh_scores) - 1:
+            alpha = srh_scores[best_idx - 1]
+            beta  = srh_scores[best_idx]
+            gamma = srh_scores[best_idx + 1]
+            denom = (alpha - 2 * beta + gamma)
+            if denom != 0:
+                p = 0.5 * (alpha - gamma) / denom
+                p = np.clip(p, -1.0, 1.0)
+            else:
+                p = 0.0
+        else:
+            p = 0.0
+
+        # Final F0: candidate frequency + sub-bin offset (0.5 Hz steps)
+        f0[i] = f0_candidates[best_idx] + p * 0.5
+        confidence[i] = best_score
+
+    # Normalize confidence to 0-1
+    if confidence.max() > 0:
+        confidence = confidence / confidence.max()
+
+    # Voicing detection
+    voiced = confidence > voicing_threshold
+    f0_clean = np.where(voiced, f0, 0.0)
+
+    # Post-processing smoothing on voiced frames only
+    f0_smooth = f0_clean.copy()
+    voiced_indices = np.where(voiced)[0]
+
+    if len(voiced_indices) > 3:
+        f0_smooth[voiced_indices] = median_filter(
+            f0_clean[voiced_indices],
+            size=3  # lighter than before — SRH is already more stable
+        )
+        f0_smooth[voiced_indices] = gaussian_filter1d(
+            f0_smooth[voiced_indices],
+            sigma=1.0  # lighter sigma — preserve real pitch movement
+        )
+
+    f0_clean = f0_smooth
+
+    # Time axis
+    times = librosa.frames_to_time(
+        np.arange(n_frames), sr=sr, hop_length=hop_length
+    )
+
+    return {
+        "times": times.tolist(),
+        "f0": f0_clean.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": confidence.tolist()
+    }
 
 
 def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
@@ -112,32 +328,15 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     # Stage 2: pyin pitch extraction (0.50 – 0.70)
     # ===================================================================
     on_progress(0.50, "pitch-extraction")
-    _log("Running pitch detection (pyin)...")
+    _log("Running pitch detection (SRH)...")
 
-    pitch_data = []
+    pitch_result = {"times": [], "f0": [], "voiced": [], "confidence": []}
 
     try:
-        vocals_pyin, sr_pyin = librosa.load(vocals_path, sr=22050, mono=True)
-
-        f0, voiced_flag, voiced_probs = librosa.pyin(
-            vocals_pyin,
-            fmin=librosa.note_to_hz('C2'),
-            fmax=librosa.note_to_hz('C7'),
-            sr=sr_pyin,
-            hop_length=512,
-        )
-
-        times = librosa.times_like(f0, sr=sr_pyin, hop_length=512)
-
-        for i in range(len(f0)):
-            if voiced_flag[i] and not np.isnan(f0[i]):
-                pitch_data.append({
-                    "time": round(float(times[i]), 4),
-                    "frequency": round(float(f0[i]), 2),
-                    "confidence": round(float(voiced_probs[i]), 3),
-                })
-
-        _log(f"Pitch detection complete: {len(pitch_data)} voiced frames")
+        vocals_mono, sr_pyin = librosa.load(vocals_path, sr=22050, mono=True)
+        pitch_result = detect_pitch_srh(vocals_mono, sr_pyin)
+        n_voiced = sum(pitch_result["voiced"])
+        _log(f"Pitch detection complete: {n_voiced} voiced frames")
 
     except Exception as e:
         _log(f"pyin error: {e}\n{traceback.format_exc()}")
@@ -191,10 +390,11 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     on_progress(0.93, "key-detection")
     _log("Detecting key...")
 
-    if pitch_data:
-        freq_array = np.array([p["frequency"] for p in pitch_data])
-        conf_array = np.array([p["confidence"] for p in pitch_data])
-        detected_key = _detect_key(freq_array, conf_array)
+    if any(pitch_result["voiced"]):
+        detected_key = _detect_key(
+            np.array(pitch_result["f0"]),
+            np.array(pitch_result["confidence"]),
+        )
     else:
         detected_key = "Unknown"
 
@@ -204,7 +404,7 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     return {
         "vocals": vocals_path,
         "instrumental": instrumental_path,
-        "pitchData": pitch_data,
+        "pitchData": pitch_result,
         "onsets": onsets,
         "dynamics": dynamics,
         "detectedBpm": detected_bpm,
