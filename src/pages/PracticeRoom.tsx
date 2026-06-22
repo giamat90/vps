@@ -9,6 +9,7 @@ import MicSelector from "../components/recording/MicSelector";
 import ABToggle from "../components/recording/ABToggle";
 import TakeList from "../components/recording/TakeList";
 import PianoRoll from "../components/analysis/PianoRoll";
+import PianoKeyboard from "../components/analysis/PianoKeyboard";
 import DynamicsCurve from "../components/analysis/DynamicsCurve";
 import VibratoCard from "../components/analysis/VibratoCard";
 import TimingChart from "../components/analysis/TimingChart";
@@ -28,6 +29,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const cleanup = usePlayerStore((s) => s.cleanup);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
+  const isRecording = usePlayerStore((s) => s.isRecording);
   const song = songs.find((s) => s.id === songId);
 
   const loadSongAnalysis = useAnalysisStore((s) => s.loadSongAnalysis);
@@ -114,8 +116,9 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
                   Analysis {activeTakeId ? "" : "(select take)"}
                 </button>
               </div>
-              {showAnalysis && (
+              {(showAnalysis || isRecording) && (
                 <div className="practice-room__analysis-body">
+                  <PianoKeyboard />
                   <PianoRoll />
                   <DynamicsCurve />
                   <CoachPanel />

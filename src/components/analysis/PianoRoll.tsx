@@ -3,6 +3,8 @@ import { useAnalysisStore } from "../../stores/analysis";
 import { getEngine } from "../../stores/player";
 import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
+import { usePlayerStore } from "../../stores/player";
+import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -11,11 +13,8 @@ const WINDOW_S  = 8;        // seconds visible at once
 const MIDI_MIN  = 45;       // A2  — bottom of visible range
 const MIDI_MAX  = 84;       // C6  — top of visible range
 const N_NOTES   = MIDI_MAX - MIDI_MIN + 1;
-const CONF_MIN  = 0.5;
+const CONF_MIN  = 0.3;
 const GAP_S     = 0.08;     // gap threshold: breaks the ribbon
-
-const COLOR_SONG = "rgba(74, 158, 255, 0.88)";
-const COLOR_TAKE = "rgba(233, 69, 96,  0.92)";
 
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);   // pitch classes that are black keys
 
@@ -123,39 +122,45 @@ function drawRibbon(
   ctx.restore();
 }
 
-function drawPianoStrip(ctx: CanvasRenderingContext2D, H: number): void {
+function drawPianoStrip(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  songMidi: number | null,
+  takeMidi: number | null,
+  liveMidi: number | null,
+): void {
   const nh = noteH(H);
 
-  // Strip background
   ctx.fillStyle = "#090914";
   ctx.fillRect(0, 0, PIANO_W, H);
 
   for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
-    const y   = midiToY(m, H);
-    const top = y - nh / 2;
-    const blk = isBlack(m);
+    const y      = midiToY(m, H);
+    const top    = y - nh / 2;
+    const blk    = isBlack(m);
+    const isSong = m === songMidi;
+    const isTake = m === takeMidi;
+    const isLive = m === liveMidi;
 
     if (blk) {
-      ctx.fillStyle = "#1c1c1c";
+      ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1c1c1c";
       ctx.fillRect(1, top + 0.5, PIANO_W * 0.60, nh - 1);
     } else {
-      ctx.fillStyle = "#c8c8c8";
+      ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
       ctx.fillRect(1, top + 0.5, PIANO_W - 3, nh - 1);
 
-      // Label every C note
       if ((m % 12) === 0) {
         const octave = Math.floor(m / 12) - 1;
         const fs = Math.max(7, Math.min(10, nh * 0.78));
-        ctx.fillStyle  = "#444";
-        ctx.font       = `${fs}px sans-serif`;
-        ctx.textAlign  = "right";
+        ctx.fillStyle    = isSong || isTake || isLive ? "#fff" : "#444";
+        ctx.font         = `${fs}px sans-serif`;
+        ctx.textAlign    = "right";
         ctx.textBaseline = "middle";
         ctx.fillText(`C${octave}`, PIANO_W - 4, y);
       }
     }
   }
 
-  // Separator line
   ctx.fillStyle = "#333";
   ctx.fillRect(PIANO_W - 1, 0, 1, H);
 }
@@ -164,6 +169,7 @@ function drawNoteLabel(
   ctx: CanvasRenderingContext2D,
   songPitch: PitchPoint[],
   takePitch: PitchPoint[],
+  livePitch: PitchPoint[],
   currentTime: number,
 ): void {
   const getNote = (pts: PitchPoint[]): string | null => {
@@ -181,7 +187,8 @@ function drawNoteLabel(
 
   const songNote = getNote(songPitch);
   const takeNote = getNote(takePitch);
-  if (!songNote && !takeNote) return;
+  const liveNote = getNote(livePitch);
+  if (!songNote && !takeNote && !liveNote) return;
 
   ctx.save();
   ctx.font         = "bold 11px monospace";
@@ -198,6 +205,11 @@ function drawNoteLabel(
   if (takeNote) {
     ctx.fillStyle = COLOR_TAKE;
     ctx.fillText(takeNote, x, y);
+    x += ctx.measureText(takeNote).width + 10;
+  }
+  if (liveNote) {
+    ctx.fillStyle = COLOR_LIVE;
+    ctx.fillText(liveNote, x, y);
   }
   ctx.restore();
 }
@@ -205,11 +217,13 @@ function drawNoteLabel(
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function PianoRoll() {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const songPitch  = useAnalysisStore((s) => s.songPitch);
-  const takePitch  = useAnalysisStore((s) => s.takePitch);
-  const isLoaded   = useAnalysisStore((s) => s.isLoaded);
-  const drawRef    = useRef<() => void>(() => {});
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const songPitch   = useAnalysisStore((s) => s.songPitch);
+  const takePitch   = useAnalysisStore((s) => s.takePitch);
+  const livePitch   = useAnalysisStore((s) => s.livePitch);
+  const isLoaded    = useAnalysisStore((s) => s.isLoaded);
+  const isRecording = usePlayerStore((s) => s.isRecording);
+  const drawRef     = useRef<() => void>(() => {});
 
   // Rebuild draw function whenever data changes
   useEffect(() => {
@@ -237,7 +251,7 @@ export default function PianoRoll() {
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
         ctx.fillText("No pitch data", (PIANO_W + W) / 2, H / 2);
-        drawPianoStrip(ctx, H);
+        drawPianoStrip(ctx, H, null, null, null);
         return;
       }
 
@@ -248,18 +262,25 @@ export default function PianoRoll() {
       const timeToX = (t: number) =>
         PIANO_W + ((t - currentTime + WINDOW_S / 2) / WINDOW_S) * rollW;
 
+      const songMidi = getCurrentMidi(songPitch, currentTime);
+      const takeMidi = getCurrentMidi(takePitch, currentTime);
+      const liveMidi = getCurrentMidi(livePitch, currentTime);
+
       drawLanes(ctx, W, H);
       drawRibbon(ctx, songPitch, COLOR_SONG, t0, t1, H, timeToX);
       if (takePitch.length > 0) {
         drawRibbon(ctx, takePitch, COLOR_TAKE, t0, t1, H, timeToX);
       }
+      if (livePitch.length > 0) {
+        drawRibbon(ctx, livePitch, COLOR_LIVE, t0, t1, H, timeToX);
+      }
       drawPlayhead(ctx, W, H);
-      drawNoteLabel(ctx, songPitch, takePitch, currentTime);
-      drawPianoStrip(ctx, H);   // last: sits on top at left edge
+      drawNoteLabel(ctx, songPitch, takePitch, livePitch, currentTime);
+      drawPianoStrip(ctx, H, songMidi, takeMidi, liveMidi);   // last: sits on top at left edge
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, isLoaded]);
+  }, [songPitch, takePitch, livePitch, isLoaded]);
 
   // rAF loop — no React re-renders during playback
   useEffect(() => {
@@ -290,6 +311,12 @@ export default function PianoRoll() {
             <>
               <span className="legend-dot legend-dot--take" />
               <span>Your voice</span>
+            </>
+          )}
+          {isRecording && (
+            <>
+              <span className="legend-dot legend-dot--live" />
+              <span>Live</span>
             </>
           )}
         </div>

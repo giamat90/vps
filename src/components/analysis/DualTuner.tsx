@@ -34,6 +34,8 @@ export default function DualTuner() {
   const currentTime = usePlayerStore((s) => s.currentTime);
   const songPitch = useAnalysisStore((s) => s.songPitch);
   const takePitch = useAnalysisStore((s) => s.takePitch);
+  const appendLivePitch = useAnalysisStore((s) => s.appendLivePitch);
+  const clearLivePitch  = useAnalysisStore((s) => s.clearLivePitch);
 
   const [liveCents, setLiveCents] = useState<number | null>(null);
   const [liveNote, setLiveNote] = useState<string>("");
@@ -42,10 +44,14 @@ export default function DualTuner() {
   const streamRef = useRef<MediaStream | null>(null);
 
   // Refs to always have latest values inside the animation frame loop
-  const currentTimeRef = useRef(currentTime);
-  const songPitchRef = useRef(songPitch);
+  const currentTimeRef   = useRef(currentTime);
+  const songPitchRef     = useRef(songPitch);
+  const appendLiveRef    = useRef(appendLivePitch);
+  const clearLiveRef     = useRef(clearLivePitch);
   useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
   useEffect(() => { songPitchRef.current = songPitch; }, [songPitch]);
+  useEffect(() => { appendLiveRef.current = appendLivePitch; }, [appendLivePitch]);
+  useEffect(() => { clearLiveRef.current = clearLivePitch; }, [clearLivePitch]);
 
   // Start/stop live pitch detection during recording
   useEffect(() => {
@@ -59,10 +65,13 @@ export default function DualTuner() {
         streamRef.current = null;
       }
       cancelAnimationFrame(rafRef.current);
+      clearLiveRef.current();
       setLiveCents(null);
       setLiveNote("");
       return;
     }
+
+    clearLiveRef.current();
 
     let active = true;
     navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
@@ -76,12 +85,16 @@ export default function DualTuner() {
         const reading = det.getCurrentPitch();
         if (reading) {
           setLiveNote(reading.name);
+          const t = currentTimeRef.current;
           // Use refs to get the current time and pitch data without stale closure
-          const ref = pitchAtTime(songPitchRef.current, currentTimeRef.current);
+          const ref = pitchAtTime(songPitchRef.current, t);
           if (ref && ref.frequency > 0) {
             setLiveCents(centsDeviation(reading.frequency, ref.frequency));
           } else {
             setLiveCents(reading.cents);
+          }
+          if (reading.frequency > 0) {
+            appendLiveRef.current({ time: t, frequency: reading.frequency, confidence: 1.0 });
           }
         }
         rafRef.current = requestAnimationFrame(tick);

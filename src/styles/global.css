@@ -898,6 +898,7 @@ body,
 
 .legend-dot--song { background: #7a7a90; }
 .legend-dot--take { background: #e94560; }
+.legend-dot--live { background: #ff8c1e; }
 .legend-dot--dynamics { background: #4ade80; }
 
 .analysis-panel__canvas {
@@ -914,6 +915,10 @@ body,
 
 .analysis-panel__canvas--piano-roll {
   height: 15rem;
+}
+
+.analysis-panel__canvas--keyboard {
+  height: 5.5rem;
 }
 
 /* Vibrato Card */
