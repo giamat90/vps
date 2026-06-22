@@ -332,7 +332,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       console.warn("[recording] setOutputDevice failed:", e);
     }
 
-    eng.setVocalsVolume(0);
     eng.setInteract(false);
     eng.seekTo(recordingStartPos);
     eng.play();
@@ -365,9 +364,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
       const take = await saveTake(song.id, audioData, recordingStartPos);
 
-      // Restore vocals volume
-      eng.setVocalsVolume(get().vocalsVolume);
-
       // Auto-select the new take and switch to take mode so playback
       // immediately plays the recorded audio instead of the original vocals.
       set((state) => ({
@@ -388,7 +384,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     } catch (e) {
       rec.releaseStream();
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
-      eng.setVocalsVolume(get().vocalsVolume);
       set({ isRecording: false, isPlaying: false, currentTime: 0, vocalsLoading: false });
       throw e;
     }
