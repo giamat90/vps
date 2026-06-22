@@ -277,6 +277,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const { song } = get();
     if (!song) return;
 
+    // Pause and capture position before getUserMedia — the audio session
+    // reconfigures when the mic opens, which can stall already-playing elements.
+    // Pausing first guarantees a clean seekTo+play restart after the mic is ready.
+    const eng = getEngine();
+    recordingStartPos = eng.getCurrentTime();
+    eng.pause();
+
     const rec = getRecorder();
     try {
       await rec.init(get().selectedDeviceId);
@@ -284,13 +291,50 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const devices = await navigator.mediaDevices.enumerateDevices();
       set({ audioDevices: devices.filter((d) => d.kind === "audioinput") });
     } catch (e) {
+      eng.setInteract(true);
       throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
     }
 
-    const eng = getEngine();
+    // After getUserMedia, Windows may switch the "default" audio endpoint to the
+    // Communications device. Explicitly pin output to a non-Communications device
+    // so the singer hears the instrumental through the regular headphone output.
+    // After getUserMedia Windows may switch the "Default" audio alias to the
+    // Communications endpoint, so sinkId="" routes to the wrong device.
+    // Identify the real hardware output by:
+    //   1. excluding Default/Communications aliases and virtual (Steam) devices
+    //   2. preferring the device that shares an interface token with the selected mic
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    const outputs = allDevices.filter((d) => d.kind === "audiooutput");
+    const selectedInputLabel = (
+      allDevices.find(
+        (d) => d.kind === "audioinput" && d.deviceId === get().selectedDeviceId,
+      )?.label ?? ""
+    ).toUpperCase();
+
+    const realOutputs = outputs.filter(
+      (d) =>
+        !d.label.startsWith("Default -") &&
+        !d.label.startsWith("Communications -") &&
+        !d.label.toLowerCase().includes("steam"),
+    );
+    const matchedOutput =
+      realOutputs.find((d) =>
+        d.label
+          .toUpperCase()
+          .split(/\W+/)
+          .some((token) => token.length >= 4 && selectedInputLabel.includes(token)),
+      ) ?? realOutputs[0];
+
+    const outputId = get().selectedOutputDeviceId ?? matchedOutput?.deviceId ?? "";
+    try {
+      await eng.setOutputDevice(outputId);
+    } catch (e) {
+      console.warn("[recording] setOutputDevice failed:", e);
+    }
+
     eng.setVocalsVolume(0);
     eng.setInteract(false);
-    recordingStartPos = eng.getCurrentTime();
+    eng.seekTo(recordingStartPos);
     eng.play();
     rec.start();
 
@@ -309,6 +353,12 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     try {
       const blob = await rec.stop();
 
+      // Release mic tracks so Windows exits communication mode and restores
+      // the default audio endpoint back to the regular speakers output.
+      rec.releaseStream();
+      // Restore output routing to the user's selection (or system default).
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
+
       // Convert blob to byte array for Tauri
       const arrayBuffer = await blob.arrayBuffer();
       const audioData = Array.from(new Uint8Array(arrayBuffer));
@@ -318,16 +368,28 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       // Restore vocals volume
       eng.setVocalsVolume(get().vocalsVolume);
 
+      // Auto-select the new take and switch to take mode so playback
+      // immediately plays the recorded audio instead of the original vocals.
       set((state) => ({
         isRecording: false,
         isPlaying: false,
         currentTime: 0,
         takes: [...state.takes, take],
+        activeTakeId: take.id,
+        abMode: "take",
+        vocalsLoading: true,
       }));
+
+      try {
+        await eng.loadVocalsFromPath(take.filepath, take.startPosition);
+      } finally {
+        set({ vocalsLoading: false });
+      }
     } catch (e) {
-      // Ensure UI is reset even if save fails
+      rec.releaseStream();
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
       eng.setVocalsVolume(get().vocalsVolume);
-      set({ isRecording: false, isPlaying: false, currentTime: 0 });
+      set({ isRecording: false, isPlaying: false, currentTime: 0, vocalsLoading: false });
       throw e;
     }
   },
