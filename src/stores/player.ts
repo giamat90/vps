@@ -47,8 +47,7 @@ interface PlayerState {
   isRecording: boolean;
   takes: Take[];
   activeTakeId: string | null;
-  abMode: "original" | "take";
-  vocalsLoading: boolean;
+  takeVolume: number;
 }
 
 interface PlayerActions {
@@ -82,7 +81,7 @@ interface PlayerActions {
   fetchTakes: () => Promise<void>;
   deleteTake: (takeId: string) => Promise<void>;
   setActiveTake: (takeId: string) => void;
-  setABMode: (mode: "original" | "take") => Promise<void>;
+  setTakeVolume: (v: number) => void;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -105,8 +104,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   isRecording: false,
   takes: [],
   activeTakeId: null,
-  abMode: "original",
-  vocalsLoading: false,
+  takeVolume: 1.0,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -135,7 +133,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isTransposing: false,
       isRecording: false,
       activeTakeId: null,
-      abMode: "original",
     });
   },
 
@@ -219,7 +216,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isRecording: false,
       takes: [],
       activeTakeId: null,
-      abMode: "original",
     });
   },
 
@@ -364,27 +360,18 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
       const take = await saveTake(song.id, audioData, recordingStartPos);
 
-      // Auto-select the new take and switch to take mode so playback
-      // immediately plays the recorded audio instead of the original vocals.
+      // Auto-select the new take — Waveform loads it into the take track.
       set((state) => ({
         isRecording: false,
         isPlaying: false,
         currentTime: 0,
         takes: [...state.takes, take],
         activeTakeId: take.id,
-        abMode: "take",
-        vocalsLoading: true,
       }));
-
-      try {
-        await eng.loadVocalsFromPath(take.filepath, take.startPosition);
-      } finally {
-        set({ vocalsLoading: false });
-      }
     } catch (e) {
       rec.releaseStream();
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
-      set({ isRecording: false, isPlaying: false, currentTime: 0, vocalsLoading: false });
+      set({ isRecording: false, isPlaying: false, currentTime: 0 });
       throw e;
     }
   },
@@ -403,7 +390,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set((state) => ({
       takes: state.takes.filter((t) => t.id !== takeId),
       activeTakeId: activeTakeId === takeId ? null : activeTakeId,
-      abMode: activeTakeId === takeId ? "original" : state.abMode,
     }));
   },
 
@@ -411,22 +397,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set({ activeTakeId: takeId });
   },
 
-  setABMode: async (mode) => {
-    const { activeTakeId, song } = get();
-    const eng = getEngine();
-    set({ abMode: mode, vocalsLoading: true });
-    try {
-      if (mode === "take" && activeTakeId && song) {
-        const take = get().takes.find((t) => t.id === activeTakeId);
-        if (take) await eng.loadVocalsFromPath(take.filepath, take.startPosition);
-      } else if (mode === "original" && song) {
-        await eng.loadVocalsFromPath(
-          song.directory.replace(/\\/g, "/") + "/vocals.wav",
-          0,
-        );
-      }
-    } finally {
-      set({ vocalsLoading: false });
-    }
+  setTakeVolume: (v) => {
+    getEngine().setTakeVolume(v);
+    set({ takeVolume: v });
   },
 }));

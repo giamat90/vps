@@ -7,6 +7,7 @@ export type FinishCallback = () => void;
 export class AudioEngine {
   vocals: WaveSurfer | null = null;
   instrumental: WaveSurfer | null = null;
+  take: WaveSurfer | null = null;
   private _duration = 0;
   private _isPlaying = false;
   private _loopStart: number | null = null;
@@ -20,6 +21,9 @@ export class AudioEngine {
   private _vocalsOffset = 0;
   // Duration of the vocals/take file (may differ from _duration for partial takes)
   private _vocalsDuration = 0;
+  // Take track offset and duration
+  private _takeOffset = 0;
+  private _takeDuration = 0;
 
   async load(
     songDir: string,
@@ -97,8 +101,9 @@ export class AudioEngine {
     });
 
     this.instrumental.on("interaction", (newTime) => {
-      // Map instrumental song time → vocals file time, accounting for start offset
+      // Map instrumental song time → vocals/take file time, accounting for start offset
       this._seekVocals(newTime);
+      this._seekTake(newTime);
     });
 
     // Finish fires on the instrumental so partial takes don't prematurely end playback
@@ -113,6 +118,7 @@ export class AudioEngine {
     if (!this.vocals || !this.instrumental) return;
     this.vocals.play();
     this.instrumental.play();
+    this.take?.play();
     this._isPlaying = true;
     this._startTimeUpdate();
   }
@@ -121,6 +127,7 @@ export class AudioEngine {
     if (!this.vocals || !this.instrumental) return;
     this.vocals.pause();
     this.instrumental.pause();
+    this.take?.pause();
     this._isPlaying = false;
     this._stopTimeUpdate();
   }
@@ -143,6 +150,7 @@ export class AudioEngine {
     const instrProgress = Math.max(0, Math.min(1, time / this._duration));
     this.instrumental.seekTo(instrProgress);
     this._seekVocals(time);
+    this._seekTake(time);
   }
 
   // Seek the vocals/take to the position that corresponds to the given song time.
@@ -151,6 +159,13 @@ export class AudioEngine {
     const dur = this._vocalsDuration > 0 ? this._vocalsDuration : this._duration;
     const vocalsTime = Math.max(0, instrTime - this._vocalsOffset);
     this.vocals.seekTo(Math.min(1, vocalsTime / dur));
+  }
+
+  private _seekTake(instrTime: number): void {
+    if (!this.take) return;
+    const dur = this._takeDuration > 0 ? this._takeDuration : this._duration;
+    const takeTime = Math.max(0, instrTime - this._takeOffset);
+    this.take.seekTo(Math.min(1, takeTime / dur));
   }
 
   setPlaybackRate(rate: number): void {
@@ -208,6 +223,61 @@ export class AudioEngine {
     }
   }
 
+  async loadTakeTrack(filePath: string, container: HTMLElement, startOffset = 0): Promise<void> {
+    this.take?.destroy();
+    this.take = null;
+
+    const wasPlaying = this._isPlaying;
+    const url = convertFileSrc(filePath.replace(/\\/g, "/"));
+
+    this.take = WaveSurfer.create({
+      height: 80,
+      waveColor: "#ff8c1e",
+      progressColor: "#ff8c1e",
+      cursorColor: "#ff8c1e",
+      cursorWidth: 2,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      normalize: true,
+      interact: true,
+      container,
+      url,
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const unsubReady = this.take!.on("ready", () => { unsubReady(); unsubError(); resolve(); });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const unsubError = this.take!.on("error", (err: any) => { unsubReady(); unsubError(); reject(new Error(err?.message ?? String(err))); });
+    });
+
+    this._takeOffset = startOffset;
+    this._takeDuration = this.take.getDuration();
+
+    this.take.on("interaction", (newTime) => {
+      const instrTime = newTime + this._takeOffset;
+      const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
+      this.instrumental?.seekTo(instrProgress);
+      this._seekVocals(instrTime);
+    });
+
+    if (this.instrumental) {
+      this._seekTake(this.instrumental.getCurrentTime());
+      if (wasPlaying) this.take.play();
+    }
+  }
+
+  setTakeVolume(volume: number): void {
+    this.take?.setVolume(volume);
+  }
+
+  clearTakeTrack(): void {
+    this.take?.destroy();
+    this.take = null;
+    this._takeOffset = 0;
+    this._takeDuration = 0;
+  }
+
   loadInstrumentalFromPath(filePath: string): void {
     if (!this.instrumental) return;
     const url = convertFileSrc(filePath.replace(/\\/g, "/"));
@@ -249,12 +319,16 @@ export class AudioEngine {
     this._stopTimeUpdate();
     this.vocals?.destroy();
     this.instrumental?.destroy();
+    this.take?.destroy();
     this.vocals = null;
     this.instrumental = null;
+    this.take = null;
     this._isPlaying = false;
     this._duration = 0;
     this._vocalsOffset = 0;
     this._vocalsDuration = 0;
+    this._takeOffset = 0;
+    this._takeDuration = 0;
   }
 
   private _startTimeUpdate(): void {
