@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine } from "../../stores/player";
+import { getEngine, usePlayerStore } from "../../stores/player";
 import { frequencyToMidi } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 
@@ -61,6 +61,7 @@ function drawKeyboard(
   layout: KeyLayout,
   songMidi: number | null,
   takeMidi: number | null,
+  liveMidi: number | null,
 ): void {
   const blackH = H * 0.62;
   const fontSize = Math.max(8, H * 0.18);
@@ -70,7 +71,8 @@ function drawKeyboard(
     if (key.isBlack) continue;
     const isSong = midi === songMidi;
     const isTake = midi === takeMidi;
-    ctx.fillStyle = isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
+    const isLive = midi === liveMidi;
+    ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
     ctx.fillRect(key.x + 0.5, 0, key.w - 1, H);
     // Divider
     ctx.fillStyle = "#33334a";
@@ -78,7 +80,7 @@ function drawKeyboard(
     // C label
     if ((midi % 12) === 0) {
       const octave = Math.floor(midi / 12) - 1;
-      ctx.fillStyle = isSong || isTake ? "#fff" : "#666";
+      ctx.fillStyle = isSong || isTake || isLive ? "#fff" : "#666";
       ctx.font = `${fontSize}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
@@ -91,17 +93,20 @@ function drawKeyboard(
     if (!key.isBlack) continue;
     const isSong = midi === songMidi;
     const isTake = midi === takeMidi;
-    ctx.fillStyle = isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1a1a2e";
+    const isLive = midi === liveMidi;
+    ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1a1a2e";
     ctx.fillRect(key.x, 0, key.w, blackH);
   }
 }
 
 export default function PianoKeyboard() {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const songPitch  = useAnalysisStore((s) => s.songPitch);
-  const takePitch  = useAnalysisStore((s) => s.takePitch);
-  const isLoaded   = useAnalysisStore((s) => s.isLoaded);
-  const drawRef    = useRef<() => void>(() => {});
+  const canvasRef   = useRef<HTMLCanvasElement>(null);
+  const songPitch   = useAnalysisStore((s) => s.songPitch);
+  const takePitch   = useAnalysisStore((s) => s.takePitch);
+  const livePitch   = useAnalysisStore((s) => s.livePitch);
+  const isLoaded    = useAnalysisStore((s) => s.isLoaded);
+  const isRecording = usePlayerStore((s) => s.isRecording);
+  const drawRef     = useRef<() => void>(() => {});
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -124,11 +129,12 @@ export default function PianoKeyboard() {
       const t        = getEngine().getCurrentTime();
       const songMidi = getCurrentMidi(songPitch, t);
       const takeMidi = getCurrentMidi(takePitch, t);
-      drawKeyboard(ctx, H, layout, songMidi, takeMidi);
+      const liveMidi = getCurrentMidi(livePitch, t);
+      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi);
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, isLoaded]);
+  }, [songPitch, takePitch, livePitch, isLoaded]);
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -157,6 +163,12 @@ export default function PianoKeyboard() {
             <>
               <span className="legend-dot legend-dot--take" />
               <span>Your voice</span>
+            </>
+          )}
+          {isRecording && (
+            <>
+              <span className="legend-dot legend-dot--live" />
+              <span>Live</span>
             </>
           )}
         </div>
