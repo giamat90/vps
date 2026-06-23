@@ -8,6 +8,8 @@ export class AudioEngine {
   vocals: WaveSurfer | null = null;
   instrumental: WaveSurfer | null = null;
   take: WaveSurfer | null = null;
+  private _monitorCtx: AudioContext | null = null;
+  private _monitorGain: GainNode | null = null;
   private _duration = 0;
   private _isPlaying = false;
   private _loopStart: number | null = null;
@@ -177,7 +179,27 @@ export class AudioEngine {
     await Promise.all([
       this.vocals?.setSinkId(deviceId),
       this.instrumental?.setSinkId(deviceId),
+      this.take?.setSinkId(deviceId),
     ]);
+  }
+
+  startMonitoring(stream: MediaStream, volume = 0): void {
+    this.stopMonitoring();
+    this._monitorCtx  = new AudioContext();
+    this._monitorGain = this._monitorCtx.createGain();
+    this._monitorGain.gain.value = volume;
+    this._monitorCtx.createMediaStreamSource(stream).connect(this._monitorGain);
+    this._monitorGain.connect(this._monitorCtx.destination);
+  }
+
+  stopMonitoring(): void {
+    this._monitorCtx?.close();
+    this._monitorCtx  = null;
+    this._monitorGain = null;
+  }
+
+  setMonitorVolume(volume: number): void {
+    if (this._monitorGain) this._monitorGain.gain.value = volume;
   }
 
   setVocalsVolume(volume: number): void {
@@ -254,6 +276,13 @@ export class AudioEngine {
     this._takeOffset = startOffset;
     this._takeDuration = this.take.getDuration();
 
+    // Constrain the container to the correct time window so the waveform
+    // lines up visually with the other tracks (vocals, instrumental).
+    if (this._duration > 0 && this._takeDuration > 0) {
+      container.style.marginLeft = `${(startOffset / this._duration) * 100}%`;
+      container.style.width     = `${(this._takeDuration / this._duration) * 100}%`;
+    }
+
     this.take.on("interaction", (newTime) => {
       const instrTime = newTime + this._takeOffset;
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
@@ -316,6 +345,7 @@ export class AudioEngine {
   }
 
   destroy(): void {
+    this.stopMonitoring();
     this._stopTimeUpdate();
     this.vocals?.destroy();
     this.instrumental?.destroy();

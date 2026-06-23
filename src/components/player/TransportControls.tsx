@@ -16,11 +16,13 @@ function TransportControls() {
   const isRecording          = usePlayerStore((s) => s.isRecording);
   const vocalsVolume         = usePlayerStore((s) => s.vocalsVolume);
   const instrumentalVolume   = usePlayerStore((s) => s.instrumentalVolume);
-  const takeVolume           = usePlayerStore((s) => s.takeVolume);
-  const activeTakeId         = usePlayerStore((s) => s.activeTakeId);
-  const setVocalsVolume      = usePlayerStore((s) => s.setVocalsVolume);
+  const takeVolume            = usePlayerStore((s) => s.takeVolume);
+  const monitorVolume         = usePlayerStore((s) => s.monitorVolume);
+  const activeTakeId          = usePlayerStore((s) => s.activeTakeId);
+  const setVocalsVolume       = usePlayerStore((s) => s.setVocalsVolume);
   const setInstrumentalVolume = usePlayerStore((s) => s.setInstrumentalVolume);
-  const setTakeVolume        = usePlayerStore((s) => s.setTakeVolume);
+  const setTakeVolume         = usePlayerStore((s) => s.setTakeVolume);
+  const setMonitorVolume      = usePlayerStore((s) => s.setMonitorVolume);
 
   return (
     <div className="transport">
@@ -73,6 +75,19 @@ function TransportControls() {
               step={0.05}
               value={takeVolume}
               onChange={(e) => setTakeVolume(Number(e.target.value))}
+            />
+          </label>
+        )}
+        {isRecording && (
+          <label className="transport__vol">
+            <span style={{ color: "#a0a0b0" }}>Mic Mon.</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.05}
+              value={monitorVolume}
+              onChange={(e) => setMonitorVolume(Number(e.target.value))}
             />
           </label>
         )}

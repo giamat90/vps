@@ -63,7 +63,9 @@ function Waveform({ song }: WaveformProps) {
       {activeTakeId && (
         <div className="waveform__track">
           <span className="waveform__label waveform__label--take">Take</span>
-          <div className="waveform__container" ref={takeRef} />
+          <div className="waveform__take-rail">
+            <div ref={takeRef} />
+          </div>
         </div>
       )}
     </div>
