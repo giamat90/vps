@@ -48,7 +48,6 @@ interface PlayerState {
   takes: Take[];
   activeTakeId: string | null;
   takeVolume: number;
-  monitorVolume: number;
 }
 
 interface PlayerActions {
@@ -83,7 +82,6 @@ interface PlayerActions {
   deleteTake: (takeId: string) => Promise<void>;
   setActiveTake: (takeId: string) => void;
   setTakeVolume: (v: number) => void;
-  setMonitorVolume: (v: number) => void;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -107,7 +105,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   takes: [],
   activeTakeId: null,
   takeVolume: 1.0,
-  monitorVolume: 0,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -331,12 +328,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       console.warn("[recording] setOutputDevice failed:", e);
     }
 
-    // Start mic monitoring so the singer can hear themselves.
-    // Volume defaults to 0 (off) — user can raise it via the slider.
-    // If the interface has hardware direct-monitoring, keep this at 0.
-    const micStream = rec.getStream();
-    if (micStream) eng.startMonitoring(micStream, get().monitorVolume);
-
     eng.setInteract(false);
     eng.seekTo(recordingStartPos);
     eng.play();
@@ -359,7 +350,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
       // Release mic tracks so Windows exits communication mode and restores
       // the default audio endpoint back to the regular speakers output.
-      eng.stopMonitoring();
       rec.releaseStream();
       // Restore output routing to the user's selection (or system default).
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
@@ -379,7 +369,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
         activeTakeId: take.id,
       }));
     } catch (e) {
-      eng.stopMonitoring();
       rec.releaseStream();
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
       set({ isRecording: false, isPlaying: false, currentTime: 0 });
@@ -411,10 +400,5 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   setTakeVolume: (v) => {
     getEngine().setTakeVolume(v);
     set({ takeVolume: v });
-  },
-
-  setMonitorVolume: (v) => {
-    getEngine().setMonitorVolume(v);
-    set({ monitorVolume: v });
   },
 }));

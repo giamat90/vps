@@ -8,8 +8,6 @@ export class AudioEngine {
   vocals: WaveSurfer | null = null;
   instrumental: WaveSurfer | null = null;
   take: WaveSurfer | null = null;
-  private _monitorCtx: AudioContext | null = null;
-  private _monitorGain: GainNode | null = null;
   private _duration = 0;
   private _isPlaying = false;
   private _loopStart: number | null = null;
@@ -183,25 +181,6 @@ export class AudioEngine {
     ]);
   }
 
-  startMonitoring(stream: MediaStream, volume = 0): void {
-    this.stopMonitoring();
-    this._monitorCtx  = new AudioContext();
-    this._monitorGain = this._monitorCtx.createGain();
-    this._monitorGain.gain.value = volume;
-    this._monitorCtx.createMediaStreamSource(stream).connect(this._monitorGain);
-    this._monitorGain.connect(this._monitorCtx.destination);
-  }
-
-  stopMonitoring(): void {
-    this._monitorCtx?.close();
-    this._monitorCtx  = null;
-    this._monitorGain = null;
-  }
-
-  setMonitorVolume(volume: number): void {
-    if (this._monitorGain) this._monitorGain.gain.value = volume;
-  }
-
   setVocalsVolume(volume: number): void {
     this.vocals?.setVolume(volume);
   }
@@ -273,14 +252,21 @@ export class AudioEngine {
       const unsubError = this.take!.on("error", (err: any) => { unsubReady(); unsubError(); reject(new Error(err?.message ?? String(err))); });
     });
 
-    this._takeOffset = startOffset;
+    this._takeOffset   = startOffset;
     this._takeDuration = this.take.getDuration();
 
     // Constrain the container to the correct time window so the waveform
     // lines up visually with the other tracks (vocals, instrumental).
+    // Read railWidth BEFORE resizing so the ratio calculation uses the full width.
+    // setOptions({ width }) forces WaveSurfer to redraw — more reliable than
+    // relying on its ResizeObserver to pick up the CSS change.
     if (this._duration > 0 && this._takeDuration > 0) {
-      container.style.marginLeft = `${(startOffset / this._duration) * 100}%`;
-      container.style.width     = `${(this._takeDuration / this._duration) * 100}%`;
+      const railWidth = container.offsetWidth;
+      const widthPx   = Math.round((this._takeDuration / this._duration) * railWidth);
+      const marginPx  = Math.round((startOffset        / this._duration) * railWidth);
+      container.style.marginLeft = `${marginPx}px`;
+      container.style.width      = `${widthPx}px`;
+      this.take.setOptions({ width: widthPx });
     }
 
     this.take.on("interaction", (newTime) => {
@@ -345,7 +331,6 @@ export class AudioEngine {
   }
 
   destroy(): void {
-    this.stopMonitoring();
     this._stopTimeUpdate();
     this.vocals?.destroy();
     this.instrumental?.destroy();
