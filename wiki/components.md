@@ -10,7 +10,7 @@ App
 │   ├── DropZone          — drag-and-drop audio file import
 │   └── YouTubeImport     — paste-and-import YouTube URL
 └── player/
-    ├── Waveform           — dual waveform display (vocals + instrumental)
+    ├── Waveform           — 3-track waveform display (vocals + instrumental + take)
     ├── TransportControls  — play/pause/stop + volume sliders
     ├── TempoControl       — playback rate control
     ├── KeyTranspose       — semitone transpose UI
@@ -18,11 +18,11 @@ App
 recording/
     ├── RecordButton       — start/stop recording
     ├── MicSelector        — microphone input source picker
-    ├── TakeList           — list of recorded takes with delete
-    └── ABToggle           — A/B switch between original vocals and a take
+    └── TakeList           — list of recorded takes with delete
 analysis/
     ├── DualTuner          — real-time pitch tuner (reference vs. singer)
-    ├── PianoRoll          — pitch curve overlaid on a piano roll grid
+    ├── PianoKeyboard      — horizontal piano key strip with live/song/take highlight
+    ├── PianoRoll          — scrolling pitch ribbon display (song + take + live)
     ├── VibratoCard        — vibrato rate / depth / regularity summary
     ├── TimingChart        — timing deviation chart (user vs. reference onsets)
     └── DynamicsCurve      — RMS dynamics over time
@@ -77,9 +77,8 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `isTransposing` | `boolean` | Pitch-shift in progress |
 | `isRecording` | `boolean` | Recording in progress |
 | `takes` | `Take[]` | All takes for current song |
-| `activeTakeId` | `string \| null` | Selected take for A/B comparison |
-| `abMode` | `"original" \| "take"` | A/B playback mode |
-| `vocalsLoading` | `boolean` | Vocals track reloading (disables play button) |
+| `activeTakeId` | `string \| null` | Selected take (loads it as the take track) |
+| `takeVolume` | `number` | 0–1 volume for the take track |
 | `audioDevices` | `MediaDeviceInfo[]` | Available microphone inputs |
 | `selectedDeviceId` | `string \| null` | Selected mic device ID |
 | `outputDevices` | `MediaDeviceInfo[]` | Available audio outputs |
@@ -99,15 +98,19 @@ Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
 <button onClick={isRecording ? () => void stopRecording() : stop}>
 ```
 
-Play button is disabled while `vocalsLoading` is true (prevents double-start during take/transpose reload).
+An orange **Take** volume slider appears when `activeTakeId` is set.
 
 ### RecordButton
 
 Starts recording via `startRecording()`. If recording is already active, clicking stops via `stopRecording()`. Displays a pulsing red indicator while `isRecording` is true.
 
-### ABToggle
+### Waveform
 
-Switches `abMode` between `"original"` and `"take"`. Requires `activeTakeId` to be set (done via `TakeList`). The `setABMode` action is async — it awaits `loadVocalsFromPath` before returning.
+Renders up to three stacked WaveSurfer tracks:
+
+1. **Vocals** — always visible; original vocals track
+2. **Instrumental** — always visible; backing track and time reference
+3. **Take** — conditionally rendered when `activeTakeId` is set; orange waveform positioned at the correct time offset and proportional width using `eng.loadTakeTrack()`
 
 ### MicSelector / OutputSelector
 
@@ -128,16 +131,18 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 │  C5 key label        │                                  │
 │  white/black keys    │  song ribbon (blue)              │
 │                      │  take ribbon (red)               │
+│                      │  live ribbon (orange)            │
 │                      │       ╎ playhead                 │
 ```
 
 **Drawing passes (in order):**
 1. Lane backgrounds — black-key rows slightly darker, C-octave boundaries marked with a brighter rule
-2. Song pitch ribbon — `rgba(74,158,255,0.88)` thick polyline following the raw CREPE pitch (no snapping); line breaks on gaps > 80ms or confidence < 0.5
+2. Song pitch ribbon — `rgba(74,158,255,0.88)` thick polyline following SRH pitch data; line breaks on gaps > 80ms or confidence < 0.5
 3. Take pitch ribbon — `rgba(233,69,96,0.92)` same style, drawn over the song ribbon
-4. Playhead — dashed vertical line at canvas center
-5. Note label — current note name(s) shown in matching colors at top-left of the roll (e.g. "A4 G#4")
-6. Piano key strip — drawn last so it sits on top of any ribbon that bleeds into the left column
+4. Live pitch ribbon — `rgba(255,140,30,0.9)` drawn during recording from autocorrelation readings accumulated in `livePitch[]` (analysis store); disappears when recording stops
+5. Playhead — dashed vertical line at canvas center
+6. Note label — current note name(s) shown in matching colors at top-left of the roll (e.g. "A4 G#4")
+7. Piano key strip — drawn last so it sits on top of any ribbon that bleeds into the left column; key color priority: live (orange) > take (red) > song (blue)
 
 **Constants:** MIDI 45–84 (A2–C6, 40 semitones), 8-second window, `15rem` canvas height.
 
