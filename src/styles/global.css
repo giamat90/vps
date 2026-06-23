@@ -432,6 +432,15 @@ body,
   letter-spacing: 0.05em;
 }
 
+.waveform__label--take {
+  color: #ff8c1e;
+}
+
+.waveform__take-rail {
+  flex: 1;
+  min-width: 0;
+}
+
 .waveform__container {
   border-radius: 6px;
   overflow: hidden;

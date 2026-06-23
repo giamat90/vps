@@ -6,7 +6,6 @@ import KeyTranspose from "../components/player/KeyTranspose";
 import OutputSelector from "../components/player/OutputSelector";
 import RecordButton from "../components/recording/RecordButton";
 import MicSelector from "../components/recording/MicSelector";
-import ABToggle from "../components/recording/ABToggle";
 import TakeList from "../components/recording/TakeList";
 import PianoRoll from "../components/analysis/PianoRoll";
 import PianoKeyboard from "../components/analysis/PianoKeyboard";
@@ -85,7 +84,6 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
           </div>
         </div>
         <DualTuner />
-        <ABToggle />
       </header>
 
       <div className="practice-room__body">
