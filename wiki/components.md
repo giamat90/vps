@@ -11,13 +11,13 @@ App
 │   └── YouTubeImport     — paste-and-import YouTube URL
 └── player/
     ├── Waveform           — 3-track waveform display (vocals + instrumental + take)
+    ├── TimeRuler          — canvas time ruler with drag-to-select punch region
     ├── TransportControls  — play/pause/stop + volume sliders
     ├── TempoControl       — playback rate control
     ├── KeyTranspose       — semitone transpose UI
     └── OutputSelector     — audio output device picker
 recording/
     ├── RecordButton       — start/stop recording
-    ├── PunchRegion        — punch-in / punch-out time range selector
     ├── MicSelector        — microphone input source picker
     └── TakeList           — list of recorded takes with delete
 analysis/
@@ -107,9 +107,13 @@ An orange **Take** volume slider appears when `activeTakeId` is set.
 
 Starts recording via `startRecording()`. If recording is already active, clicking stops via `stopRecording()`. Displays a pulsing red indicator while `isRecording` is true.
 
+### TimeRuler
+
+Canvas strip rendered above the waveform tracks. Shows time ticks at adaptive intervals (targeting ≥ 80 px per tick). Drag to define the punch region; click without dragging (drag distance < 0.5 s) to clear it. The selected region is highlighted in red on the ruler and as a translucent overlay on each waveform track via `PunchOverlay`. Disabled (cursor: default) during recording.
+
 ### Waveform
 
-Renders up to three stacked WaveSurfer tracks:
+Renders `TimeRuler` at the top, then up to three stacked WaveSurfer tracks each wrapped in `.waveform__track-body` (position: relative) so `PunchOverlay` can be absolutely positioned over them:
 
 1. **Vocals** — always visible; original vocals track
 2. **Instrumental** — always visible; backing track and time reference

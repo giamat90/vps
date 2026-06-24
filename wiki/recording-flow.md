@@ -8,15 +8,14 @@ Recording is initiated by the user clicking the record button. The flow is caref
 
 ## Punch-in / Punch-out Region
 
-The `PunchRegion` component lets the singer bound the recording to a sub-interval of the song before pressing Record. Controls are hidden while recording to prevent mid-take edits.
+The `TimeRuler` (canvas strip above the waveforms) doubles as the punch region selector:
 
-| Control | Action |
+| Gesture | Action |
 |---------|--------|
-| **In** input (MM:SS) | Set the take start position; `startRecording` seeks here |
-| **← (In)** button | Capture current playhead as punch-in point |
-| **Out** input (MM:SS) | Recording auto-stops when playback reaches this time |
-| **← (Out)** button | Capture current playhead as punch-out point |
-| **✕** | Clear both points (revert to full-song recording) |
+| **Click + drag** on ruler | Define punch region; red band appears on ruler and translucent overlay on all tracks |
+| **Click** (< 0.5 s drag) | Clear both punch points |
+
+The selected region is stored as `punchIn` / `punchOut` (seconds) in the player store. The ruler and track overlays are read-only during recording.
 
 Punch state lives in the player store as `punchIn: number | null` and `punchOut: number | null`. Both are cleared to `null` when a new song is loaded; they are not persisted to disk.
 
