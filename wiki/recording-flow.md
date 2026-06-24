@@ -8,16 +8,39 @@ Recording is initiated by the user clicking the record button. The flow is caref
 
 ## Punch-in / Punch-out Region
 
-The `TimeRuler` (canvas strip above the waveforms) doubles as the punch region selector:
+The `TimeRuler` (canvas strip above the waveforms) is the punch region selector:
 
 | Gesture | Action |
 |---------|--------|
-| **Click + drag** on ruler | Define punch region; red band appears on ruler and translucent overlay on all tracks |
-| **Click** (< 0.5 s drag) | Clear both punch points |
+| **Click + drag** on empty ruler | Draw a new punch region |
+| **Click + drag on In handle** (±8 px) | Move only the In boundary; Out stays fixed |
+| **Click + drag on Out handle** (±8 px) | Move only the Out boundary; In stays fixed |
+| **Click** (drag < 0.5 s) | Clear the punch region and reset loop toggle |
+| **⟳ button** (right edge of ruler) | Toggle region loop on/off |
 
-The selected region is stored as `punchIn` / `punchOut` (seconds) in the player store. The ruler and track overlays are read-only during recording.
+The cursor changes to `ew-resize` when hovering over a handle and `crosshair` elsewhere. The ruler and track overlays are read-only during recording.
 
-Punch state lives in the player store as `punchIn: number | null` and `punchOut: number | null`. Both are cleared to `null` when a new song is loaded; they are not persisted to disk.
+Punch state in the player store (memory only, not persisted):
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `punchIn` | `number \| null` | Region start (seconds) |
+| `punchOut` | `number \| null` | Region end (seconds) |
+| `punchLoop` | `boolean` | Loop the region during playback |
+
+### Playback with a Punch Region
+
+When `punchIn` is set, pressing **Play** always seeks to `punchIn` first (`togglePlay` routes through the store `play()` action so the seek always applies).
+
+`onTimeUpdate` handles what happens when `punchOut` is reached:
+
+```ts
+if (punchOut !== null && time >= punchOut) {
+  if (isRecording)       → stopRecording()           // save take
+  else if (punchLoop)    → eng.seekTo(punchIn)        // loop: jump back
+  else                   → pause + seekTo(punchIn)    // stop and rewind
+}
+```
 
 ## startRecording Sequence
 
@@ -37,17 +60,9 @@ Punch state lives in the player store as `punchIn: number | null` and `punchOut:
 
 The singer hears **both** original vocals and instrumental during recording — volumes are individually controlled via the Vocals and Instrumental sliders. There is no mic monitoring passthrough (hardware direct-monitoring on the audio interface is recommended instead).
 
-### Punch-out Auto-stop
+### Punch-out Boundary Check
 
-`loadSong` wires an `onTimeUpdate` check that fires at ~30 fps:
-
-```ts
-if (isRecording && punchOut !== null && time >= punchOut) {
-  stopRecording();
-}
-```
-
-This is the same mechanism as the song-end auto-stop (`onFinish`), and `eng.stop()` inside `stopRecording` halts the rAF loop so the check cannot double-fire.
+`loadSong` wires an `onTimeUpdate` check at ~30 fps. `eng.stop()` inside `stopRecording` halts the rAF loop so the check cannot double-fire after a recording stop. For the playback-loop case, `eng.seekTo` is synchronous and the next `onTimeUpdate` tick fires at the new position.
 
 ## stopRecording Sequence
 

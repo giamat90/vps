@@ -80,8 +80,9 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `takes` | `Take[]` | All takes for current song |
 | `activeTakeId` | `string \| null` | Selected take (loads it as the take track) |
 | `takeVolume` | `number` | 0–1 volume for the take track |
-| `punchIn` | `number \| null` | Punch-in time (seconds); null = use playhead |
-| `punchOut` | `number \| null` | Punch-out time (seconds); null = stop manually |
+| `punchIn` | `number \| null` | Region start (seconds); play always seeks here when set |
+| `punchOut` | `number \| null` | Region end (seconds); playback stops or loops here |
+| `punchLoop` | `boolean` | Loop the region during playback (cleared with the region) |
 | `audioDevices` | `MediaDeviceInfo[]` | Available microphone inputs |
 | `selectedDeviceId` | `string \| null` | Selected mic device ID |
 | `outputDevices` | `MediaDeviceInfo[]` | Available audio outputs |
@@ -109,7 +110,15 @@ Starts recording via `startRecording()`. If recording is already active, clickin
 
 ### TimeRuler
 
-Canvas strip rendered above the waveform tracks. Shows time ticks at adaptive intervals (targeting ≥ 80 px per tick). Drag to define the punch region; click without dragging (drag distance < 0.5 s) to clear it. The selected region is highlighted in red on the ruler and as a translucent overlay on each waveform track via `PunchOverlay`. Disabled (cursor: default) during recording.
+Canvas strip above the waveform tracks. Shows time ticks at adaptive intervals (≥ 80 px target). All ruler interaction is disabled during recording.
+
+**Interactions:**
+- **Click + drag** on empty space → draw a new punch region
+- **Hover / drag near In or Out handle** (±8 px) → cursor becomes `ew-resize`; drag moves only that boundary, the other stays fixed
+- **Click** (< 0.5 s drag) → clear punch region and reset loop toggle
+- **⟳ button** (appears at right edge when region is set) → toggle `punchLoop`; red when active
+
+The region is drawn as a red band on the canvas with I-beam caps at the handles. Each waveform track also shows a translucent `PunchOverlay` div (positioned via `left` / `width` percentages of the track).
 
 ### Waveform
 
