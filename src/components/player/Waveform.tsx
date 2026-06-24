@@ -1,9 +1,26 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore, getEngine } from "../../stores/player";
+import TimeRuler from "./TimeRuler";
 import type { Song } from "../../lib/types";
 
 interface WaveformProps {
   song: Song;
+}
+
+function PunchOverlay() {
+  const punchIn  = usePlayerStore((s) => s.punchIn);
+  const punchOut = usePlayerStore((s) => s.punchOut);
+  const duration = usePlayerStore((s) => s.duration);
+  if (punchIn === null || punchOut === null || duration <= 0) return null;
+  return (
+    <div
+      className="waveform__punch-overlay"
+      style={{
+        left:  `${(punchIn  / duration) * 100}%`,
+        width: `${((punchOut - punchIn) / duration) * 100}%`,
+      }}
+    />
+  );
 }
 
 function Waveform({ song }: WaveformProps) {
@@ -52,19 +69,33 @@ function Waveform({ song }: WaveformProps) {
   return (
     <div className="waveform">
       {loadError && <div className="waveform__error">{loadError}</div>}
+
+      <TimeRuler />
+
       <div className="waveform__track">
         <span className="waveform__label">Vocals</span>
-        <div className="waveform__container" ref={vocalsRef} />
+        <div className="waveform__track-body">
+          <div className="waveform__container" ref={vocalsRef} />
+          <PunchOverlay />
+        </div>
       </div>
+
       <div className="waveform__track">
         <span className="waveform__label">Instrumental</span>
-        <div className="waveform__container" ref={instrumentalRef} />
+        <div className="waveform__track-body">
+          <div className="waveform__container" ref={instrumentalRef} />
+          <PunchOverlay />
+        </div>
       </div>
+
       {activeTakeId && (
         <div className="waveform__track">
           <span className="waveform__label waveform__label--take">Take</span>
-          <div className="waveform__take-rail">
-            <div ref={takeRef} />
+          <div className="waveform__track-body">
+            <div className="waveform__take-rail">
+              <div ref={takeRef} />
+            </div>
+            <PunchOverlay />
           </div>
         </div>
       )}
