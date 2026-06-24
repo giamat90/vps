@@ -120,12 +120,20 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     await eng.load(song.directory, vocalsEl, instrumentalEl);
     eng.onTimeUpdate((time) => {
       set({ currentTime: time, isPlaying: eng.isPlaying });
-      // Auto-stop recording when punch-out point is reached
       const s = get();
-      if (s.isRecording && s.punchOut !== null && time >= s.punchOut) {
-        s.stopRecording().catch((e: unknown) =>
-          console.error("[player] punch-out auto-stop failed:", e)
-        );
+      if (s.punchOut !== null && time >= s.punchOut) {
+        if (s.isRecording) {
+          // Auto-stop recording at punch-out
+          s.stopRecording().catch((e: unknown) =>
+            console.error("[player] punch-out auto-stop failed:", e)
+          );
+        } else if (s.isPlaying) {
+          // Stop playback and rewind to punch-in
+          eng.pause();
+          const backTo = s.punchIn ?? 0;
+          eng.seekTo(backTo);
+          set({ isPlaying: false, currentTime: backTo });
+        }
       }
     });
     eng.onFinish(() => {
@@ -153,7 +161,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   play: () => {
-    getEngine().play();
+    const eng = getEngine();
+    const { punchIn } = get();
+    if (punchIn !== null) {
+      eng.seekTo(punchIn);
+      set({ currentTime: punchIn });
+    }
+    eng.play();
     set({ isPlaying: true });
   },
 
@@ -163,9 +177,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   togglePlay: () => {
-    const eng = getEngine();
-    eng.togglePlay();
-    set({ isPlaying: eng.isPlaying });
+    if (get().isPlaying) {
+      get().pause();
+    } else {
+      get().play();
+    }
   },
 
   stop: () => {

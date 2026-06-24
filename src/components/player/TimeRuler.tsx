@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef } from "react";
 import { usePlayerStore } from "../../stores/player";
 
+const HANDLE_HIT_PX = 8; // pixels around a handle boundary that counts as a hit
+
 function tickInterval(duration: number, widthPx: number): number {
-  // Target at least 80px between ticks
   const raw = (duration / widthPx) * 80;
   for (const n of [1, 2, 5, 10, 15, 30, 60, 120, 300, 600]) {
     if (n >= raw) return n;
@@ -16,6 +17,8 @@ function fmt(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
+type DragMode = "create" | "drag-in" | "drag-out";
+
 export default function TimeRuler() {
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const duration    = usePlayerStore((s) => s.duration);
@@ -26,7 +29,11 @@ export default function TimeRuler() {
   const setPunchOut = usePlayerStore((s) => s.setPunchOut);
   const clearPunch  = usePlayerStore((s) => s.clearPunch);
 
-  const drag = useRef<{ on: boolean; startT: number }>({ on: false, startT: 0 });
+  // anchorT: the fixed end when dragging a single handle
+  const drag = useRef<{ mode: DragMode | null; anchorT: number }>({
+    mode: null,
+    anchorT: 0,
+  });
 
   // ── drawing ──────────────────────────────────────────────────────────────
 
@@ -42,11 +49,10 @@ export default function TimeRuler() {
 
       const tX = (t: number) => (t / duration) * W;
 
-      // Background
       ctx.fillStyle = "#0d1b2e";
       ctx.fillRect(0, 0, W, H);
 
-      // Punch region
+      // Punch region band
       const inT  = overrideIn  !== undefined ? overrideIn  : punchIn;
       const outT = overrideOut !== undefined ? overrideOut : punchOut;
       if (inT !== null && outT !== null && outT > inT) {
@@ -54,17 +60,18 @@ export default function TimeRuler() {
         const x2 = tX(outT);
         ctx.fillStyle = "rgba(233,69,96,0.22)";
         ctx.fillRect(x1, 0, x2 - x1, H);
+        // Boundary lines
         ctx.strokeStyle = "rgba(233,69,96,0.85)";
         ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(x1, 0); ctx.lineTo(x1, H); ctx.stroke();
         ctx.beginPath(); ctx.moveTo(x2, 0); ctx.lineTo(x2, H); ctx.stroke();
-        // "I" markers at top
-        ctx.fillStyle = "rgba(233,69,96,0.85)";
-        ctx.fillRect(x1 - 1, 0, 3, 5);
-        ctx.fillRect(x2 - 1, 0, 3, 5);
+        // Top "I-beam" caps on the handles
+        ctx.fillStyle = "rgba(233,69,96,0.9)";
+        ctx.fillRect(x1 - 3, 0, 6, 4);
+        ctx.fillRect(x2 - 3, 0, 6, 4);
       }
 
-      // Ticks
+      // Time ticks
       const interval = tickInterval(duration, W);
       ctx.font = "10px monospace";
       for (let t = 0; t <= duration + 0.001; t += interval) {
@@ -82,7 +89,6 @@ export default function TimeRuler() {
         }
       }
 
-      // Bottom border
       ctx.strokeStyle = "#2a3a4e";
       ctx.lineWidth = 1;
       ctx.beginPath();
@@ -93,7 +99,8 @@ export default function TimeRuler() {
     [duration, punchIn, punchOut],
   );
 
-  // Resize observer — sync canvas pixel size to CSS size
+  // ── resize observer ───────────────────────────────────────────────────────
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -108,7 +115,6 @@ export default function TimeRuler() {
     return () => ro.disconnect();
   }, [draw]);
 
-  // Redraw when store state changes
   useEffect(() => { draw(); }, [draw]);
 
   // ── helpers ──────────────────────────────────────────────────────────────
@@ -119,40 +125,100 @@ export default function TimeRuler() {
     return Math.max(0, Math.min(duration, (offsetX / canvas.width) * duration));
   };
 
+  const setCursor = (c: string) => {
+    if (canvasRef.current) canvasRef.current.style.cursor = c;
+  };
+
+  // Determine which drag mode to start based on mouse position
+  const modeForOffset = (offsetX: number): DragMode => {
+    const canvas = canvasRef.current;
+    if (!canvas || punchIn === null || punchOut === null) return "create";
+    const W = canvas.width;
+    const x1 = (punchIn  / duration) * W;
+    const x2 = (punchOut / duration) * W;
+    if (Math.abs(offsetX - x1) <= HANDLE_HIT_PX) return "drag-in";
+    if (Math.abs(offsetX - x2) <= HANDLE_HIT_PX) return "drag-out";
+    return "create";
+  };
+
   // ── mouse handlers ───────────────────────────────────────────────────────
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isRecording || duration <= 0) return;
     e.preventDefault();
-    const t = xToTime(e.nativeEvent.offsetX);
-    drag.current = { on: true, startT: t };
-    draw(t, t);
-  };
+    const { offsetX } = e.nativeEvent;
+    const mode = modeForOffset(offsetX);
+    const t = xToTime(offsetX);
 
-  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!drag.current.on) return;
-    const t   = xToTime(e.nativeEvent.offsetX);
-    const inT  = Math.min(drag.current.startT, t);
-    const outT = Math.max(drag.current.startT, t);
-    draw(inT, outT);
-  };
-
-  const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!drag.current.on) return;
-    drag.current.on = false;
-    const t    = xToTime(e.nativeEvent.offsetX);
-    const inT  = Math.min(drag.current.startT, t);
-    const outT = Math.max(drag.current.startT, t);
-    if (outT - inT < 0.5) {
-      clearPunch();
+    if (mode === "drag-in") {
+      drag.current = { mode, anchorT: punchOut! };
+      setCursor("ew-resize");
+    } else if (mode === "drag-out") {
+      drag.current = { mode, anchorT: punchIn! };
+      setCursor("ew-resize");
     } else {
-      setPunchIn(Math.round(inT * 10) / 10);
-      setPunchOut(Math.round(outT * 10) / 10);
+      drag.current = { mode: "create", anchorT: t };
+      draw(t, t);
     }
   };
 
+  const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { offsetX } = e.nativeEvent;
+    const { mode, anchorT } = drag.current;
+    const t = xToTime(offsetX);
+
+    if (!mode) {
+      // Hover: update cursor to signal draggable handles
+      if (!isRecording && punchIn !== null && punchOut !== null) {
+        const m = modeForOffset(offsetX);
+        setCursor(m !== "create" ? "ew-resize" : "crosshair");
+      }
+      return;
+    }
+
+    if (mode === "drag-in") {
+      // In handle moves; out handle (anchorT) stays fixed
+      const newIn = Math.min(t, anchorT - 0.1);
+      draw(newIn, anchorT);
+    } else if (mode === "drag-out") {
+      const newOut = Math.max(t, anchorT + 0.1);
+      draw(anchorT, newOut);
+    } else {
+      // Creating a new region
+      draw(Math.min(anchorT, t), Math.max(anchorT, t));
+    }
+  };
+
+  const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const { mode, anchorT } = drag.current;
+    if (!mode) return;
+    drag.current.mode = null;
+
+    const t = xToTime(e.nativeEvent.offsetX);
+
+    if (mode === "drag-in") {
+      setPunchIn(Math.round(Math.min(t, anchorT - 0.1) * 10) / 10);
+    } else if (mode === "drag-out") {
+      setPunchOut(Math.round(Math.max(t, anchorT + 0.1) * 10) / 10);
+    } else {
+      // Create: commit or clear
+      const inT  = Math.min(anchorT, t);
+      const outT = Math.max(anchorT, t);
+      if (outT - inT < 0.5) {
+        clearPunch();
+      } else {
+        setPunchIn(Math.round(inT * 10) / 10);
+        setPunchOut(Math.round(outT * 10) / 10);
+      }
+    }
+
+    // Restore hover cursor
+    setCursor(isRecording || duration <= 0 ? "default" : "crosshair");
+  };
+
   const onMouseLeave = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (drag.current.on) onMouseUp(e);
+    if (drag.current.mode) onMouseUp(e);
+    else setCursor("default");
   };
 
   return (
