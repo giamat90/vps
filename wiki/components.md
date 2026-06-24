@@ -17,6 +17,7 @@ App
     └── OutputSelector     — audio output device picker
 recording/
     ├── RecordButton       — start/stop recording
+    ├── PunchRegion        — punch-in / punch-out time range selector
     ├── MicSelector        — microphone input source picker
     └── TakeList           — list of recorded takes with delete
 analysis/
@@ -79,6 +80,8 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `takes` | `Take[]` | All takes for current song |
 | `activeTakeId` | `string \| null` | Selected take (loads it as the take track) |
 | `takeVolume` | `number` | 0–1 volume for the take track |
+| `punchIn` | `number \| null` | Punch-in time (seconds); null = use playhead |
+| `punchOut` | `number \| null` | Punch-out time (seconds); null = stop manually |
 | `audioDevices` | `MediaDeviceInfo[]` | Available microphone inputs |
 | `selectedDeviceId` | `string \| null` | Selected mic device ID |
 | `outputDevices` | `MediaDeviceInfo[]` | Available audio outputs |
