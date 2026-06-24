@@ -79,11 +79,26 @@ seek: (time) => {
 }
 ```
 
+## Take Window Sync
+
+The take WaveSurfer instance is started and stopped automatically as the playhead enters and exits its time window `[_takeOffset, _takeOffset + _takeDuration)`. A private flag `_takeIsPlaying` tracks whether the take is currently playing; the rAF tick transitions on boundary crossings:
+
+```ts
+const inWindow = time >= this._takeOffset && time < this._takeOffset + this._takeDuration;
+if (inWindow && !this._takeIsPlaying)  { this.take.play();  this._takeIsPlaying = true;  }
+if (!inWindow && this._takeIsPlaying)  { this.take.pause(); this._takeIsPlaying = false; }
+```
+
+`play()` applies the same check before calling `take.play()` — so pressing Play from time 0 when the take starts at e.g. 30 s will not start the take immediately; the rAF tick starts it when the playhead reaches 30 s.
+
+`pause()` and `clearTakeTrack()` always reset `_takeIsPlaying = false`.
+
 ## Time Update Loop
 
-`_startTimeUpdate()` runs a `requestAnimationFrame` loop at 60 fps. Two concerns are separated:
+`_startTimeUpdate()` runs a `requestAnimationFrame` loop at 60 fps. Three concerns are handled in each tick:
 
 - **Loop detection** — checked every frame for accurate loop-point enforcement
+- **Take window sync** — transitions `_takeIsPlaying` on every frame (see above)
 - **UI notifications** — throttled to ~30 fps (33 ms gate) via `_lastNotifyTime`, halving React re-render rate
 
 ## Output Device Routing

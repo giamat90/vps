@@ -24,6 +24,8 @@ export class AudioEngine {
   // Take track offset and duration
   private _takeOffset = 0;
   private _takeDuration = 0;
+  // Whether the take WaveSurfer is currently playing (managed by window sync)
+  private _takeIsPlaying = false;
 
   async load(
     songDir: string,
@@ -118,7 +120,13 @@ export class AudioEngine {
     if (!this.vocals || !this.instrumental) return;
     this.vocals.play();
     this.instrumental.play();
-    this.take?.play();
+    if (this.take && this._takeDuration > 0) {
+      const time = this.getCurrentTime();
+      if (time >= this._takeOffset && time < this._takeOffset + this._takeDuration) {
+        this.take.play();
+        this._takeIsPlaying = true;
+      }
+    }
     this._isPlaying = true;
     this._startTimeUpdate();
   }
@@ -128,6 +136,7 @@ export class AudioEngine {
     this.vocals.pause();
     this.instrumental.pause();
     this.take?.pause();
+    this._takeIsPlaying = false;
     this._isPlaying = false;
     this._stopTimeUpdate();
   }
@@ -276,9 +285,14 @@ export class AudioEngine {
       this._seekVocals(instrTime);
     });
 
+    this._takeIsPlaying = false;
     if (this.instrumental) {
-      this._seekTake(this.instrumental.getCurrentTime());
-      if (wasPlaying) this.take.play();
+      const instrTime = this.instrumental.getCurrentTime();
+      this._seekTake(instrTime);
+      if (wasPlaying && instrTime >= this._takeOffset && instrTime < this._takeOffset + this._takeDuration) {
+        this.take.play();
+        this._takeIsPlaying = true;
+      }
     }
   }
 
@@ -291,6 +305,7 @@ export class AudioEngine {
     this.take = null;
     this._takeOffset = 0;
     this._takeDuration = 0;
+    this._takeIsPlaying = false;
   }
 
   loadInstrumentalFromPath(filePath: string): void {
@@ -344,6 +359,7 @@ export class AudioEngine {
     this._vocalsDuration = 0;
     this._takeOffset = 0;
     this._takeDuration = 0;
+    this._takeIsPlaying = false;
   }
 
   private _startTimeUpdate(): void {
@@ -360,6 +376,18 @@ export class AudioEngine {
         time >= this._loopEnd
       ) {
         this.seekTo(this._loopStart);
+      }
+
+      // Take window sync: start/stop the take as the playhead enters/exits its time window
+      if (this.take && this._takeDuration > 0) {
+        const inWindow = time >= this._takeOffset && time < this._takeOffset + this._takeDuration;
+        if (inWindow && !this._takeIsPlaying) {
+          this.take.play();
+          this._takeIsPlaying = true;
+        } else if (!inWindow && this._takeIsPlaying) {
+          this.take.pause();
+          this._takeIsPlaying = false;
+        }
       }
 
       // Throttle store/UI notifications to ~30fps to halve React re-render rate.
