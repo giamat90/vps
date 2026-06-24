@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { getEngine, usePlayerStore } from "../../stores/player";
-import { frequencyToMidi } from "../../lib/constants";
+import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 
 const MIDI_MIN  = 45;
@@ -77,15 +77,14 @@ function drawKeyboard(
     // Divider
     ctx.fillStyle = "#33334a";
     ctx.fillRect(key.x + key.w - 0.5, 0, 1, H);
-    // C label
-    if ((midi % 12) === 0) {
-      const octave = Math.floor(midi / 12) - 1;
-      ctx.fillStyle = isSong || isTake || isLive ? "#fff" : "#666";
-      ctx.font = `${fontSize}px sans-serif`;
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.fillText(`C${octave}`, key.x + key.w / 2, H - 2);
-    }
+    // Note label on every white key: C notes get octave suffix (C3, C4…), others just letter
+    const pc = ((midi % 12) + 12) % 12;
+    const label = pc === 0 ? `C${Math.floor(midi / 12) - 1}` : NOTE_NAMES[pc];
+    ctx.fillStyle = isSong || isTake || isLive ? "#fff" : "#666";
+    ctx.font = `${fontSize}px sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.fillText(label, key.x + key.w / 2, H - 2);
   }
 
   // Black keys (drawn on top)
