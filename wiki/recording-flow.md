@@ -6,16 +6,30 @@
 
 Recording is initiated by the user clicking the record button. The flow is carefully sequenced to work around Windows WASAPI audio routing behavior.
 
+## Punch-in / Punch-out Region
+
+The `PunchRegion` component lets the singer bound the recording to a sub-interval of the song before pressing Record. Controls are hidden while recording to prevent mid-take edits.
+
+| Control | Action |
+|---------|--------|
+| **In** input (MM:SS) | Set the take start position; `startRecording` seeks here |
+| **← (In)** button | Capture current playhead as punch-in point |
+| **Out** input (MM:SS) | Recording auto-stops when playback reaches this time |
+| **← (Out)** button | Capture current playhead as punch-out point |
+| **✕** | Clear both points (revert to full-song recording) |
+
+Punch state lives in the player store as `punchIn: number | null` and `punchOut: number | null`. Both are cleared to `null` when a new song is loaded; they are not persisted to disk.
+
 ## startRecording Sequence
 
 ```
-1. eng.pause()                          pause playback
-2. recordingStartPos = getCurrentTime() capture position before mic opens
+1. recordingStartPos = punchIn ?? currentTime  use punch-in if set
+2. eng.pause()                          pause playback
 3. rec.init(selectedDeviceId)           getUserMedia — mic opens here
 4. Enumerate output devices             find real hardware output
 5. eng.setOutputDevice(outputId)        pin audio away from Communications endpoint
 6. eng.setInteract(false)              lock waveform click-to-seek
-7. eng.seekTo(recordingStartPos)        rewind to start position
+7. eng.seekTo(recordingStartPos)        rewind to start (or punch-in) position
 8. eng.play()                           start playback (vocals + instrumental both audible)
 9. rec.start()                          start MediaRecorder
 ```
@@ -23,6 +37,18 @@ Recording is initiated by the user clicking the record button. The flow is caref
 `getUserMedia` must be called **before** `eng.play()`. On Windows WASAPI, opening the mic reconfigures the audio session; if playback is already running it can cause `NotReadableError`.
 
 The singer hears **both** original vocals and instrumental during recording — volumes are individually controlled via the Vocals and Instrumental sliders. There is no mic monitoring passthrough (hardware direct-monitoring on the audio interface is recommended instead).
+
+### Punch-out Auto-stop
+
+`loadSong` wires an `onTimeUpdate` check that fires at ~30 fps:
+
+```ts
+if (isRecording && punchOut !== null && time >= punchOut) {
+  stopRecording();
+}
+```
+
+This is the same mechanism as the song-end auto-stop (`onFinish`), and `eng.stop()` inside `stopRecording` halts the rAF loop so the check cannot double-fire.
 
 ## stopRecording Sequence
 

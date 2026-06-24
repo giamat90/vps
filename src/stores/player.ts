@@ -48,6 +48,9 @@ interface PlayerState {
   takes: Take[];
   activeTakeId: string | null;
   takeVolume: number;
+  // Punch-in / punch-out region (null = not set)
+  punchIn: number | null;
+  punchOut: number | null;
 }
 
 interface PlayerActions {
@@ -82,6 +85,10 @@ interface PlayerActions {
   deleteTake: (takeId: string) => Promise<void>;
   setActiveTake: (takeId: string) => void;
   setTakeVolume: (v: number) => void;
+  // Punch region actions
+  setPunchIn: (t: number) => void;
+  setPunchOut: (t: number) => void;
+  clearPunch: () => void;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -105,12 +112,21 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   takes: [],
   activeTakeId: null,
   takeVolume: 1.0,
+  punchIn: null,
+  punchOut: null,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
     await eng.load(song.directory, vocalsEl, instrumentalEl);
     eng.onTimeUpdate((time) => {
       set({ currentTime: time, isPlaying: eng.isPlaying });
+      // Auto-stop recording when punch-out point is reached
+      const s = get();
+      if (s.isRecording && s.punchOut !== null && time >= s.punchOut) {
+        s.stopRecording().catch((e: unknown) =>
+          console.error("[player] punch-out auto-stop failed:", e)
+        );
+      }
     });
     eng.onFinish(() => {
       set({ isPlaying: false });
@@ -277,7 +293,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     // reconfigures when the mic opens, which can stall already-playing elements.
     // Pausing first guarantees a clean seekTo+play restart after the mic is ready.
     const eng = getEngine();
-    recordingStartPos = eng.getCurrentTime();
+    // Honour punch-in: start recording from the punch point, not the playhead
+    recordingStartPos = get().punchIn ?? eng.getCurrentTime();
     eng.pause();
 
     const rec = getRecorder();
@@ -401,4 +418,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     getEngine().setTakeVolume(v);
     set({ takeVolume: v });
   },
+
+  setPunchIn:  (t) => set({ punchIn: t }),
+  setPunchOut: (t) => set({ punchOut: t }),
+  clearPunch:  ()  => set({ punchIn: null, punchOut: null }),
 }));
