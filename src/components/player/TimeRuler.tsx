@@ -25,9 +25,11 @@ export default function TimeRuler() {
   const punchIn     = usePlayerStore((s) => s.punchIn);
   const punchOut    = usePlayerStore((s) => s.punchOut);
   const isRecording = usePlayerStore((s) => s.isRecording);
+  const punchLoop   = usePlayerStore((s) => s.punchLoop);
   const setPunchIn  = usePlayerStore((s) => s.setPunchIn);
   const setPunchOut = usePlayerStore((s) => s.setPunchOut);
   const clearPunch  = usePlayerStore((s) => s.clearPunch);
+  const setPunchLoop = usePlayerStore((s) => s.setPunchLoop);
 
   // anchorT: the fixed end when dragging a single handle
   const drag = useRef<{ mode: DragMode | null; anchorT: number }>({
@@ -232,6 +234,15 @@ export default function TimeRuler() {
         onMouseLeave={onMouseLeave}
         style={{ cursor: isRecording || duration <= 0 ? "default" : "crosshair" }}
       />
+      {punchIn !== null && punchOut !== null && !isRecording && (
+        <button
+          className={`time-ruler__loop-btn${punchLoop ? " time-ruler__loop-btn--active" : ""}`}
+          title={punchLoop ? "Disable loop" : "Loop region"}
+          onClick={() => setPunchLoop(!punchLoop)}
+        >
+          ⟳
+        </button>
+      )}
     </div>
   );
 }

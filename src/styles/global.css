@@ -443,6 +443,7 @@ body,
 
 /* Time ruler above the waveform tracks */
 .time-ruler {
+  position: relative;
   height: 1.6rem;
   width: 100%;
 }
@@ -452,6 +453,33 @@ body,
   width: 100%;
   height: 100%;
   border-radius: 4px 4px 0 0;
+}
+
+.time-ruler__loop-btn {
+  position: absolute;
+  top: 50%;
+  right: 0.3rem;
+  transform: translateY(-50%);
+  background: transparent;
+  border: 1px solid var(--text-secondary);
+  border-radius: 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.time-ruler__loop-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.time-ruler__loop-btn--active {
+  color: #e94560;
+  border-color: #e94560;
+  background: rgba(233, 69, 96, 0.12);
 }
 
 /* Wrapper that gives position:relative context for the punch overlay */

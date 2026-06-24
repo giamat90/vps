@@ -51,6 +51,7 @@ interface PlayerState {
   // Punch-in / punch-out region (null = not set)
   punchIn: number | null;
   punchOut: number | null;
+  punchLoop: boolean;
 }
 
 interface PlayerActions {
@@ -89,6 +90,7 @@ interface PlayerActions {
   setPunchIn: (t: number) => void;
   setPunchOut: (t: number) => void;
   clearPunch: () => void;
+  setPunchLoop: (v: boolean) => void;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -114,6 +116,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   takeVolume: 1.0,
   punchIn: null,
   punchOut: null,
+  punchLoop: false,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -128,11 +131,17 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
             console.error("[player] punch-out auto-stop failed:", e)
           );
         } else if (s.isPlaying) {
-          // Stop playback and rewind to punch-in
-          eng.pause();
-          const backTo = s.punchIn ?? 0;
-          eng.seekTo(backTo);
-          set({ isPlaying: false, currentTime: backTo });
+          if (s.punchLoop && s.punchIn !== null) {
+            // Loop: jump back to punch-in and keep playing
+            eng.seekTo(s.punchIn);
+            set({ currentTime: s.punchIn });
+          } else {
+            // Stop and rewind to punch-in
+            eng.pause();
+            const backTo = s.punchIn ?? 0;
+            eng.seekTo(backTo);
+            set({ isPlaying: false, currentTime: backTo });
+          }
         }
       }
     });
@@ -435,7 +444,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set({ takeVolume: v });
   },
 
-  setPunchIn:  (t) => set({ punchIn: t }),
-  setPunchOut: (t) => set({ punchOut: t }),
-  clearPunch:  ()  => set({ punchIn: null, punchOut: null }),
+  setPunchIn:   (t) => set({ punchIn: t }),
+  setPunchOut:  (t) => set({ punchOut: t }),
+  clearPunch:   ()  => set({ punchIn: null, punchOut: null, punchLoop: false }),
+  setPunchLoop: (v) => set({ punchLoop: v }),
 }));
