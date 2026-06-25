@@ -34,7 +34,7 @@ export async function deleteTakeApi(songId: string, takeId: string): Promise<voi
 
 /** Load song analysis data (pitchData, onsets, dynamics) */
 export async function loadAnalysis(songId: string): Promise<{
-  pitchData: import("./types").PitchPoint[];
+  pitchData: import("./types").PitchData;
   onsets: number[];
   dynamics: import("./types").DynamicsPoint[];
 }> {

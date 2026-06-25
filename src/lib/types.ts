@@ -19,7 +19,15 @@ export interface ProcessingStatus {
   error?: string;
 }
 
-/** Pitch data point (from CREPE) */
+/** Raw pitch output from pYIN — parallel arrays, one entry per analysis frame */
+export interface PitchData {
+  times: number[];
+  f0: number[];        // Hz; 0.0 for unvoiced frames
+  voiced: boolean[];
+  confidence: number[];
+}
+
+/** Pitch data point used internally by the frontend */
 export interface PitchPoint {
   time: number;
   frequency: number;
@@ -34,7 +42,7 @@ export interface Take {
   filepath: string;
   /** Song position (seconds) where recording started; 0 for full-song takes. */
   startPosition: number;
-  pitchData?: PitchPoint[];
+  pitchData?: PitchData;
   onsets?: number[];
   dynamics?: DynamicsPoint[];
   vibrato?: VibratoMetrics;
