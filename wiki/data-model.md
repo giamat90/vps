@@ -79,6 +79,22 @@ interface VibratoMetrics {
 }
 ```
 
+### ExerciseTake
+
+Free-exercise take (no song reference). Stored under `~/.vps/exercises/`.
+
+```ts
+interface ExerciseTake {
+  id: string;
+  recordedAt: string;  // ISO timestamp
+  filepath: string;    // absolute path to .webm file
+  duration: number;    // seconds
+  pitchData?: PitchData;
+  dynamics?: DynamicsPoint[];
+  vibrato?: VibratoMetrics;
+}
+```
+
 ### ProcessingStatus (event payload)
 
 ```ts
@@ -107,19 +123,20 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 
 ```
 ~/.vps/
-└── library/
-    └── {songId}/              UUID directory per song
-        ├── {original}.mp3     copy of the source file
-        ├── vocals.wav         separated vocals (Demucs)
-        ├── instrumental.wav   separated instrumental (Demucs)
-        ├── pitch.json         CREPE pitch data
-        ├── onsets.json        onset times
-        ├── dynamics.json      RMS curve
-        ├── song.json          Song metadata
-        ├── cache/             pitch-shifted WAV cache
-        │   └── vocals_+2.wav  shifted files keyed by semitone delta
-        └── takes/
-            └── {takeId}.webm  recorded take audio files
+├── library/
+│   └── {songId}/              UUID directory per song
+│       ├── {original}.mp3     copy of the source file
+│       ├── vocals.wav         separated vocals (Demucs)
+│       ├── instrumental.wav   separated instrumental (Demucs)
+│       ├── analysis.json      pitchData + onsets + dynamics
+│       ├── takes.json         Take[] metadata
+│       ├── pitched/{n}/       pitch-shifted WAV cache (n = semitone steps)
+│       └── takes/
+│           └── {takeId}.webm  recorded take audio files
+└── exercises/
+    ├── exercises.json         ExerciseTake[] metadata
+    └── takes/
+        └── {takeId}.webm     free-exercise recordings
 ```
 
 ## Tauri Commands
@@ -134,6 +151,9 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `delete_take` | `songId, takeId: string` | `void` |
 | `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics }` |
 | `pitch_shift_song` | `songDir: string, nSteps: number` | `{ vocalsPath, instrumentalPath }` |
+| `save_exercise_take` | `audioData: number[], duration: f64` | `ExerciseTake` |
+| `list_exercise_takes` | — | `ExerciseTake[]` |
+| `delete_exercise_take` | `takeId: string` | `void` |
 
 All commands are async and return a `Promise`. Errors are thrown as strings.
 

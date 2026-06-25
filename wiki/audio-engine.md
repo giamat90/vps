@@ -112,3 +112,34 @@ if (!inWindow && this._takeIsPlaying)  { this.take.pause(); this._takeIsPlaying 
 ## `loadVocalsFromPath`
 
 Async method that reloads the vocals WaveSurfer instance with a different audio file without destroying the instrumental. Used for **transpose** only — load pitch-shifted WAV after Python processing. After loading, it re-syncs the vocals position to the instrumental's current time.
+
+## Exercise Timer Mode
+
+When no song is loaded (Free Exercise page), the engine runs in **exercise timer mode** — no WaveSurfer instances, just a `performance.now()` clock.
+
+Private fields:
+
+| Field | Meaning |
+|-------|---------|
+| `_exerciseMode` | `true` while the exercise timer is active |
+| `_exerciseStartAt` | `performance.now()` at the last `startExerciseTimer()` / resume |
+| `_exerciseOffset` | Accumulated elapsed seconds before the last pause |
+
+`getCurrentTime()` checks `_exerciseMode` first:
+
+```ts
+if (this._exerciseMode) {
+  const elapsed = this._isPlaying
+    ? this._exerciseOffset + (performance.now() - this._exerciseStartAt) / 1000
+    : this._exerciseOffset;
+  return elapsed;
+}
+```
+
+The rAF tick is **unchanged** — it still runs via `_startTimeUpdate()` and fires `_timeUpdateCb` on the same 30 fps throttle. PianoRoll, DualTuner, and the timer display in `ExercisePage` all read through `getEngine().getCurrentTime()` and need no modification.
+
+| Method | Description |
+|--------|-------------|
+| `startExerciseTimer()` | Sets `_exerciseMode=true`, captures `_exerciseStartAt`, starts rAF tick |
+| `pauseExerciseTimer()` | Saves offset, stops rAF tick |
+| `stopExerciseTimer()` | Resets all fields, stops rAF tick, fires `_timeUpdateCb(0)` to reset display |

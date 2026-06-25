@@ -6,29 +6,34 @@
 
 ```
 App
+├── pages/
+│   ├── LibraryPage        — song list, import, "Free Exercise" button
+│   ├── PracticeRoom       — song practice (waveforms + analysis + recording)
+│   └── ExercisePage       — free exercise (no song; piano roll + record)
 ├── upload/
-│   ├── DropZone          — drag-and-drop audio file import
-│   └── YouTubeImport     — paste-and-import YouTube URL
-└── player/
-    ├── Waveform           — 3-track waveform display (vocals + instrumental + take)
-    ├── TimeRuler          — canvas time ruler with drag-to-select punch region
-    ├── TransportControls  — play/pause/stop + volume sliders
-    ├── TempoControl       — playback rate/BPM control
-    ├── KeyTranspose       — semitone transpose UI
-    └── OutputSelector     — audio output device picker
-recording/
-    ├── RecordButton       — start/stop recording
-    ├── MonitorButton      — toggle live mic monitoring (no save)
-    ├── MicSelector        — microphone input source picker
-    └── TakeList           — list of recorded takes with delete
-analysis/
-    ├── DualTuner          — real-time pitch tuner (reference vs. singer)
-    ├── PianoKeyboard      — horizontal piano key strip with live/song/take highlight
-    ├── PianoRoll          — scrolling pitch ribbon display (song + take + live)
-    ├── VibratoCard        — vibrato rate / depth / regularity summary
-    ├── TimingChart        — timing deviation chart (user vs. reference onsets)
-    └── DynamicsCurve      — RMS dynamics over time
-coaching/
+│   ├── DropZone           — drag-and-drop audio file import
+│   └── YouTubeImport      — paste-and-import YouTube URL
+├── player/
+│   ├── Waveform           — 3-track waveform display (vocals + instrumental + take)
+│   ├── TimeRuler          — canvas time ruler with drag-to-select punch region
+│   ├── TransportControls  — play/pause/stop + volume sliders
+│   ├── TempoControl       — playback rate/BPM control
+│   ├── KeyTranspose       — semitone transpose UI
+│   └── OutputSelector     — audio output device picker
+├── recording/
+│   ├── RecordButton       — start/stop recording (song practice)
+│   ├── MonitorButton      — toggle live mic monitoring (no save)
+│   ├── MicSelector        — microphone input source picker
+│   ├── TakeList           — list of song takes with delete
+│   └── ExerciseTakeList   — list of exercise takes; click to expand audio player
+├── analysis/
+│   ├── DualTuner          — real-time pitch tuner (reference vs. singer)
+│   ├── PianoKeyboard      — horizontal piano key strip with live/song/take highlight
+│   ├── PianoRoll          — scrolling pitch ribbon display (song + take + live)
+│   ├── VibratoCard        — vibrato rate / depth / regularity summary
+│   ├── TimingChart        — timing deviation chart (user vs. reference onsets)
+│   └── DynamicsCurve      — RMS dynamics over time
+└── coaching/
     └── CoachPanel         — AI coaching tips panel
 ```
 
@@ -89,6 +94,15 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `selectedDeviceId` | `string \| null` | Selected mic device ID |
 | `outputDevices` | `MediaDeviceInfo[]` | Available audio outputs |
 | `selectedOutputDeviceId` | `string \| null` | Selected output device ID |
+
+### Exercise Store (`src/stores/exercise.ts`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `exerciseTakes` | `ExerciseTake[]` | All free-exercise recordings |
+| `activeExerciseTakeId` | `string \| null` | Expanded take (shows audio player) |
+
+Actions: `fetchExerciseTakes`, `addExerciseTake`, `deleteExerciseTake`, `setActiveExerciseTake`.
 
 ## GUI Rule
 
@@ -201,6 +215,36 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 ### PianoKeyboard
 
 Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). All white keys show a full note label with octave number at the bottom of each key: `C3`, `D3`, `E3`, `F3`, `G3`, `A3`, `B3`, `C4`, `D4` … The octave is derived as `Math.floor(midi / 12) - 1` (MIDI convention).
+
+### ExercisePage
+
+Standalone practice page — no song required. Used for warming up, vocal exercises, or free improvisation.
+
+**Layout:**
+```
+┌─ header ────────────────────────────────────┐
+│  ← Back   FREE EXERCISE   [DualTuner]  00:00 │  ← timer turns red while active
+├─────────────────────────────────────────────┤
+│  PianoKeyboard                              │
+│  PianoRoll   (live orange ribbon only)      │
+├─────────────────────────────────────────────┤
+│  MicSelector · MonitorButton · ⏺ Record    │
+├─────────────────────────────────────────────┤
+│  Recordings (ExerciseTakeList)              │
+└─────────────────────────────────────────────┘
+```
+
+**Time source:** `AudioEngine` exercise timer (`_exerciseMode = true`). `getCurrentTime()` returns `performance.now()` elapsed seconds — no WaveSurfer involved. The rAF tick is shared, so PianoRoll and DualTuner require no changes.
+
+**Monitor mode:** calls `startMonitoring()` / `stopMonitoring()` from the player store (identical to the PracticeRoom). The timer does **not** advance in monitor mode — it only advances while recording.
+
+**Record mode:** `startExerciseRecording()` opens the mic, applies WASAPI output routing, then calls `eng.startExerciseTimer()`. `stopExerciseRecording()` stops the timer, drains the recorder, calls `save_exercise_take` Tauri command (triggers pYIN analysis), and returns the `ExerciseTake`. `ExercisePage` then calls `addExerciseTake(take)` on the exercise store.
+
+**Mutual exclusivity:** Monitor and Record buttons follow the same rules as PracticeRoom — `startRecording` stops monitoring first.
+
+### ExerciseTakeList
+
+Flat list of recorded exercise takes. Each row shows the recorded date and duration. Clicking a row expands it to show a native `<audio controls>` element using `convertFileSrc(take.filepath)`. Clicking again collapses it. A `×` button deletes the take.
 
 ### YouTubeImport
 
