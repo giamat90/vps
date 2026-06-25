@@ -140,16 +140,32 @@ Displays the current `transpose` value in semitones with ±12 range. Triggers `s
 
 VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `requestAnimationFrame` loop that reads `getEngine().getCurrentTime()` directly — no React re-renders during playback.
 
-**Layout (single canvas):**
+**Layout:**
 
 ```
-|── 36px piano strip ──|────── scrolling pitch roll ─────|
-│  C5 key label        │                                  │
-│  white/black keys    │  song ribbon (blue)              │
-│                      │  take ribbon (red)               │
-│                      │  live ribbon (orange)            │
-│                      │       ╎ playhead                 │
+┌─ piano-roll__ruler-wrap (1.25rem) ─────────────────────┐
+│  time ruler: ticks · punch region · center playhead    │  ← drag to create/edit punch region
+└────────────────────────────────────────────────────────┘
+┌─ canvas (15rem) ───────────────────────────────────────┐
+│ |── 36px piano ──|──── scrolling pitch roll ───────── │
+│ │  C5 key label  │  song ribbon (blue)                │ │
+│ │  white/black   │  take ribbon (red)                 │ │
+│ │  keys          │  live ribbon (orange)              │ │
+│ │                │       ╎ playhead   [G4 D#4] ──top-right note │
+└────────────────────────────────────────────────────────┘
 ```
+
+**Time ruler (above canvas):**
+- Shows the current 8-second window with absolute time tick marks
+- Punch region overlay (same `punchIn`/`punchOut` store values as the waveform TimeRuler)
+- Drag on empty area → draw new punch region; drag near handle → move that boundary; click → clear
+- Loop toggle button (⟳) appears when a region is set
+- Coordinates use `capturedT0` from mousedown so the window stays stable during a drag
+
+**Drag-to-seek (main canvas):**
+- Horizontal drag on the pitch roll area seeks the playhead and syncs all tracks
+- Drag left → forward in time; drag right → backward (pan-content gesture)
+- Delta is computed from the initial drag position so the view tracks the finger accurately
 
 **Drawing passes (in order):**
 1. Lane backgrounds — black-key rows slightly darker, C-octave boundaries marked with a brighter rule
@@ -157,10 +173,14 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 3. Take pitch ribbon — `rgba(233,69,96,0.92)` same style, drawn over the song ribbon
 4. Live pitch ribbon — `rgba(255,140,30,0.9)` drawn during recording from autocorrelation readings accumulated in `livePitch[]` (analysis store); disappears when recording stops
 5. Playhead — dashed vertical line at canvas center
-6. Note label — current note name(s) shown in matching colors at top-left of the roll (e.g. "A4 G#4")
+6. Note label — current note name(s) shown right-aligned at top-right of the roll (e.g. "A4 G#4")
 7. Piano key strip — drawn last so it sits on top of any ribbon that bleeds into the left column; key color priority: live (orange) > take (red) > song (blue)
 
 **Constants:** MIDI 45–84 (A2–C6, 40 semitones), 8-second window, `15rem` canvas height.
+
+### PianoKeyboard
+
+Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). White keys show note labels at the bottom of each key: C notes include the octave number (`C3`, `C4`…), other white keys show just the note letter (`D`, `E`, `F`, `G`, `A`, `B`).
 
 ### YouTubeImport
 

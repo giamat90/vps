@@ -981,6 +981,19 @@ body,
   height: 5rem;
 }
 
+.piano-roll__ruler-wrap {
+  position: relative;
+  height: 1.25rem;
+  width: 100%;
+}
+
+.piano-roll__ruler {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 4px 4px 0 0;
+}
+
 .analysis-panel__canvas--piano-roll {
   height: 15rem;
 }
