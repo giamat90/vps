@@ -7,8 +7,13 @@ import { saveTake, listTakes, deleteTakeApi, pitchShiftSong } from "../lib/tauri
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
 let recorder: VocalRecorder | null = null;
+let monitorStream: MediaStream | null = null;
 // Captured when recording starts so stopRecording can pass it to saveTake
 let recordingStartPos = 0;
+
+export function getMonitorStream(): MediaStream | null {
+  return monitorStream;
+}
 
 export function getEngine(): AudioEngine {
   if (!engine) {
@@ -43,8 +48,9 @@ interface PlayerState {
   // Transpose state
   transpose: number;
   isTransposing: boolean;
-  // Recording state
+  // Recording / monitoring state
   isRecording: boolean;
+  isMonitoring: boolean;
   takes: Take[];
   activeTakeId: string | null;
   takeVolume: number;
@@ -82,6 +88,9 @@ interface PlayerActions {
   // Recording actions
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
+  // Monitoring actions (live pitch without recording)
+  startMonitoring: () => Promise<void>;
+  stopMonitoring: () => Promise<void>;
   fetchTakes: () => Promise<void>;
   deleteTake: (takeId: string) => Promise<void>;
   setActiveTake: (takeId: string) => void;
@@ -111,6 +120,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   transpose: 0,
   isTransposing: false,
   isRecording: false,
+  isMonitoring: false,
   takes: [],
   activeTakeId: null,
   takeVolume: 1.0,
@@ -255,6 +265,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       transpose: 0,
       isTransposing: false,
       isRecording: false,
+      isMonitoring: false,
       takes: [],
       activeTakeId: null,
     });
@@ -310,9 +321,63 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     }
   },
 
+  startMonitoring: async () => {
+    const s = get();
+    if (s.isRecording || s.isMonitoring) return;
+
+    const eng = getEngine();
+    try {
+      monitorStream = await navigator.mediaDevices.getUserMedia({
+        audio: s.selectedDeviceId ? { deviceId: { ideal: s.selectedDeviceId } } : true,
+      });
+    } catch (e) {
+      throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
+    }
+
+    // WASAPI: getUserMedia switches the default output to the Communications
+    // Device. Pin to the real hardware output (same logic as startRecording).
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    const outputs = allDevices.filter((d) => d.kind === "audiooutput");
+    const inputLabel = (
+      allDevices.find((d) => d.kind === "audioinput" && d.deviceId === s.selectedDeviceId)?.label ?? ""
+    ).toUpperCase();
+    const realOutputs = outputs.filter(
+      (d) =>
+        !d.label.startsWith("Default -") &&
+        !d.label.startsWith("Communications -") &&
+        !d.label.toLowerCase().includes("steam"),
+    );
+    const matched =
+      realOutputs.find((d) =>
+        d.label.toUpperCase().split(/\W+/).some((tok) => tok.length >= 4 && inputLabel.includes(tok))
+      ) ?? realOutputs[0];
+    const outputId = s.selectedOutputDeviceId ?? matched?.deviceId ?? "";
+    try {
+      await eng.setOutputDevice(outputId);
+    } catch (e) {
+      console.warn("[monitor] setOutputDevice failed:", e);
+    }
+
+    set({ isMonitoring: true });
+  },
+
+  stopMonitoring: async () => {
+    if (monitorStream) {
+      monitorStream.getTracks().forEach((t) => t.stop());
+      monitorStream = null;
+    }
+    try {
+      await getEngine().setOutputDevice(get().selectedOutputDeviceId ?? "");
+    } catch {}
+    set({ isMonitoring: false });
+  },
+
   startRecording: async () => {
     const { song } = get();
     if (!song) return;
+
+    // Stop monitoring before opening the recorder's mic stream
+    if (get().isMonitoring) await get().stopMonitoring();
 
     // Pause and capture position before getUserMedia — the audio session
     // reconfigures when the mic opens, which can stall already-playing elements.

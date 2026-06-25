@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { PitchDetector } from "../../audio/pitchDetector";
 import { useAnalysisStore } from "../../stores/analysis";
-import { usePlayerStore } from "../../stores/player";
+import { usePlayerStore, getMonitorStream } from "../../stores/player";
 import { pitchAtTime, centsDeviation } from "../../audio/analysisUtils";
 import { frequencyToNoteName } from "../../audio/analysisUtils";
 
@@ -30,8 +30,9 @@ function describeArc(startDeg: number, endDeg: number, r: number): string {
 }
 
 export default function DualTuner() {
-  const isRecording = usePlayerStore((s) => s.isRecording);
-  const currentTime = usePlayerStore((s) => s.currentTime);
+  const isRecording  = usePlayerStore((s) => s.isRecording);
+  const isMonitoring = usePlayerStore((s) => s.isMonitoring);
+  const currentTime  = usePlayerStore((s) => s.currentTime);
   const songPitch = useAnalysisStore((s) => s.songPitch);
   const takePitch = useAnalysisStore((s) => s.takePitch);
   const appendLivePitch = useAnalysisStore((s) => s.appendLivePitch);
@@ -53,9 +54,10 @@ export default function DualTuner() {
   useEffect(() => { appendLiveRef.current = appendLivePitch; }, [appendLivePitch]);
   useEffect(() => { clearLiveRef.current = clearLivePitch; }, [clearLivePitch]);
 
-  // Start/stop live pitch detection during recording
+  // Start/stop live pitch detection during recording or monitoring
   useEffect(() => {
-    if (!isRecording) {
+    const isActive = isRecording || isMonitoring;
+    if (!isActive) {
       if (detectorRef.current) {
         detectorRef.current.stop();
         detectorRef.current = null;
@@ -72,11 +74,21 @@ export default function DualTuner() {
     }
 
     clearLiveRef.current();
-
     let active = true;
-    navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-      if (!active) { stream.getTracks().forEach((t) => t.stop()); return; }
-      streamRef.current = stream;
+
+    // Monitoring: stream already opened by startMonitoring in the store.
+    // Recording: open a dedicated stream here for pitch detection.
+    const streamPromise: Promise<MediaStream> = isMonitoring
+      ? Promise.resolve(getMonitorStream()!)
+      : navigator.mediaDevices.getUserMedia({ audio: true });
+
+    streamPromise.then((stream) => {
+      if (!active) {
+        if (!isMonitoring) stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      if (!isMonitoring) streamRef.current = stream;
+
       const det = new PitchDetector();
       det.start(stream);
       detectorRef.current = det;
@@ -86,7 +98,6 @@ export default function DualTuner() {
         if (reading) {
           setLiveNote(reading.name);
           const t = currentTimeRef.current;
-          // Use refs to get the current time and pitch data without stale closure
           const ref = pitchAtTime(songPitchRef.current, t);
           if (ref && ref.frequency > 0) {
             setLiveCents(centsDeviation(reading.frequency, ref.frequency));
@@ -106,14 +117,14 @@ export default function DualTuner() {
       active = false;
       cancelAnimationFrame(rafRef.current);
     };
-  }, [isRecording]);
+  }, [isRecording, isMonitoring]);
 
   // Derive needle value
   let cents: number | null = null;
   let noteName = "—";
   let refName = "—";
 
-  if (isRecording) {
+  if (isRecording || isMonitoring) {
     cents = liveCents;
     noteName = liveNote || "—";
     const ref = pitchAtTime(songPitch, currentTime);
