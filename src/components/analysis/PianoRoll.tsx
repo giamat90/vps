@@ -596,7 +596,7 @@ export default function PianoRoll() {
         />
         {punchIn !== null && punchOut !== null && !isRecording && (
           <button
-            className={`time-ruler__loop-btn${punchLoop ? " time-ruler__loop-btn--active" : ""}`}
+            className={`time-ruler__loop-btn piano-roll__loop-btn${punchLoop ? " time-ruler__loop-btn--active" : ""}`}
             title={punchLoop ? "Disable loop" : "Loop region"}
             onClick={() => setPunchLoop(!punchLoop)}
           >

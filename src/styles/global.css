@@ -482,6 +482,14 @@ body,
   background: rgba(233, 69, 96, 0.12);
 }
 
+/* Piano roll ruler: loop button sits in upper-left corner over the key strip */
+.piano-roll__loop-btn {
+  right: auto;
+  left: 0.3rem;
+  top: 0.25rem;
+  transform: none;
+}
+
 /* Wrapper that gives position:relative context for the punch overlay */
 .waveform__track-body {
   position: relative;
