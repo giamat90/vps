@@ -14,7 +14,7 @@ const MIDI_MAX  = 84;       // C6  — top of visible range
 const N_NOTES   = MIDI_MAX - MIDI_MIN + 1;
 const CONF_MIN  = 0.3;
 const GAP_S     = 0.08;     // gap threshold: breaks the ribbon
-const HANDLE_HIT = 8;       // px around a handle that counts as a hit
+const HANDLE_HIT = 12;
 
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);   // pitch classes that are black keys
 

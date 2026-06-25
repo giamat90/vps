@@ -93,7 +93,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
           </div>
 
           <div className="practice-room__controls">
-            <TempoControl />
+            <TempoControl detectedBpm={song.detectedBpm} />
             <KeyTranspose />
             <OutputSelector />
           </div>
