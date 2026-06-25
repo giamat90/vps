@@ -13,8 +13,8 @@ The `TimeRuler` (canvas strip above the waveforms) is the punch region selector:
 | Gesture | Action |
 |---------|--------|
 | **Click + drag** on empty ruler | Draw a new punch region |
-| **Click + drag on In handle** (±8 px) | Move only the In boundary; Out stays fixed |
-| **Click + drag on Out handle** (±8 px) | Move only the Out boundary; In stays fixed |
+| **Click + drag on In handle** (±12 px) | Move only the In boundary; Out stays fixed |
+| **Click + drag on Out handle** (±12 px) | Move only the Out boundary; In stays fixed |
 | **Click** (drag < 0.5 s) | Clear the punch region and reset loop toggle |
 | **⟳ button** (right edge of ruler) | Toggle region loop on/off |
 
@@ -45,6 +45,7 @@ if (punchOut !== null && time >= punchOut) {
 ## startRecording Sequence
 
 ```
+0. if (isMonitoring) stopMonitoring()   stop monitor stream first
 1. recordingStartPos = punchIn ?? currentTime  use punch-in if set
 2. eng.pause()                          pause playback
 3. rec.init(selectedDeviceId)           getUserMedia — mic opens here
@@ -140,6 +141,36 @@ const mimeType = [
 ```
 
 If none are supported, `MediaRecorder` is created without an explicit `mimeType` and uses the browser default.
+
+## Live Monitoring (no recording)
+
+`startMonitoring()` opens the microphone and feeds real-time pitch into the piano roll, piano keyboard, and DualTuner — identical to what happens during recording but without MediaRecorder or file saving.
+
+### startMonitoring sequence
+
+```
+1. getUserMedia(selectedDeviceId)       open mic stream (stored in module-level monitorStream ref)
+2. Enumerate output devices             find real hardware output (same WASAPI fix as recording)
+3. eng.setOutputDevice(outputId)        pin audio away from Communications endpoint
+4. set isMonitoring = true
+```
+
+`monitorStream` is a module-level ref (not Zustand state) exported as `getMonitorStream()`. DualTuner calls `getMonitorStream()` to attach the pitch detector — no second `getUserMedia` needed.
+
+### stopMonitoring sequence
+
+```
+1. monitorStream.getTracks().forEach(t.stop())   release mic
+2. monitorStream = null
+3. eng.setOutputDevice(selectedOutputDeviceId)   restore routing
+4. set isMonitoring = false
+```
+
+### Mutual exclusivity
+
+- `startMonitoring` bails out if `isRecording` is true
+- `startRecording` calls `stopMonitoring()` first if `isMonitoring` is true
+- The `MonitorButton` is disabled while `isRecording`
 
 ## Auto-stop on Song End
 

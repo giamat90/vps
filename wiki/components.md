@@ -13,11 +13,12 @@ App
     ├── Waveform           — 3-track waveform display (vocals + instrumental + take)
     ├── TimeRuler          — canvas time ruler with drag-to-select punch region
     ├── TransportControls  — play/pause/stop + volume sliders
-    ├── TempoControl       — playback rate control
+    ├── TempoControl       — playback rate/BPM control
     ├── KeyTranspose       — semitone transpose UI
     └── OutputSelector     — audio output device picker
 recording/
     ├── RecordButton       — start/stop recording
+    ├── MonitorButton      — toggle live mic monitoring (no save)
     ├── MicSelector        — microphone input source picker
     └── TakeList           — list of recorded takes with delete
 analysis/
@@ -69,7 +70,7 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `isPlaying` | `boolean` | Playback state |
 | `currentTime` | `number` | Playback position (seconds) |
 | `duration` | `number` | Song length (seconds) |
-| `playbackRate` | `number` | Speed multiplier (0.5–2.0) |
+| `playbackRate` | `number` | Speed multiplier (0.25–2.5) |
 | `vocalsVolume` | `number` | 0–1 |
 | `instrumentalVolume` | `number` | 0–1 |
 | `isLooping` | `boolean` | Loop mode active |
@@ -77,6 +78,7 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `transpose` | `number` | Active semitone shift |
 | `isTransposing` | `boolean` | Pitch-shift in progress |
 | `isRecording` | `boolean` | Recording in progress |
+| `isMonitoring` | `boolean` | Live mic monitor active (no recording) |
 | `takes` | `Take[]` | All takes for current song |
 | `activeTakeId` | `string \| null` | Selected take (loads it as the take track) |
 | `takeVolume` | `number` | 0–1 volume for the take track |
@@ -108,13 +110,31 @@ An orange **Take** volume slider appears when `activeTakeId` is set.
 
 Starts recording via `startRecording()`. If recording is already active, clicking stops via `stopRecording()`. Displays a pulsing red indicator while `isRecording` is true.
 
+### MonitorButton
+
+Toggles live mic monitoring via `startMonitoring()` / `stopMonitoring()`. Displays a pulsing blue circle while `isMonitoring` is true. Disabled (grayed out) while `isRecording` is true. Starting a recording automatically stops monitoring first.
+
+When monitoring is active:
+- Microphone stream is opened (same `selectedDeviceId` as recording)
+- Windows WASAPI output routing is pinned (same fix as `startRecording`)
+- Live pitch flows into the piano roll orange ribbon, piano keyboard highlight, and DualTuner needle
+- Nothing is saved — the mic stream and live pitch data are cleared on stop
+
+### TempoControl
+
+Speed control for playback. Has two modes selectable via a tab toggle:
+
+**Speed mode (default):** Slider from 0.25× to 2.5×, displays current multiplier, five preset buttons (0.5×, 0.75×, 1×, 1.25×, 1.5×).
+
+**BPM mode** (only shown when the song has a detected BPM): number input for a target BPM; the playback rate is computed as `targetBpm / songBpm`. Seven preset buttons at 50/60/75/90/100/110/125% of the song BPM. The resulting multiplier is shown as feedback. Enter or blur commits the value.
+
 ### TimeRuler
 
-Canvas strip above the waveform tracks. Shows time ticks at adaptive intervals (≥ 80 px target). All ruler interaction is disabled during recording.
+Canvas strip above the waveform tracks (`2.8rem` tall). Shows time ticks at adaptive intervals (≥ 80 px target). Font size scales proportionally with canvas height. All ruler interaction is disabled during recording.
 
 **Interactions:**
 - **Click + drag** on empty space → draw a new punch region
-- **Hover / drag near In or Out handle** (±8 px) → cursor becomes `ew-resize`; drag moves only that boundary, the other stays fixed
+- **Hover / drag near In or Out handle** (±12 px) → cursor becomes `ew-resize`; drag moves only that boundary, the other stays fixed
 - **Click** (< 0.5 s drag) → clear punch region and reset loop toggle
 - **⟳ button** (appears at right edge when region is set) → toggle `punchLoop`; red when active
 
@@ -143,8 +163,8 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 **Layout:**
 
 ```
-┌─ piano-roll__ruler-wrap (1.25rem) ─────────────────────┐
-│  time ruler: ticks · punch region · center playhead    │  ← drag to create/edit punch region
+┌─ piano-roll__ruler-wrap (2.4rem) ──────────────────────┐
+│ [⟳] time ruler: ticks · punch region · center playhead │  ← ⟳ loop button at upper-left
 └────────────────────────────────────────────────────────┘
 ┌─ canvas (15rem) ───────────────────────────────────────┐
 │ |── 36px piano ──|──── scrolling pitch roll ───────── │
@@ -159,7 +179,7 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 - Shows the current 8-second window with absolute time tick marks
 - Punch region overlay (same `punchIn`/`punchOut` store values as the waveform TimeRuler)
 - Drag on empty area → draw new punch region; drag near handle → move that boundary; click → clear
-- Loop toggle button (⟳) appears when a region is set
+- Loop toggle button (⟳) appears at the **upper-left** corner of the ruler (over the piano-key strip area) when a region is set; uses `.piano-roll__loop-btn` modifier to override the default right-aligned position
 - Coordinates use `capturedT0` from mousedown so the window stays stable during a drag
 
 **Drag-to-seek (main canvas):**
@@ -180,7 +200,7 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 
 ### PianoKeyboard
 
-Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). White keys show note labels at the bottom of each key: C notes include the octave number (`C3`, `C4`…), other white keys show just the note letter (`D`, `E`, `F`, `G`, `A`, `B`).
+Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). All white keys show a full note label with octave number at the bottom of each key: `C3`, `D3`, `E3`, `F3`, `G3`, `A3`, `B3`, `C4`, `D4` … The octave is derived as `Math.floor(midi / 12) - 1` (MIDI convention).
 
 ### YouTubeImport
 
