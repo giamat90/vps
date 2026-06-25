@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ProcessingStatus, Song, Take } from "./types";
+import type { ProcessingStatus, Song, Take, ExerciseTake } from "./types";
 
 /** Process a song file through the Python sidecar */
 export async function processSong(filePath: string): Promise<Song> {
@@ -60,6 +60,21 @@ export async function exportStem(
   suggestedName: string,
 ): Promise<void> {
   return invoke("export_stem", { stemPath, suggestedName });
+}
+
+/** Save a free-exercise recorded take */
+export async function saveExerciseTake(audioData: number[], duration: number): Promise<ExerciseTake> {
+  return invoke<ExerciseTake>("save_exercise_take", { audioData, duration });
+}
+
+/** List all exercise takes */
+export async function listExerciseTakes(): Promise<ExerciseTake[]> {
+  return invoke<ExerciseTake[]>("list_exercise_takes");
+}
+
+/** Delete an exercise take */
+export async function deleteExerciseTakeApi(takeId: string): Promise<void> {
+  return invoke("delete_exercise_take", { takeId });
 }
 
 /** Listen for processing progress events */

@@ -7,6 +7,7 @@ import { useLibraryStore } from "../stores/library";
 
 interface LibraryPageProps {
   onSelectSong: (songId: string) => void;
+  onGoToExercise: () => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -120,7 +121,7 @@ function SongCard({ song, onSelect, onDelete }: SongCardProps) {
   );
 }
 
-function LibraryPage({ onSelectSong }: LibraryPageProps) {
+function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const songs = useLibraryStore((s) => s.songs);
   const isLoading = useLibraryStore((s) => s.isLoading);
   const error = useLibraryStore((s) => s.error);
@@ -141,6 +142,9 @@ function LibraryPage({ onSelectSong }: LibraryPageProps) {
     <div className="library-page">
       <header className="library-page__header">
         <h1>Vocal Practice Studio</h1>
+        <button className="library-page__exercise-btn" onClick={onGoToExercise}>
+          Free Exercise
+        </button>
       </header>
 
       <div className="library-page__import">

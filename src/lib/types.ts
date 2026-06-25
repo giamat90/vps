@@ -69,6 +69,17 @@ export interface TimingDeviation {
   deltaMs: number;
 }
 
+/** A free-exercise take (no song reference) */
+export interface ExerciseTake {
+  id: string;
+  recordedAt: string;
+  filepath: string;
+  duration: number;
+  pitchData?: PitchData;
+  dynamics?: DynamicsPoint[];
+  vibrato?: VibratoMetrics;
+}
+
 /** AI coaching response */
 export interface CoachingResponse {
   tips: CoachingTip[];

@@ -2,7 +2,8 @@ import { create } from "zustand";
 import { AudioEngine } from "../audio/engine";
 import { VocalRecorder } from "../audio/recorder";
 import type { Song, Take } from "../lib/types";
-import { saveTake, listTakes, deleteTakeApi, pitchShiftSong } from "../lib/tauri";
+import { saveTake, listTakes, deleteTakeApi, pitchShiftSong, saveExerciseTake } from "../lib/tauri";
+import type { ExerciseTake } from "../lib/types";
 
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
@@ -58,6 +59,8 @@ interface PlayerState {
   punchIn: number | null;
   punchOut: number | null;
   punchLoop: boolean;
+  // Free exercise mode (no song loaded)
+  exerciseMode: boolean;
 }
 
 interface PlayerActions {
@@ -100,6 +103,11 @@ interface PlayerActions {
   setPunchOut: (t: number) => void;
   clearPunch: () => void;
   setPunchLoop: (v: boolean) => void;
+  // Exercise mode actions
+  startExercise: () => void;
+  stopExercise: () => void;
+  startExerciseRecording: () => Promise<void>;
+  stopExerciseRecording: () => Promise<ExerciseTake>;
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -127,6 +135,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   punchIn: null,
   punchOut: null,
   punchLoop: false,
+  exerciseMode: false,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -513,4 +522,82 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   setPunchOut:  (t) => set({ punchOut: t }),
   clearPunch:   ()  => set({ punchIn: null, punchOut: null, punchLoop: false }),
   setPunchLoop: (v) => set({ punchLoop: v }),
+
+  startExercise: () => {
+    const eng = getEngine();
+    eng.onTimeUpdate((time) => set({ currentTime: time, isPlaying: eng.isPlaying }));
+    eng.onFinish(() => {
+      if (get().isRecording) {
+        get().stopExerciseRecording().catch((e: unknown) =>
+          console.error("[exercise] auto-stop failed:", e)
+        );
+      }
+    });
+    set({ exerciseMode: true, currentTime: 0, isPlaying: false, isRecording: false });
+  },
+
+  stopExercise: () => {
+    const eng = getEngine();
+    if (get().isMonitoring) void get().stopMonitoring();
+    eng.stopExerciseTimer();
+    set({ exerciseMode: false, isPlaying: false, currentTime: 0, isRecording: false });
+  },
+
+  startExerciseRecording: async () => {
+    const s = get();
+    if (s.isRecording) return;
+    if (s.isMonitoring) await get().stopMonitoring();
+
+    const eng = getEngine();
+    const rec = getRecorder();
+    try {
+      await rec.init(s.selectedDeviceId);
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      set({ audioDevices: devices.filter((d) => d.kind === "audioinput") });
+    } catch (e) {
+      throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
+    }
+
+    const allDevices = await navigator.mediaDevices.enumerateDevices();
+    const outputs = allDevices.filter((d) => d.kind === "audiooutput");
+    const inputLabel = (
+      allDevices.find((d) => d.kind === "audioinput" && d.deviceId === get().selectedDeviceId)?.label ?? ""
+    ).toUpperCase();
+    const realOutputs = outputs.filter(
+      (d) =>
+        !d.label.startsWith("Default -") &&
+        !d.label.startsWith("Communications -") &&
+        !d.label.toLowerCase().includes("steam"),
+    );
+    const matched =
+      realOutputs.find((d) =>
+        d.label.toUpperCase().split(/\W+/).some((tok) => tok.length >= 4 && inputLabel.includes(tok))
+      ) ?? realOutputs[0];
+    const outputId = get().selectedOutputDeviceId ?? matched?.deviceId ?? "";
+    try { await eng.setOutputDevice(outputId); } catch (e) { console.warn("[exercise-rec] setOutputDevice:", e); }
+
+    eng.startExerciseTimer();
+    rec.start();
+    set({ isRecording: true, isPlaying: true });
+  },
+
+  stopExerciseRecording: async () => {
+    const eng = getEngine();
+    const rec = getRecorder();
+    const duration = eng.getCurrentTime();
+
+    eng.stopExerciseTimer();
+    eng.setInteract(true);
+
+    const blob = await rec.stop();
+    rec.releaseStream();
+    await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioData = Array.from(new Uint8Array(arrayBuffer));
+    const take = await saveExerciseTake(audioData, duration);
+
+    set({ isRecording: false, isPlaying: false, currentTime: 0 });
+    return take;
+  },
 }));

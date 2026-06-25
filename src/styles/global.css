@@ -1307,3 +1307,219 @@ body,
   color: var(--text-secondary);
   line-height: 1.4;
 }
+
+/* Library Page — Exercise button */
+.library-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.library-page__exercise-btn {
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.library-page__exercise-btn:hover {
+  background: rgba(74,158,255,0.2);
+  border-color: rgba(74,158,255,0.5);
+}
+
+/* Exercise Page */
+.exercise-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.exercise-page__header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+}
+
+.exercise-page__back {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.9rem;
+  font-family: inherit;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: color 0.15s;
+  white-space: nowrap;
+}
+
+.exercise-page__back:hover {
+  color: var(--text-primary);
+}
+
+.exercise-page__title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.exercise-page__timer {
+  margin-left: auto;
+  font-size: 1.1rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+}
+
+.exercise-page__timer--active {
+  color: var(--accent);
+}
+
+.exercise-page__roll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 1rem;
+  gap: 0.4rem;
+  overflow: hidden;
+}
+
+.exercise-page__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: var(--bg-secondary);
+  border-top: 1px solid rgba(255,255,255,0.06);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.exercise-page__error {
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+.exercise-rec-btn {
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+
+.exercise-rec-btn--active {
+  background: rgba(233, 69, 96, 0.3);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.exercise-rec-btn:hover:not(.exercise-rec-btn--active) {
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.exercise-page__takes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem 0.75rem;
+  max-height: 30%;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.exercise-page__takes-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+/* Exercise Take List */
+.exercise-take-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.exercise-take-list__empty {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 0.5rem;
+}
+
+.exercise-take-list__item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: border-color 0.15s;
+  flex-wrap: wrap;
+}
+
+.exercise-take-list__item--active {
+  border-color: rgba(74,158,255,0.4);
+}
+
+.exercise-take-list__meta {
+  display: flex;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.exercise-take-list__date {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.exercise-take-list__dur {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.exercise-take-list__player {
+  width: 100%;
+  height: 2.2rem;
+  accent-color: var(--accent);
+}
+
+.exercise-take-list__delete {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  line-height: 1;
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+
+.exercise-take-list__delete:hover {
+  color: var(--accent);
+}

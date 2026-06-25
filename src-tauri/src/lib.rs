@@ -21,6 +21,9 @@ pub fn run() {
             commands::list_takes,
             commands::delete_take,
             commands::load_analysis,
+            commands::save_exercise_take,
+            commands::list_exercise_takes,
+            commands::delete_exercise_take,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {

@@ -366,6 +366,131 @@ pub async fn delete_take(song_id: String, take_id: String) -> Result<(), String>
     save_takes(&song_id, &filtered)
 }
 
+// --- Exercise take commands ---
+
+#[derive(Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExerciseTake {
+    pub id: String,
+    pub recorded_at: String,
+    pub filepath: String,
+    pub duration: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pitch_data: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dynamics: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vibrato: Option<serde_json::Value>,
+}
+
+fn exercises_json_path() -> std::path::PathBuf {
+    storage::exercises_dir().join("exercises.json")
+}
+
+fn load_exercise_takes() -> Result<Vec<ExerciseTake>, String> {
+    let path = exercises_json_path();
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let data = std::fs::read_to_string(&path).map_err(|e| format!("Read exercises: {e}"))?;
+    serde_json::from_str(&data).map_err(|e| format!("Parse exercises: {e}"))
+}
+
+fn save_exercise_takes_list(takes: &[ExerciseTake]) -> Result<(), String> {
+    let path = exercises_json_path();
+    let data = serde_json::to_string_pretty(takes).map_err(|e| format!("Serialize: {e}"))?;
+    std::fs::write(&path, data).map_err(|e| format!("Write exercises: {e}"))
+}
+
+#[tauri::command]
+pub async fn save_exercise_take(
+    state: State<'_, SidecarState>,
+    audio_data: Vec<u8>,
+    duration: f64,
+) -> Result<ExerciseTake, String> {
+    let take_id = uuid::Uuid::new_v4().to_string();
+    let takes_dir = storage::exercises_takes_dir();
+
+    let file_path = takes_dir.join(format!("{take_id}.webm"));
+    std::fs::write(&file_path, &audio_data).map_err(|e| format!("Write exercise take: {e}"))?;
+
+    let file_path_str = file_path.to_string_lossy().to_string();
+    let output_dir_str = takes_dir.to_string_lossy().to_string();
+
+    let (pitch_data, dynamics, vibrato) = {
+        let guard = ensure_sidecar(&state);
+        if let Ok(guard) = guard {
+            if let Some(sidecar) = guard.as_ref() {
+                let cmd = serde_json::json!({
+                    "cmd": "analyze",
+                    "recordingPath": file_path_str,
+                    "outputDir": output_dir_str,
+                });
+                let _ = sidecar.send_command(&cmd);
+                let timeout = std::time::Duration::from_secs(300);
+                let mut result = (None, None, None);
+                loop {
+                    match sidecar.recv_timeout(timeout) {
+                        Ok(SidecarMessage::Result { data, .. }) => {
+                            result = (
+                                data.get("pitchData").cloned(),
+                                data.get("dynamics").cloned(),
+                                data.get("vibrato").cloned(),
+                            );
+                            break;
+                        }
+                        Ok(SidecarMessage::Error { message, .. }) => {
+                            log::warn!("Exercise take analysis error: {message}");
+                            break;
+                        }
+                        Ok(SidecarMessage::Progress { .. }) => continue,
+                        _ => break,
+                    }
+                }
+                result
+            } else {
+                (None, None, None)
+            }
+        } else {
+            (None, None, None)
+        }
+    };
+
+    let take = ExerciseTake {
+        id: take_id,
+        recorded_at: chrono::Utc::now().to_rfc3339(),
+        filepath: file_path_str,
+        duration,
+        pitch_data,
+        dynamics,
+        vibrato,
+    };
+
+    let mut takes = load_exercise_takes()?;
+    takes.push(take.clone());
+    save_exercise_takes_list(&takes)?;
+
+    Ok(take)
+}
+
+#[tauri::command]
+pub async fn list_exercise_takes() -> Result<Vec<ExerciseTake>, String> {
+    load_exercise_takes()
+}
+
+#[tauri::command]
+pub async fn delete_exercise_take(take_id: String) -> Result<(), String> {
+    let takes = load_exercise_takes()?;
+    if let Some(take) = takes.iter().find(|t| t.id == take_id) {
+        let path = std::path::Path::new(&take.filepath);
+        if path.exists() {
+            std::fs::remove_file(path).map_err(|e| format!("Delete exercise take file: {e}"))?;
+        }
+    }
+    let filtered: Vec<ExerciseTake> = takes.into_iter().filter(|t| t.id != take_id).collect();
+    save_exercise_takes_list(&filtered)
+}
+
 #[tauri::command]
 pub async fn import_youtube(
     app: AppHandle,

@@ -26,6 +26,10 @@ export class AudioEngine {
   private _takeDuration = 0;
   // Whether the take WaveSurfer is currently playing (managed by window sync)
   private _takeIsPlaying = false;
+  // Exercise timer — used when no song is loaded (free exercise mode)
+  private _exerciseMode = false;
+  private _exerciseStartAt = 0;   // performance.now() at last resume
+  private _exerciseOffset = 0;    // accumulated seconds before last pause
 
   async load(
     songDir: string,
@@ -325,8 +329,38 @@ export class AudioEngine {
   }
 
   getCurrentTime(): number {
+    if (this._exerciseMode) {
+      const elapsed = this._isPlaying
+        ? this._exerciseOffset + (performance.now() - this._exerciseStartAt) / 1000
+        : this._exerciseOffset;
+      return elapsed;
+    }
     // Use the instrumental as the time reference — it always plays the full song.
     return this.instrumental?.getCurrentTime() ?? 0;
+  }
+
+  startExerciseTimer(): void {
+    this._exerciseMode = true;
+    this._exerciseOffset = 0;
+    this._exerciseStartAt = performance.now();
+    this._isPlaying = true;
+    this._startTimeUpdate();
+  }
+
+  pauseExerciseTimer(): void {
+    if (!this._exerciseMode) return;
+    this._exerciseOffset += (performance.now() - this._exerciseStartAt) / 1000;
+    this._isPlaying = false;
+    this._stopTimeUpdate();
+  }
+
+  stopExerciseTimer(): void {
+    this._exerciseMode = false;
+    this._exerciseOffset = 0;
+    this._exerciseStartAt = 0;
+    this._isPlaying = false;
+    this._stopTimeUpdate();
+    this._timeUpdateCb?.(0);
   }
 
   getDuration(): number {
@@ -360,6 +394,8 @@ export class AudioEngine {
     this._takeOffset = 0;
     this._takeDuration = 0;
     this._takeIsPlaying = false;
+    this._exerciseMode = false;
+    this._exerciseOffset = 0;
   }
 
   private _startTimeUpdate(): void {
