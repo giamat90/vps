@@ -77,9 +77,9 @@ function drawKeyboard(
     // Divider
     ctx.fillStyle = "#33334a";
     ctx.fillRect(key.x + key.w - 0.5, 0, 1, H);
-    // Note label on every white key: C notes get octave suffix (C3, C4…), others just letter
-    const pc = ((midi % 12) + 12) % 12;
-    const label = pc === 0 ? `C${Math.floor(midi / 12) - 1}` : NOTE_NAMES[pc];
+    const pc    = ((midi % 12) + 12) % 12;
+    const octave = Math.floor(midi / 12) - 1;
+    const label = `${NOTE_NAMES[pc]}${octave}`;
     ctx.fillStyle = isSong || isTake || isLive ? "#fff" : "#666";
     ctx.font = `${fontSize}px sans-serif`;
     ctx.textAlign = "center";
