@@ -309,8 +309,9 @@ export default function PianoRoll() {
   const songPitch   = useAnalysisStore((s) => s.songPitch);
   const takePitch   = useAnalysisStore((s) => s.takePitch);
   const livePitch   = useAnalysisStore((s) => s.livePitch);
-  const isLoaded    = useAnalysisStore((s) => s.isLoaded);
-  const isRecording = usePlayerStore((s) => s.isRecording);
+  const isLoaded      = useAnalysisStore((s) => s.isLoaded);
+  const isRecording   = usePlayerStore((s) => s.isRecording);
+  const exerciseMode  = usePlayerStore((s) => s.exerciseMode);
   const punchIn     = usePlayerStore((s) => s.punchIn);
   const punchOut    = usePlayerStore((s) => s.punchOut);
   const punchLoop   = usePlayerStore((s) => s.punchLoop);
@@ -382,7 +383,7 @@ export default function PianoRoll() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      if (!isLoaded || songPitch.length === 0) {
+      if (!isLoaded && livePitch.length === 0) {
         ctx.fillStyle    = "#a0a0b060";
         ctx.font         = "11px sans-serif";
         ctx.textAlign    = "center";
@@ -421,12 +422,12 @@ export default function PianoRoll() {
 
   // rAF loop — no React re-renders during playback
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded && !exerciseMode) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded]);
+  }, [isLoaded, exerciseMode]);
 
   // ResizeObserver — single mount; watches both canvases
   useEffect(() => {

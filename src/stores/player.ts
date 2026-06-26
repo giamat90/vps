@@ -16,6 +16,10 @@ export function getMonitorStream(): MediaStream | null {
   return monitorStream;
 }
 
+export function getRecorderStream(): MediaStream | null {
+  return recorder?.getStream() ?? null;
+}
+
 export function getEngine(): AudioEngine {
   if (!engine) {
     engine = new AudioEngine();
@@ -346,6 +350,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     // WASAPI: getUserMedia switches the default output to the Communications
     // Device. Pin to the real hardware output (same logic as startRecording).
     const allDevices = await navigator.mediaDevices.enumerateDevices();
+    // Update device list now that permission is granted (labels become visible)
+    set({ audioDevices: allDevices.filter((d) => d.kind === "audioinput") });
     const outputs = allDevices.filter((d) => d.kind === "audiooutput");
     const inputLabel = (
       allDevices.find((d) => d.kind === "audioinput" && d.deviceId === s.selectedDeviceId)?.label ?? ""
@@ -367,6 +373,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       console.warn("[monitor] setOutputDevice failed:", e);
     }
 
+    if (get().exerciseMode) eng.startExerciseTimer();
     set({ isMonitoring: true });
   },
 
@@ -375,9 +382,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       monitorStream.getTracks().forEach((t) => t.stop());
       monitorStream = null;
     }
+    const eng = getEngine();
+    if (get().exerciseMode) eng.stopExerciseTimer();
     try {
-      await getEngine().setOutputDevice(get().selectedOutputDeviceId ?? "");
-    } catch {}
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "");
+    } catch (e) {
+      console.warn("[monitor] setOutputDevice on stop failed:", e);
+    }
     set({ isMonitoring: false });
   },
 
@@ -468,7 +479,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       // the default audio endpoint back to the regular speakers output.
       rec.releaseStream();
       // Restore output routing to the user's selection (or system default).
-      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) => console.warn("[recording] setOutputDevice on stop failed:", e));
 
       // Convert blob to byte array for Tauri
       const arrayBuffer = await blob.arrayBuffer();
@@ -486,7 +497,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       }));
     } catch (e) {
       rec.releaseStream();
-      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e2: unknown) => console.warn("[recording] setOutputDevice on error-stop failed:", e2));
       set({ isRecording: false, isPlaying: false, currentTime: 0 });
       throw e;
     }
@@ -591,7 +602,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
     const blob = await rec.stop();
     rec.releaseStream();
-    await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch(() => {});
+    await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) => console.warn("[exercise-rec] setOutputDevice on stop failed:", e));
 
     const arrayBuffer = await blob.arrayBuffer();
     const audioData = Array.from(new Uint8Array(arrayBuffer));

@@ -15,6 +15,9 @@ Every CSS size — width, height, font-size, padding, margin, gap — must use `
 ### 3. No comments unless the WHY is non-obvious
 Default to no comments. Only add one for hidden constraints, workarounds, subtle invariants. No "what the code does" narration.
 
+### 4. Never swallow errors silently
+Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log with `console.warn` or `console.error` at minimum. If an error is expected and non-fatal, log it; if it is unexpected, rethrow or surface it to the UI.
+
 ---
 
 ## Tech stack

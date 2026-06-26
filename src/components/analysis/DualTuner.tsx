@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from "react";
 import { PitchDetector } from "../../audio/pitchDetector";
 import { useAnalysisStore } from "../../stores/analysis";
-import { usePlayerStore, getMonitorStream } from "../../stores/player";
+import { usePlayerStore, getMonitorStream, getRecorderStream } from "../../stores/player";
 import { pitchAtTime, centsDeviation } from "../../audio/analysisUtils";
 import { frequencyToNoteName } from "../../audio/analysisUtils";
 
@@ -42,7 +42,6 @@ export default function DualTuner() {
   const [liveNote, setLiveNote] = useState<string>("");
   const detectorRef = useRef<PitchDetector | null>(null);
   const rafRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Refs to always have latest values inside the animation frame loop
   const currentTimeRef   = useRef(currentTime);
@@ -62,10 +61,6 @@ export default function DualTuner() {
         detectorRef.current.stop();
         detectorRef.current = null;
       }
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
       cancelAnimationFrame(rafRef.current);
       clearLiveRef.current();
       setLiveCents(null);
@@ -73,48 +68,40 @@ export default function DualTuner() {
       return;
     }
 
+    // Both streams are owned externally: monitorStream by startMonitoring(),
+    // recorder stream by rec.init(). Reusing them avoids a second getUserMedia
+    // call to the same device, which fails on Windows WASAPI.
+    const stream = isMonitoring ? getMonitorStream() : getRecorderStream();
+    if (!stream) return;
+
     clearLiveRef.current();
-    let active = true;
 
-    // Monitoring: stream already opened by startMonitoring in the store.
-    // Recording: open a dedicated stream here for pitch detection.
-    const streamPromise: Promise<MediaStream> = isMonitoring
-      ? Promise.resolve(getMonitorStream()!)
-      : navigator.mediaDevices.getUserMedia({ audio: true });
+    const det = new PitchDetector();
+    det.start(stream);
+    detectorRef.current = det;
 
-    streamPromise.then((stream) => {
-      if (!active) {
-        if (!isMonitoring) stream.getTracks().forEach((t) => t.stop());
-        return;
-      }
-      if (!isMonitoring) streamRef.current = stream;
-
-      const det = new PitchDetector();
-      det.start(stream);
-      detectorRef.current = det;
-
-      const tick = () => {
-        const reading = det.getCurrentPitch();
-        if (reading) {
-          setLiveNote(reading.name);
-          const t = currentTimeRef.current;
-          const ref = pitchAtTime(songPitchRef.current, t);
-          if (ref && ref.frequency > 0) {
-            setLiveCents(centsDeviation(reading.frequency, ref.frequency));
-          } else {
-            setLiveCents(reading.cents);
-          }
-          if (reading.frequency > 0) {
-            appendLiveRef.current({ time: t, frequency: reading.frequency, confidence: 1.0 });
-          }
+    let rafActive = true;
+    const tick = () => {
+      const reading = det.getCurrentPitch();
+      if (reading) {
+        setLiveNote(reading.name);
+        const t = currentTimeRef.current;
+        const ref = pitchAtTime(songPitchRef.current, t);
+        if (ref && ref.frequency > 0) {
+          setLiveCents(centsDeviation(reading.frequency, ref.frequency));
+        } else {
+          setLiveCents(reading.cents);
         }
-        rafRef.current = requestAnimationFrame(tick);
-      };
-      rafRef.current = requestAnimationFrame(tick);
-    }).catch(() => {});
+        if (reading.frequency > 0) {
+          appendLiveRef.current({ time: t, frequency: reading.frequency, confidence: 1.0 });
+        }
+      }
+      if (rafActive) rafRef.current = requestAnimationFrame(tick);
+    };
+    rafRef.current = requestAnimationFrame(tick);
 
     return () => {
-      active = false;
+      rafActive = false;
       cancelAnimationFrame(rafRef.current);
     };
   }, [isRecording, isMonitoring]);

@@ -19,6 +19,7 @@ export class PitchDetector {
   start(stream: MediaStream): void {
     this.stop();
     this.ctx = new AudioContext();
+    void this.ctx.resume();
     this.analyser = this.ctx.createAnalyser();
     this.analyser.fftSize = 2048;
     this.buffer = new Float32Array(this.analyser.fftSize) as Float32Array<ArrayBuffer>;
