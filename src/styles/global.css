@@ -1332,6 +1332,85 @@ body,
   border-color: rgba(74,158,255,0.5);
 }
 
+.library-page__header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.library-page__about-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.3rem 0.4rem;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+}
+.library-page__about-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.07);
+}
+
+.about-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.about-modal {
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px;
+  padding: 2rem 2.5rem;
+  min-width: 22rem;
+  max-width: 90vw;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+.about-modal__title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.about-modal__version {
+  font-size: 0.9rem;
+  color: rgba(74,158,255,0.9);
+  font-family: monospace;
+  margin: 0;
+}
+.about-modal__desc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 28rem;
+}
+.about-modal__close {
+  margin-top: 0.5rem;
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  padding: 0.4rem 1.2rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.about-modal__close:hover {
+  background: rgba(74,158,255,0.2);
+}
+
 /* Exercise Page */
 .exercise-page {
   height: 100%;

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getVersion } from "@tauri-apps/api/app";
 import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
 import { exportStem, pitchShiftSong } from "../lib/tauri";
@@ -130,9 +131,15 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const clearError = useLibraryStore((s) => s.clearError);
   const initProgressListener = useLibraryStore((s) => s.initProgressListener);
 
+  const [showAbout, setShowAbout] = useState(false);
+  const [appVersion, setAppVersion] = useState("");
+
   useEffect(() => {
     fetchSongs();
     const cleanupPromise = initProgressListener();
+    getVersion()
+      .then(setAppVersion)
+      .catch((e: unknown) => console.warn("[About] getVersion failed:", e));
     return () => {
       cleanupPromise.then((unlisten) => unlisten());
     };
@@ -142,10 +149,36 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
     <div className="library-page">
       <header className="library-page__header">
         <h1>Vocal Practice Studio</h1>
-        <button className="library-page__exercise-btn" onClick={onGoToExercise}>
-          Free Exercise
-        </button>
+        <div className="library-page__header-actions">
+          <button className="library-page__exercise-btn" onClick={onGoToExercise}>
+            Free Exercise
+          </button>
+          <button
+            className="library-page__about-btn"
+            onClick={() => setShowAbout(true)}
+            title="About"
+          >
+            ⓘ
+          </button>
+        </div>
       </header>
+
+      {showAbout && (
+        <div className="about-overlay" onClick={() => setShowAbout(false)}>
+          <div className="about-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="about-modal__title">Vocal Practice Studio</h2>
+            {appVersion && <p className="about-modal__version">v{appVersion}</p>}
+            <p className="about-modal__desc">
+              Desktop app for singers to practice against separated tracks,
+              record takes, and analyze pitch, timing, vibrato, and dynamics.
+            </p>
+            <button className="about-modal__close" onClick={() => setShowAbout(false)}>
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
 
       <div className="library-page__import">
         <DropZone />
