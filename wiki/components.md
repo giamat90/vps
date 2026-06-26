@@ -164,7 +164,7 @@ Renders `TimeRuler` at the top, then up to three stacked WaveSurfer tracks each 
 
 ### MicSelector / OutputSelector
 
-Call `fetchAudioDevices()` / `fetchOutputDevices()` on mount to populate device lists. After `getUserMedia` succeeds during recording, device labels become available and `fetchAudioDevices()` is called again to refresh the list with human-readable names.
+Call `fetchAudioDevices()` / `fetchOutputDevices()` on mount to populate device lists. Before the first `getUserMedia` call, `enumerateDevices()` returns devices with empty labels and indistinguishable `deviceId`s. As soon as `getUserMedia` grants permission — whether from clicking **Monitor** or **Record** — the store re-enumerates and pushes the labelled list so named devices (e.g. "Focusrite USB Audio") appear immediately.
 
 ### KeyTranspose
 
@@ -212,6 +212,21 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 
 **Constants:** MIDI 45–84 (A2–C6, 40 semitones), 8-second window, `15rem` canvas height.
 
+### DualTuner
+
+Real-time pitch gauge shown in the practice room header and the exercise page header. Active whenever `isRecording || isMonitoring`.
+
+**Stream model:** DualTuner never opens its own `getUserMedia`. It reuses the already-open stream owned by the store:
+
+| Active state | Stream source |
+|---|---|
+| `isMonitoring` | `getMonitorStream()` — opened by `startMonitoring()` |
+| `isRecording` | `getRecorderStream()` — opened by `rec.init()` in `startRecording` / `startExerciseRecording` |
+
+Opening a second `getUserMedia` to the same device caused silent failures on Windows WASAPI (exclusive-mode endpoints reject a second client). By reusing the existing stream there is no device conflict and no extra permission prompt.
+
+**Pitch detection:** A `PitchDetector` (autocorrelation, 2048-sample FFT) is created on each activation, connects the stream to a Web Audio `AnalyserNode`, and runs a `requestAnimationFrame` loop calling `getCurrentPitch()`. Detected frequencies are pushed into `livePitch[]` in the analysis store and shown on the needle gauge. On deactivation, the `AudioContext` is closed and `livePitch` is cleared; the underlying media stream is **not** stopped (it is owned externally).
+
 ### PianoKeyboard
 
 Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). All white keys show a full note label with octave number at the bottom of each key: `C3`, `D3`, `E3`, `F3`, `G3`, `A3`, `B3`, `C4`, `D4` … The octave is derived as `Math.floor(midi / 12) - 1` (MIDI convention).
@@ -236,7 +251,7 @@ Standalone practice page — no song required. Used for warming up, vocal exerci
 
 **Time source:** `AudioEngine` exercise timer (`_exerciseMode = true`). `getCurrentTime()` returns `performance.now()` elapsed seconds — no WaveSurfer involved. The rAF tick is shared, so PianoRoll and DualTuner require no changes.
 
-**Monitor mode:** calls `startMonitoring()` / `stopMonitoring()` from the player store (identical to the PracticeRoom). The timer does **not** advance in monitor mode — it only advances while recording.
+**Monitor mode:** calls `startMonitoring()` / `stopMonitoring()` from the player store. In exercise mode, `startMonitoring()` also calls `eng.startExerciseTimer()` so `currentTime` advances and the piano roll scrolls while monitoring. `stopMonitoring()` stops the timer again.
 
 **Record mode:** `startExerciseRecording()` opens the mic, applies WASAPI output routing, then calls `eng.startExerciseTimer()`. `stopExerciseRecording()` stops the timer, drains the recorder, calls `save_exercise_take` Tauri command (triggers pYIN analysis), and returns the `ExerciseTake`. `ExercisePage` then calls `addExerciseTake(take)` on the exercise store.
 

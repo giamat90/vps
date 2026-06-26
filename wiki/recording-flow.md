@@ -150,20 +150,25 @@ If none are supported, `MediaRecorder` is created without an explicit `mimeType`
 
 ```
 1. getUserMedia(selectedDeviceId)       open mic stream (stored in module-level monitorStream ref)
-2. Enumerate output devices             find real hardware output (same WASAPI fix as recording)
-3. eng.setOutputDevice(outputId)        pin audio away from Communications endpoint
-4. set isMonitoring = true
+2. enumerateDevices()                   refresh audioDevices with labels now that permission is granted
+3. Enumerate output devices             find real hardware output (same WASAPI fix as recording)
+4. eng.setOutputDevice(outputId)        pin audio away from Communications endpoint
+5. if exerciseMode: eng.startExerciseTimer()   advance currentTime while monitoring
+6. set isMonitoring = true
 ```
 
-`monitorStream` is a module-level ref (not Zustand state) exported as `getMonitorStream()`. DualTuner calls `getMonitorStream()` to attach the pitch detector — no second `getUserMedia` needed.
+`monitorStream` is a module-level ref (not Zustand state) exported as `getMonitorStream()`. DualTuner reads it via `getMonitorStream()` — no second `getUserMedia` is ever opened.
+
+Step 2 matters because `enumerateDevices()` returns empty labels before the first `getUserMedia` grant. Refreshing immediately lets `MicSelector` show human-readable device names (e.g. "Focusrite USB Audio") right after the first click.
 
 ### stopMonitoring sequence
 
 ```
 1. monitorStream.getTracks().forEach(t.stop())   release mic
 2. monitorStream = null
-3. eng.setOutputDevice(selectedOutputDeviceId)   restore routing
-4. set isMonitoring = false
+3. if exerciseMode: eng.stopExerciseTimer()       pause currentTime
+4. eng.setOutputDevice(selectedOutputDeviceId)   restore routing
+5. set isMonitoring = false
 ```
 
 ### Mutual exclusivity
