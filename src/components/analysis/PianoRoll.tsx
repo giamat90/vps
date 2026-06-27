@@ -1,9 +1,11 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine, usePlayerStore } from "../../stores/player";
+import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
 import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
+import { SPECTRO_COLORMAP, quantizeFftToRows } from "../../lib/spectroUtils";
+import type { SongSpectrogram } from "../../stores/analysis";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -301,17 +303,89 @@ function drawRuler(
   ctx.beginPath(); ctx.moveTo(0, H - 0.5); ctx.lineTo(W, H - 0.5); ctx.stroke();
 }
 
+// ─── spectrogram draw passes ─────────────────────────────────────────────────
+
+function drawSongSpectrogram(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  spectro: SongSpectrogram,
+  t0: number,
+  rollW: number,
+): void {
+  const { canvas, frames, hopTime } = spectro;
+  const t1 = t0 + WINDOW_S;
+  const frameStart = Math.max(0, Math.floor(t0 / hopTime));
+  const frameEnd   = Math.min(frames, Math.ceil(t1 / hopTime));
+  const sw = frameEnd - frameStart;
+  if (sw <= 0) return;
+
+  const destX = PIANO_W + ((frameStart * hopTime - t0) / WINDOW_S) * rollW;
+  const destW = (sw * hopTime / WINDOW_S) * rollW;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PIANO_W, 0, rollW, H);
+  ctx.clip();
+  ctx.globalAlpha = 0.85;
+  ctx.drawImage(canvas, frameStart, 0, sw, N_NOTES, destX, 0, destW, H);
+  ctx.restore();
+}
+
+function drawLiveSpectrogram(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  t0: number,
+  rollW: number,
+  buffer: { time: number; data: Uint8Array }[],
+): void {
+  if (buffer.length < 2) return;
+  const t1 = t0 + WINDOW_S;
+  const nh = H / N_NOTES;
+  const lut = SPECTRO_COLORMAP;
+
+  // Approximate column width based on capture interval (~20 fps)
+  const colW = Math.max(1, (rollW / (WINDOW_S * 20)));
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(PIANO_W, 0, rollW, H);
+  ctx.clip();
+  ctx.globalAlpha = 0.85;
+
+  for (const { time, data } of buffer) {
+    if (time < t0 - 0.1 || time > t1 + 0.1) continue;
+    const x = PIANO_W + ((time - t0) / WINDOW_S) * rollW;
+    for (let ri = 0; ri < N_NOTES; ri++) {
+      const val = data[ri];
+      if (val < 8) continue;
+      ctx.fillStyle = `rgb(${lut[val * 3]},${lut[val * 3 + 1]},${lut[val * 3 + 2]})`;
+      ctx.fillRect(Math.floor(x), Math.floor(ri * nh), Math.ceil(colW), Math.ceil(nh));
+    }
+  }
+
+  ctx.restore();
+}
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function PianoRoll() {
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const rulerRef    = useRef<HTMLCanvasElement>(null);
-  const songPitch   = useAnalysisStore((s) => s.songPitch);
-  const takePitch   = useAnalysisStore((s) => s.takePitch);
-  const livePitch   = useAnalysisStore((s) => s.livePitch);
-  const isLoaded      = useAnalysisStore((s) => s.isLoaded);
-  const isRecording   = usePlayerStore((s) => s.isRecording);
-  const exerciseMode  = usePlayerStore((s) => s.exerciseMode);
+  const canvasRef        = useRef<HTMLCanvasElement>(null);
+  const rulerRef         = useRef<HTMLCanvasElement>(null);
+  const songPitch        = useAnalysisStore((s) => s.songPitch);
+  const takePitch        = useAnalysisStore((s) => s.takePitch);
+  const livePitch        = useAnalysisStore((s) => s.livePitch);
+  const songSpectrogram  = useAnalysisStore((s) => s.songSpectrogram);
+  const isLoaded         = useAnalysisStore((s) => s.isLoaded);
+  const isRecording      = usePlayerStore((s) => s.isRecording);
+  const isMonitoring     = usePlayerStore((s) => s.isMonitoring);
+  const exerciseMode     = usePlayerStore((s) => s.exerciseMode);
+
+  const [showSpectrogram, setShowSpectrogram] = useState(false);
+
+  // Rolling buffer for live mic spectrogram frames
+  const liveSpectroBuffer = useRef<{ time: number; data: Uint8Array }[]>([]);
+  const lastSpectroCapture = useRef(0);
+  const fftScratch = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const punchIn     = usePlayerStore((s) => s.punchIn);
   const punchOut    = usePlayerStore((s) => s.punchOut);
   const punchLoop   = usePlayerStore((s) => s.punchLoop);
@@ -321,6 +395,13 @@ export default function PianoRoll() {
   const clearPunch  = usePlayerStore((s) => s.clearPunch);
   const setPunchLoop = usePlayerStore((s) => s.setPunchLoop);
   const seek        = usePlayerStore((s) => s.seek);
+
+  // Clear live spectrogram buffer when mic goes inactive
+  useEffect(() => {
+    if (!isRecording && !isMonitoring) {
+      liveSpectroBuffer.current = [];
+    }
+  }, [isRecording, isMonitoring]);
 
   const drawRef = useRef<() => void>(() => {});
 
@@ -341,12 +422,35 @@ export default function PianoRoll() {
     startTime: 0,
   });
 
-  // Rebuild draw function whenever pitch data or punch state changes
+  // Rebuild draw function whenever pitch data, punch state, or spectrogram toggle changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     drawRef.current = () => {
+      // ── live spectrogram capture (throttled to 20 fps) ─────────────────────
+      if (showSpectrogram && (isRecording || isMonitoring)) {
+        const now = performance.now();
+        if (now - lastSpectroCapture.current >= 50) {
+          lastSpectroCapture.current = now;
+          const analyser = getMicAnalyser();
+          if (analyser) {
+            const binCount = analyser.frequencyBinCount;
+            if (!fftScratch.current || fftScratch.current.length !== binCount) {
+              fftScratch.current = new Uint8Array(binCount);
+            }
+            analyser.getByteFrequencyData(fftScratch.current);
+            const col = quantizeFftToRows(fftScratch.current, analyser.context.sampleRate);
+            const t = getEngine().getCurrentTime();
+            liveSpectroBuffer.current.push({ time: t, data: col });
+            // Trim entries older than one visible window
+            const cutoff = t - WINDOW_S;
+            const keep = liveSpectroBuffer.current.findIndex((e) => e.time >= cutoff);
+            if (keep > 0) liveSpectroBuffer.current.splice(0, keep);
+          }
+        }
+      }
+
       // ── ruler ──────────────────────────────────────────────────────────────
       const ruler = rulerRef.current;
       if (ruler) {
@@ -405,6 +509,15 @@ export default function PianoRoll() {
       const liveMidi = getCurrentMidi(livePitch, currentTime);
 
       drawLanes(ctx, W, H);
+
+      if (showSpectrogram) {
+        if ((isRecording || isMonitoring) && liveSpectroBuffer.current.length > 0) {
+          drawLiveSpectrogram(ctx, H, t0, rollW, liveSpectroBuffer.current);
+        } else if (songSpectrogram) {
+          drawSongSpectrogram(ctx, H, songSpectrogram, t0, rollW);
+        }
+      }
+
       drawRibbon(ctx, songPitch, COLOR_SONG, t0, t1, H, timeToX);
       if (takePitch.length > 0) {
         drawRibbon(ctx, takePitch, COLOR_TAKE, t0, t1, H, timeToX);
@@ -418,7 +531,7 @@ export default function PianoRoll() {
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut]);
+  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut, showSpectrogram, songSpectrogram, isRecording, isMonitoring]);
 
   // rAF loop — no React re-renders during playback
   useEffect(() => {
@@ -568,6 +681,14 @@ export default function PianoRoll() {
     <div className="analysis-panel">
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Piano Roll</span>
+        <div className="analysis-panel__header-right">
+        <button
+          className={`spectro-btn${showSpectrogram ? " spectro-btn--active" : ""}`}
+          onClick={() => setShowSpectrogram((v) => !v)}
+          title={showSpectrogram ? "Hide spectrogram" : "Show spectrogram"}
+        >
+          Spectrum
+        </button>
         <div className="analysis-panel__legend">
           <span className="legend-dot legend-dot--song" />
           <span>Song</span>
@@ -583,6 +704,7 @@ export default function PianoRoll() {
               <span>Live</span>
             </>
           )}
+        </div>
         </div>
       </div>
       <div className="piano-roll__ruler-wrap">

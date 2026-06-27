@@ -9,6 +9,14 @@ import type {
 } from "../lib/types";
 import { loadAnalysis } from "../lib/tauri";
 import { computeTimingDeviations } from "../audio/analysisUtils";
+import { buildSpectroCanvas } from "../lib/spectroUtils";
+
+export interface SongSpectrogram {
+  times: number[];
+  canvas: OffscreenCanvas;
+  frames: number;
+  hopTime: number;
+}
 
 function pitchDataToPoints(pd: PitchData): PitchPoint[] {
   const out: PitchPoint[] = [];
@@ -24,6 +32,7 @@ interface AnalysisState {
   songPitch: PitchPoint[];
   songOnsets: number[];
   songDynamics: DynamicsPoint[];
+  songSpectrogram: SongSpectrogram | null;
   takePitch: PitchPoint[];
   takeOnsets: number[];
   takeDynamics: DynamicsPoint[];
@@ -45,6 +54,7 @@ const empty: AnalysisState = {
   songPitch: [],
   songOnsets: [],
   songDynamics: [],
+  songSpectrogram: null,
   takePitch: [],
   takeOnsets: [],
   takeDynamics: [],
@@ -61,10 +71,25 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
     loadSongAnalysis: async (songId) => {
       try {
         const data = await loadAnalysis(songId);
+
+        let songSpectrogram: SongSpectrogram | null = null;
+        if (data.spectroB64 && data.spectroFrames && data.spectroTimes?.length) {
+          try {
+            const canvas = buildSpectroCanvas(data.spectroB64, data.spectroFrames);
+            const hopTime = data.spectroTimes.length > 1
+              ? data.spectroTimes[1] - data.spectroTimes[0]
+              : 512 / 22050;
+            songSpectrogram = { times: data.spectroTimes, canvas, frames: data.spectroFrames, hopTime };
+          } catch (e) {
+            console.warn("Failed to build spectrogram canvas:", e);
+          }
+        }
+
         set({
           songPitch: data.pitchData ? pitchDataToPoints(data.pitchData) : [],
           songOnsets: (data.onsets as number[]) ?? [],
           songDynamics: (data.dynamics as DynamicsPoint[]) ?? [],
+          songSpectrogram,
           isLoaded: true,
         });
       } catch (e) {

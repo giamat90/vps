@@ -1083,6 +1083,35 @@ body,
   letter-spacing: 0.04em;
 }
 
+.analysis-panel__header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.spectro-btn {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.25rem;
+  border: 1px solid #3a4a5e;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+
+.spectro-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--text-primary);
+}
+
+.spectro-btn--active {
+  color: #4ade80;
+  border-color: #4ade80;
+  background: rgba(74, 222, 128, 0.1);
+}
+
 .analysis-panel__legend {
   display: flex;
   align-items: center;
