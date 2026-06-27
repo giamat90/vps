@@ -79,7 +79,7 @@ Analyzes a recorded take (after the singer finishes recording).
 ```
 
 Steps (in `analysis.py`):
-1. pYIN pitch detection (librosa) — used for recording analysis only
+1. SRH pitch detection (same `detect_pitch_srh` as song processing) — resampled to 22050 Hz
 2. Onset detection
 3. RMS dynamics
 4. Vibrato rate/depth computation
@@ -130,12 +130,23 @@ Returns the same dict as `process`, with `"title"` added (extracted from yt-dlp 
 
 CREPE and pYIN were tried first and both failed on singers with strong upper harmonics (e.g. chest-voice tenors/baritones where the 2nd harmonic has more energy than the fundamental — CREPE tracked the 2nd formant, pYIN tracked the 2nd harmonic). HPS was tried next and gave the correct octave but was too jittery due to coarse FFT bin resolution. SRH was chosen because it sums harmonic energy and subtracts inter-harmonic energy, making it structurally immune to dominant upper harmonics. Validated against VoceVista on Chris Cornell vocals.
 
-Key implementation details:
+**Parameters are aligned with VoceVista "Singing - Narrowband" profile:**
 
-- Vocals resampled to 22050 Hz before detection for consistent bin resolution (5.4 Hz/bin at `frame_length=4096`)
-- Candidate F0 grid: 0.5 Hz steps from C2 (~65 Hz) to C7 (~2093 Hz) — ~4000 candidates per frame
-- `n_harmonics = 5`, `voicing_threshold = 0.15`
-- Parabolic interpolation on the SRH score curve for sub-Hz precision
+| Parameter | Value | Rationale |
+|---|---|---|
+| `frame_length` | 2048 | 92.9 ms window at 22050 Hz — matches VoceVista max pitch window |
+| `hop_length` | 512 | 23.2 ms step (~43 frames/s) |
+| `fmin` | 65.0 Hz | C2 — lowest practical singing fundamental |
+| `fmax` | 1400.0 Hz | Above F#6 — VoceVista upper limit; no singer exceeds this; cuts candidate grid ~34% |
+| `n_harmonics` | 5 | — |
+| `voicing_threshold` | 0.25 | VoceVista `minimumClarity` from XML profile |
+| `amplitude_threshold` | −50 dBFS | VoceVista `minimumIntensity`; silent frames skipped before SRH |
+| Window function | Dolph-Chebyshev (`chebwin`, at=100 dB) | Lower inter-harmonic leakage than Hanning; VoceVista uses same |
+
+Additional details:
+- Vocals resampled to 22050 Hz before detection for consistent bin resolution (10.77 Hz/bin at `frame_length=2048`; parabolic interpolation on SRH score curve gives sub-Hz precision)
+- Candidate F0 grid: 0.5 Hz steps from 65 → 1400 Hz — ~2670 candidates per frame
+- Per-frame RMS amplitude gate applied before windowing — silent frames leave `f0[i]=0, confidence[i]=0`
 - Post-processing on voiced frames only: median filter `size=3`, Gaussian `sigma=1.0`
 - Fully deterministic — no neural network, no randomness
 - Runs synchronously on the main thread (no threading)
@@ -151,11 +162,11 @@ Output schema (identical to previous detectors — no TypeScript changes require
 }
 ```
 
-SRH evaluates ~4000 candidates per frame so it is slower than CREPE, but acceptable for synchronous sidecar execution. Do not add threading to compensate.
+SRH evaluates ~2670 candidates per frame; acceptable for synchronous sidecar execution. Do not add threading to compensate.
 
-### Recording takes — pYIN
+### Recording takes — SRH
 
-`analysis.py` uses librosa's pYIN for analyzing the singer's recorded takes. pYIN is autocorrelation-based and performs well on clean, close-mic vocal recordings where harmonic dominance is less of an issue.
+`analysis.py` uses the same `detect_pitch_srh` function as song processing. All parameters (window, thresholds, window function) are identical — consistent pitch representation between song and take ribbons in the piano roll.
 
 ## Libraries
 
