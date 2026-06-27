@@ -5,18 +5,19 @@ export const MIDI_MAX = 84;           // C6
 export const N_NOTES  = MIDI_MAX - MIDI_MIN + 1; // 40
 export const N_SPECTRO_ROWS = 160;    // 4 sub-rows per semitone for live capture
 
-// Thermal colormap: black → dark blue → blue → cyan → green → yellow → orange → red.
+// Thermal colormap matching VoceVista: black → deep blue → blue → teal → yellow → orange → red.
+// No green band — skips straight from teal to yellow for a natural spectral look.
 // Index: value 0–255. Layout: [r0,g0,b0, r1,g1,b1, ...]
 export const SPECTRO_COLORMAP: Uint8Array = (() => {
   const stops: [number, number, number][] = [
-    [0,   0,   0  ],  // black
-    [0,   0,   128],  // dark blue
-    [0,   0,   255],  // blue
-    [0,   200, 255],  // cyan
-    [0,   255, 0  ],  // green
-    [255, 255, 0  ],  // yellow
-    [255, 100, 0  ],  // orange
-    [255, 0,   0  ],  // red
+    [0,   0,   0  ],  // black  (silence)
+    [0,   0,   100],  // deep blue
+    [0,   30,  220],  // blue
+    [0,   180, 220],  // teal
+    [220, 220,  0  ],  // yellow
+    [255, 120,  0  ],  // orange
+    [255,  20,  0  ],  // red
+    [255, 255, 200],  // near-white (peak)
   ];
   const lut = new Uint8Array(256 * 3);
   for (let i = 0; i < 256; i++) {
