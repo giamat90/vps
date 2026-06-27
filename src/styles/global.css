@@ -1481,18 +1481,24 @@ body,
   color: var(--accent);
 }
 
-.exercise-page__roll {
+.exercise-page__analysis {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem 1rem;
+}
+
+.exercise-page__roll {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 1rem 0;
   gap: 0.4rem;
-  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .exercise-page__spectro {
-  padding: 0 1rem 0.4rem;
+  padding: 0.4rem 1rem 0.4rem;
   flex-shrink: 0;
 }
 

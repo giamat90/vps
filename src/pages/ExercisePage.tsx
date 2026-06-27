@@ -69,13 +69,15 @@ function ExercisePage({ onBack }: ExercisePageProps) {
         </span>
       </header>
 
-      <div className="exercise-page__roll">
-        <PianoKeyboard />
-        <PianoRoll />
-      </div>
+      <div className="exercise-page__analysis">
+        <div className="exercise-page__roll">
+          <PianoKeyboard />
+          <PianoRoll />
+        </div>
 
-      <div className="exercise-page__spectro">
-        <SpectrogramPanel />
+        <div className="exercise-page__spectro">
+          <SpectrogramPanel />
+        </div>
       </div>
 
       <div className="exercise-page__controls">
