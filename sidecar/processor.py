@@ -120,13 +120,14 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     """
 
     # Resample to 22050 Hz for consistent bin resolution
-    # Demucs outputs 44100 — halving gives 5.4 Hz/bin at frame_length=4096
+    # Zero-padding to fft_size=4096 gives 5.4 Hz/bin with only 125 ms analysis window
     target_sr = 22050
     if sr != target_sr:
         audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
         sr = target_sr
 
-    frame_length = 2048
+    frame_length = 2756  # 125 ms at 22050 Hz — optimal for singing (Babacan et al. 2019)
+    fft_size = 4096      # zero-pad to 4096: 5.4 Hz/bin with only 125 ms temporal blur
     hop_length = 512
     n_harmonics = 5
     fmin = 65.0    # C2 — lowest practical singing fundamental
@@ -143,9 +144,9 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     )
     n_frames = frames.shape[1]
 
-    # Frequency axis
-    freqs = np.fft.rfftfreq(frame_length, d=1.0 / sr)
-    bin_width = sr / frame_length  # Hz per bin
+    # Frequency axis based on zero-padded FFT size
+    freqs = np.fft.rfftfreq(fft_size, d=1.0 / sr)
+    bin_width = sr / fft_size  # Hz per bin
 
     # Candidate F0 range — evaluate SRH at each candidate
     # Use fine resolution: 0.5 Hz steps for sub-Hz precision
@@ -178,7 +179,7 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
             continue  # silent frame — f0[i] and confidence[i] stay 0
 
         frame = raw_frame * window
-        spectrum = np.abs(np.fft.rfft(frame))
+        spectrum = np.abs(np.fft.rfft(frame, n=fft_size))
 
         # Normalize spectrum
         spectrum = spectrum / (spectrum.max() + 1e-8)
