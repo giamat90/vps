@@ -40,6 +40,7 @@ export async function loadAnalysis(songId: string): Promise<{
   spectroTimes?: number[];
   spectroB64?: string;
   spectroFrames?: number;
+  spectroRows?: number;
 }> {
   return invoke("load_analysis", { songId });
 }

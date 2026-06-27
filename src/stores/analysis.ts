@@ -15,6 +15,7 @@ export interface SongSpectrogram {
   times: number[];
   canvas: OffscreenCanvas;
   frames: number;
+  rows: number;
   hopTime: number;
 }
 
@@ -75,11 +76,12 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
         let songSpectrogram: SongSpectrogram | null = null;
         if (data.spectroB64 && data.spectroFrames && data.spectroTimes?.length) {
           try {
-            const canvas = buildSpectroCanvas(data.spectroB64, data.spectroFrames);
+            const rows = data.spectroRows ?? 40;
+            const canvas = buildSpectroCanvas(data.spectroB64, data.spectroFrames, rows);
             const hopTime = data.spectroTimes.length > 1
               ? data.spectroTimes[1] - data.spectroTimes[0]
               : 512 / 22050;
-            songSpectrogram = { times: data.spectroTimes, canvas, frames: data.spectroFrames, hopTime };
+            songSpectrogram = { times: data.spectroTimes, canvas, frames: data.spectroFrames, rows, hopTime };
           } catch (e) {
             console.warn("Failed to build spectrogram canvas:", e);
           }

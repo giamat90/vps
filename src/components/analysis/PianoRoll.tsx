@@ -4,7 +4,7 @@ import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
 import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
-import { SPECTRO_COLORMAP, quantizeFftToRows } from "../../lib/spectroUtils";
+import { SPECTRO_COLORMAP, quantizeFftToRows, N_SPECTRO_ROWS } from "../../lib/spectroUtils";
 import type { SongSpectrogram } from "../../stores/analysis";
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -327,7 +327,7 @@ function drawSongSpectrogram(
   ctx.rect(PIANO_W, 0, rollW, H);
   ctx.clip();
   ctx.globalAlpha = 0.85;
-  ctx.drawImage(canvas, frameStart, 0, sw, N_NOTES, destX, 0, destW, H);
+  ctx.drawImage(canvas, frameStart, 0, sw, spectro.rows, destX, 0, destW, H);
   ctx.restore();
 }
 
@@ -340,7 +340,7 @@ function drawLiveSpectrogram(
 ): void {
   if (buffer.length < 2) return;
   const t1 = t0 + WINDOW_S;
-  const nh = H / N_NOTES;
+  const nh = H / N_SPECTRO_ROWS;
   const lut = SPECTRO_COLORMAP;
 
   // Approximate column width based on capture interval (~20 fps)
@@ -355,7 +355,7 @@ function drawLiveSpectrogram(
   for (const { time, data } of buffer) {
     if (time < t0 - 0.1 || time > t1 + 0.1) continue;
     const x = PIANO_W + ((time - t0) / WINDOW_S) * rollW;
-    for (let ri = 0; ri < N_NOTES; ri++) {
+    for (let ri = 0; ri < N_SPECTRO_ROWS; ri++) {
       const val = data[ri];
       if (val < 8) continue;
       ctx.fillStyle = `rgb(${lut[val * 3]},${lut[val * 3 + 1]},${lut[val * 3 + 2]})`;

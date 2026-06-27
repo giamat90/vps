@@ -279,14 +279,15 @@ def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
 
 def compute_spectrogram(audio: np.ndarray, sr: int) -> dict:
     """
-    Per-MIDI-note energy spectrogram for piano roll display.
+    Sub-semitone energy spectrogram for piano roll display.
 
-    Returns base64-encoded uint8 array: n_frames × 40 bytes.
-    Row 0 = MIDI 84 (C6, top of roll), row 39 = MIDI 45 (A2, bottom).
-    Values 0–255 represent normalised dB energy (0 = -80 dBFS, 255 = peak).
+    N_SPECTRO_ROWS log-spaced rows covering MIDI 45–84 (A2–C6).
+    Row 0 = top (MIDI 84, C6), row N-1 = bottom (MIDI 45, A2).
+    Values 0–255 = normalised dB energy (0 = -80 dBFS, 255 = peak).
+    Stored as base64-encoded uint8: n_frames × N_SPECTRO_ROWS bytes.
     """
     MIDI_MIN, MIDI_MAX = 45, 84
-    N_ROWS = MIDI_MAX - MIDI_MIN + 1  # 40
+    N_SPECTRO_ROWS = 160  # 4 sub-rows per semitone → ~1.5 px per row at 240 px canvas
 
     fft_size = 4096
     hop_length = 512
@@ -304,11 +305,14 @@ def compute_spectrogram(audio: np.ndarray, sr: int) -> dict:
     n_frames = stft.shape[1]
     times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
 
-    result = np.zeros((n_frames, N_ROWS), dtype=np.float32)
-    for ri, midi in enumerate(range(MIDI_MAX, MIDI_MIN - 1, -1)):  # row 0 = MIDI_MAX
-        f_center = 440.0 * 2.0 ** ((midi - 69) / 12.0)
-        f_lo = f_center * 2.0 ** (-0.5 / 12.0)
-        f_hi = f_center * 2.0 ** (0.5 / 12.0)
+    row_width_semitones = (MIDI_MAX - MIDI_MIN) / (N_SPECTRO_ROWS - 1)
+
+    result = np.zeros((n_frames, N_SPECTRO_ROWS), dtype=np.float32)
+    for ri in range(N_SPECTRO_ROWS):
+        midi_float = MIDI_MAX - (ri / (N_SPECTRO_ROWS - 1)) * (MIDI_MAX - MIDI_MIN)
+        f_center = 440.0 * 2.0 ** ((midi_float - 69) / 12.0)
+        f_lo = f_center * 2.0 ** (-row_width_semitones / 2.0 / 12.0)
+        f_hi = f_center * 2.0 ** (row_width_semitones / 2.0 / 12.0)
         mask = (freqs >= f_lo) & (freqs < f_hi)
         if mask.any():
             result[:, ri] = stft[mask, :].mean(axis=0)
@@ -321,6 +325,7 @@ def compute_spectrogram(audio: np.ndarray, sr: int) -> dict:
         "spectroTimes": times.tolist(),
         "spectroB64": base64.b64encode(result_u8.tobytes()).decode("ascii"),
         "spectroFrames": n_frames,
+        "spectroRows": N_SPECTRO_ROWS,
     }
 
 

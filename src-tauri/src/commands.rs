@@ -136,6 +136,7 @@ pub async fn process_song(
                     "spectroTimes": data.get("spectroTimes").cloned().unwrap_or(serde_json::Value::Array(vec![])),
                     "spectroB64":   data.get("spectroB64").cloned().unwrap_or(serde_json::Value::String(String::new())),
                     "spectroFrames":data.get("spectroFrames").cloned().unwrap_or(serde_json::Value::Number(0.into())),
+                    "spectroRows":  data.get("spectroRows").cloned().unwrap_or(serde_json::Value::Number(40.into())),
                 });
                 let analysis_path = output_dir.join("analysis.json");
                 if let Ok(json) = serde_json::to_string_pretty(&analysis) {
@@ -582,6 +583,7 @@ pub async fn import_youtube(
                     "spectroTimes": data.get("spectroTimes").cloned().unwrap_or(serde_json::Value::Array(vec![])),
                     "spectroB64":   data.get("spectroB64").cloned().unwrap_or(serde_json::Value::String(String::new())),
                     "spectroFrames":data.get("spectroFrames").cloned().unwrap_or(serde_json::Value::Number(0.into())),
+                    "spectroRows":  data.get("spectroRows").cloned().unwrap_or(serde_json::Value::Number(40.into())),
                 });
                 let analysis_path = output_dir.join("analysis.json");
                 if let Ok(json) = serde_json::to_string_pretty(&analysis) {
