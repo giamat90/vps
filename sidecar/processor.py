@@ -11,7 +11,7 @@ import traceback
 import numpy as np
 import soundfile as sf
 import librosa
-from scipy.signal import butter, sosfilt, resample_poly
+from scipy.signal import butter, sosfilt, resample_poly, lfilter
 from scipy.signal.windows import chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
 
@@ -129,6 +129,7 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     frame_length = 2048
     hop_length = 512
     n_harmonics = 5
+    lpc_order = 12   # Drugman & Alwan 2011: optimal range 10-18; removes vocal tract formants
     fmin = 65.0    # C2 — lowest practical singing fundamental
     fmax = 1400.0  # above F#6 — matches VoceVista upper limit; no singer exceeds this
     voicing_threshold = 0.25  # matches VoceVista XML "minimumClarity" — rejects weakly-voiced frames
@@ -177,7 +178,16 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         if np.sqrt(np.mean(raw_frame ** 2)) < amplitude_threshold:
             continue  # silent frame — f0[i] and confidence[i] stay 0
 
-        frame = raw_frame * window
+        # LP inverse filter: remove vocal tract formants → true residual
+        # Makes this SSH→SRH: scoring on residual not raw speech (Drugman & Alwan 2011)
+        try:
+            lpc_coeffs = librosa.lpc(raw_frame, order=lpc_order)
+            analysis_frame = lfilter(lpc_coeffs, [1.0], raw_frame)
+        except Exception as e:
+            _log(f"LPC failed on frame {i}: {e}")
+            analysis_frame = raw_frame
+
+        frame = analysis_frame * window
         spectrum = np.abs(np.fft.rfft(frame))
 
         # Normalize spectrum
