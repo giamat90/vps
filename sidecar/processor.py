@@ -227,7 +227,7 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     if len(voiced_indices) > 3:
         f0_smooth[voiced_indices] = median_filter(
             f0_clean[voiced_indices],
-            size=5  # ~116 ms at 43 fps — removes consecutive outlier pairs
+            size=6  # ~140 ms at 43 fps — removes consecutive outlier pairs
         )
         f0_smooth[voiced_indices] = gaussian_filter1d(
             f0_smooth[voiced_indices],
