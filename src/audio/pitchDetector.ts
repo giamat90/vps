@@ -82,6 +82,9 @@ export class PitchDetector {
       if (c[i] > maxVal) { maxVal = c[i]; maxPos = i; }
     }
 
+    // Clarity: normalized peak vs zero-lag energy — must be ≥ 0.25 (VoceVista minimumClarity)
+    if (c[0] <= 0 || maxVal / c[0] < 0.25) return -1;
+
     // Parabolic interpolation for sub-sample accuracy
     const x1 = c[maxPos - 1] ?? 0;
     const x2 = c[maxPos];
@@ -90,6 +93,7 @@ export class PitchDetector {
     const b = (x3 - x1) / 2;
     const shift = a !== 0 ? -b / (2 * a) : 0;
 
-    return sampleRate / (maxPos + shift);
+    const freq = sampleRate / (maxPos + shift);
+    return freq >= 65 && freq <= 1400 ? freq : -1;
   }
 }

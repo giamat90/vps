@@ -12,6 +12,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 from scipy.signal import butter, sosfilt, resample_poly
+from scipy.signal.windows import chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
 
 SAMPLE_RATE = 44100
@@ -85,8 +86,8 @@ def detect_pitch(audio: np.ndarray, sr: int) -> dict:
     """
     f0, voiced_flag, voiced_probs = librosa.pyin(
         audio,
-        fmin=librosa.note_to_hz('C2'),
-        fmax=librosa.note_to_hz('C7'),
+        fmin=65.0,
+        fmax=1400.0,
         sr=sr,
         frame_length=2048,
         hop_length=512,
@@ -125,12 +126,13 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
         sr = target_sr
 
-    frame_length = 4096
+    frame_length = 2048
     hop_length = 512
     n_harmonics = 5
-    fmin = librosa.note_to_hz('C2')   # ~65 Hz
-    fmax = librosa.note_to_hz('C7')   # ~2093 Hz
-    voicing_threshold = 0.15
+    fmin = 65.0    # C2 — lowest practical singing fundamental
+    fmax = 1400.0  # above F#6 — matches VoceVista upper limit; no singer exceeds this
+    voicing_threshold = 0.25  # matches VoceVista XML "minimumClarity" — rejects weakly-voiced frames
+    amplitude_threshold = 10 ** (-50 / 20)  # −50 dBFS; silent frames skipped before SRH
 
     # Pad audio
     audio = np.pad(audio, frame_length // 2, mode='reflect')
@@ -166,11 +168,16 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     harmonic_bins = np.clip(harmonic_bins, 0, max_bin)
     inter_bins = np.clip(inter_bins, 0, max_bin)
 
+    window = chebwin(frame_length, at=100)
     f0 = np.zeros(n_frames)
     confidence = np.zeros(n_frames)
 
     for i in range(n_frames):
-        frame = frames[:, i] * np.hanning(frame_length)
+        raw_frame = frames[:, i]
+        if np.sqrt(np.mean(raw_frame ** 2)) < amplitude_threshold:
+            continue  # silent frame — f0[i] and confidence[i] stay 0
+
+        frame = raw_frame * window
         spectrum = np.abs(np.fft.rfft(frame))
 
         # Normalize spectrum
