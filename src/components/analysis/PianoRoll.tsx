@@ -1,15 +1,13 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
+import { getEngine, usePlayerStore } from "../../stores/player";
 import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
-import { SPECTRO_COLORMAP, quantizeFftToRows, N_SPECTRO_ROWS } from "../../lib/spectroUtils";
-import type { SongSpectrogram } from "../../stores/analysis";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
-const PIANO_W   = 36;       // px width of the piano key strip
+const PIANO_W   = 36;       // canvas px width of the piano key strip
 const WINDOW_S  = 8;        // seconds visible at once
 const MIDI_MIN  = 45;       // A2  — bottom of visible range
 const MIDI_MAX  = 84;       // C6  — top of visible range
@@ -44,13 +42,11 @@ function drawLanes(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     ctx.fillStyle = isBlack(m) ? "#0c0c1e" : "#141428";
     ctx.fillRect(PIANO_W, top, W - PIANO_W, nh);
 
-    // Subtle horizontal rule on every white-key boundary
     if (!isBlack(m)) {
       ctx.fillStyle = "#ffffff09";
       ctx.fillRect(PIANO_W, top, W - PIANO_W, 0.5);
     }
 
-    // Stronger line at every C (octave boundary)
     if ((m % 12) === 0) {
       ctx.fillStyle = "#ffffff1a";
       ctx.fillRect(PIANO_W, top, W - PIANO_W, 1);
@@ -103,7 +99,6 @@ function drawRibbon(
       continue;
     }
 
-    // Gap detection: break line on silence/unvoiced sections
     const prev = points[i - 1];
     if (prev && p.time - prev.time > GAP_S) {
       penDown = false;
@@ -167,7 +162,6 @@ function drawPianoStrip(
   ctx.fillRect(PIANO_W - 1, 0, 1, H);
 }
 
-// Note label drawn at top-right of the roll area (feature 2)
 function drawNoteLabel(
   ctx: CanvasRenderingContext2D,
   W: number,
@@ -202,7 +196,6 @@ function drawNoteLabel(
   const y = 5;
   let x = W - 6;
 
-  // Draw right-to-left so reading order is Song → Take → Live
   if (liveNote) {
     ctx.fillStyle = COLOR_LIVE;
     ctx.fillText(liveNote, x, y);
@@ -220,7 +213,6 @@ function drawNoteLabel(
   ctx.restore();
 }
 
-// Piano roll time ruler (feature 3)
 function drawRuler(
   ctx: CanvasRenderingContext2D,
   W: number,
@@ -238,7 +230,6 @@ function drawRuler(
   ctx.fillStyle = "#090914";
   ctx.fillRect(0, 0, PIANO_W, H);
 
-  // Punch region overlay
   if (punchInT !== null && punchOutT !== null && punchOutT > punchInT) {
     const xL = tX(punchInT);
     const xR = tX(punchOutT);
@@ -264,7 +255,6 @@ function drawRuler(
     }
   }
 
-  // Time tick marks — adaptive interval targeting ~60 px spacing
   const raw = (WINDOW_S / Math.max(1, rollW)) * 60;
   let interval = 5;
   for (const n of [0.25, 0.5, 1, 2, 5]) {
@@ -289,7 +279,6 @@ function drawRuler(
     ctx.fillText(`${m}:${s.toString().padStart(2, "0")}`, x + 2, H * 0.6);
   }
 
-  // Center playhead tick
   const cx = PIANO_W + rollW / 2;
   ctx.save();
   ctx.strokeStyle = "#ffffff40";
@@ -303,71 +292,6 @@ function drawRuler(
   ctx.beginPath(); ctx.moveTo(0, H - 0.5); ctx.lineTo(W, H - 0.5); ctx.stroke();
 }
 
-// ─── spectrogram draw passes ─────────────────────────────────────────────────
-
-function drawSongSpectrogram(
-  ctx: CanvasRenderingContext2D,
-  H: number,
-  spectro: SongSpectrogram,
-  t0: number,
-  rollW: number,
-): void {
-  const { canvas, frames, hopTime } = spectro;
-  const frameStart = Math.max(0, Math.floor(t0 / hopTime));
-  const frameEnd   = Math.min(frames, Math.ceil((t0 + WINDOW_S) / hopTime));
-  const sw = frameEnd - frameStart;
-  if (sw <= 0) return;
-
-  const destX = PIANO_W + ((frameStart * hopTime - t0) / WINDOW_S) * rollW;
-  const destW = (sw * hopTime / WINDOW_S) * rollW;
-
-  ctx.save();
-  ctx.beginPath();
-  ctx.rect(PIANO_W, 0, rollW, H);
-  ctx.clip();
-  ctx.globalAlpha = 0.85;
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(canvas, frameStart, 0, sw, spectro.rows, destX, 0, destW, H);
-  ctx.restore();
-}
-
-function drawLiveSpectrogram(
-  ctx: CanvasRenderingContext2D,
-  H: number,
-  t0: number,
-  rollW: number,
-  buffer: { time: number; data: Uint8Array }[],
-): void {
-  if (buffer.length < 2) return;
-
-  const lut = SPECTRO_COLORMAP;
-  const img = ctx.createImageData(rollW, H);
-  const d = img.data;
-
-  // Precompute: for each canvas pixel column, find the nearest buffer entry
-  let bi = 0;
-  for (let px = 0; px < rollW; px++) {
-    const t = t0 + (px / rollW) * WINDOW_S;
-    while (bi < buffer.length - 1 && buffer[bi + 1].time <= t) bi++;
-    const entry = buffer[bi];
-    if (!entry || Math.abs(entry.time - t) > 1.0) continue;
-
-    const data = entry.data;
-    for (let py = 0; py < H; py++) {
-      const ri = Math.min(N_SPECTRO_ROWS - 1, Math.floor((py / H) * N_SPECTRO_ROWS));
-      const val = data[ri];
-      const idx = (py * rollW + px) * 4;
-      d[idx]     = lut[val * 3];
-      d[idx + 1] = lut[val * 3 + 1];
-      d[idx + 2] = lut[val * 3 + 2];
-      d[idx + 3] = val < 8 ? 0 : 217; // ~85% opacity, transparent for silence
-    }
-  }
-
-  ctx.putImageData(img, PIANO_W, 0);
-}
-
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function PianoRoll() {
@@ -376,83 +300,40 @@ export default function PianoRoll() {
   const songPitch        = useAnalysisStore((s) => s.songPitch);
   const takePitch        = useAnalysisStore((s) => s.takePitch);
   const livePitch        = useAnalysisStore((s) => s.livePitch);
-  const songSpectrogram  = useAnalysisStore((s) => s.songSpectrogram);
   const isLoaded         = useAnalysisStore((s) => s.isLoaded);
   const isRecording      = usePlayerStore((s) => s.isRecording);
-  const isMonitoring     = usePlayerStore((s) => s.isMonitoring);
   const exerciseMode     = usePlayerStore((s) => s.exerciseMode);
-
-  const [showSpectrogram, setShowSpectrogram] = useState(false);
-
-  // Rolling buffer for live mic spectrogram frames
-  const liveSpectroBuffer = useRef<{ time: number; data: Uint8Array }[]>([]);
-  const lastSpectroCapture = useRef(0);
-  const fftScratch = useRef<Uint8Array<ArrayBuffer> | null>(null);
-  const punchIn     = usePlayerStore((s) => s.punchIn);
-  const punchOut    = usePlayerStore((s) => s.punchOut);
-  const punchLoop   = usePlayerStore((s) => s.punchLoop);
-  const duration    = usePlayerStore((s) => s.duration);
-  const setPunchIn  = usePlayerStore((s) => s.setPunchIn);
-  const setPunchOut = usePlayerStore((s) => s.setPunchOut);
-  const clearPunch  = usePlayerStore((s) => s.clearPunch);
-  const setPunchLoop = usePlayerStore((s) => s.setPunchLoop);
-  const seek        = usePlayerStore((s) => s.seek);
-
-  // Clear live spectrogram buffer when mic goes inactive
-  useEffect(() => {
-    if (!isRecording && !isMonitoring) {
-      liveSpectroBuffer.current = [];
-    }
-  }, [isRecording, isMonitoring]);
+  const punchIn          = usePlayerStore((s) => s.punchIn);
+  const punchOut         = usePlayerStore((s) => s.punchOut);
+  const punchLoop        = usePlayerStore((s) => s.punchLoop);
+  const duration         = usePlayerStore((s) => s.duration);
+  const setPunchIn       = usePlayerStore((s) => s.setPunchIn);
+  const setPunchOut      = usePlayerStore((s) => s.setPunchOut);
+  const clearPunch       = usePlayerStore((s) => s.clearPunch);
+  const setPunchLoop     = usePlayerStore((s) => s.setPunchLoop);
+  const seek             = usePlayerStore((s) => s.seek);
 
   const drawRef = useRef<() => void>(() => {});
 
-  // Ruler drag state (punch region creation/editing)
   const rulerDrag = useRef<{
     mode: "create" | "drag-in" | "drag-out" | null;
     anchorT: number;
     capturedT0: number;
   }>({ mode: null, anchorT: 0, capturedT0: 0 });
 
-  // Live override for in-progress ruler drag (so rAF shows preview before store commit)
   const rulerOverride = useRef<{ inT: number | null; outT: number | null } | null>(null);
 
-  // Main canvas drag-to-seek state (feature 4)
   const rollDrag = useRef<{ active: boolean; startX: number; startTime: number }>({
     active: false,
     startX: 0,
     startTime: 0,
   });
 
-  // Rebuild draw function whenever pitch data, punch state, or spectrogram toggle changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     drawRef.current = () => {
-      // ── live spectrogram capture (throttled to 20 fps) ─────────────────────
-      if (showSpectrogram && (isRecording || isMonitoring)) {
-        const now = performance.now();
-        if (now - lastSpectroCapture.current >= 33) { // ~30 fps capture
-          lastSpectroCapture.current = now;
-          const analyser = getMicAnalyser();
-          if (analyser) {
-            const binCount = analyser.frequencyBinCount;
-            if (!fftScratch.current || fftScratch.current.length !== binCount) {
-              fftScratch.current = new Uint8Array(binCount);
-            }
-            analyser.getByteFrequencyData(fftScratch.current);
-            const col = quantizeFftToRows(fftScratch.current, analyser.context.sampleRate);
-            const t = getEngine().getCurrentTime();
-            liveSpectroBuffer.current.push({ time: t, data: col });
-            // Trim entries older than one visible window
-            const cutoff = t - WINDOW_S;
-            const keep = liveSpectroBuffer.current.findIndex((e) => e.time >= cutoff);
-            if (keep > 0) liveSpectroBuffer.current.splice(0, keep);
-          }
-        }
-      }
-
       // ── ruler ──────────────────────────────────────────────────────────────
       const ruler = rulerRef.current;
       if (ruler) {
@@ -511,15 +392,6 @@ export default function PianoRoll() {
       const liveMidi = getCurrentMidi(livePitch, currentTime);
 
       drawLanes(ctx, W, H);
-
-      if (showSpectrogram) {
-        if ((isRecording || isMonitoring) && liveSpectroBuffer.current.length > 0) {
-          drawLiveSpectrogram(ctx, H, t0, rollW, liveSpectroBuffer.current);
-        } else if (songSpectrogram) {
-          drawSongSpectrogram(ctx, H, songSpectrogram, t0, rollW);
-        }
-      }
-
       drawRibbon(ctx, songPitch, COLOR_SONG, t0, t1, H, timeToX);
       if (takePitch.length > 0) {
         drawRibbon(ctx, takePitch, COLOR_TAKE, t0, t1, H, timeToX);
@@ -533,9 +405,8 @@ export default function PianoRoll() {
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut, showSpectrogram, songSpectrogram, isRecording, isMonitoring]);
+  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut, isRecording]);
 
-  // rAF loop — no React re-renders during playback
   useEffect(() => {
     if (!isLoaded && !exerciseMode) return;
     let rafId: number;
@@ -544,7 +415,6 @@ export default function PianoRoll() {
     return () => cancelAnimationFrame(rafId);
   }, [isLoaded, exerciseMode]);
 
-  // ResizeObserver — single mount; watches both canvases
   useEffect(() => {
     const canvas = canvasRef.current;
     const ruler  = rulerRef.current;
@@ -595,7 +465,6 @@ export default function PianoRoll() {
     const t = xToT(e.nativeEvent.offsetX);
 
     if (!mode) {
-      // Hover: update cursor near handles
       if (!isRecording && punchIn !== null && punchOut !== null) {
         const ct = getEngine().getCurrentTime();
         const t0live = ct - WINDOW_S / 2;
@@ -654,7 +523,7 @@ export default function PianoRoll() {
     else if (rulerRef.current) rulerRef.current.style.cursor = "default";
   };
 
-  // ── main canvas drag-to-seek (feature 4) ────────────────────────────────────
+  // ── main canvas drag-to-seek ─────────────────────────────────────────────────
 
   const onCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isRecording) return;
@@ -672,7 +541,6 @@ export default function PianoRoll() {
     const rollW = canvas.offsetWidth - PIANO_W;
     if (rollW <= 0) return;
     const { startX, startTime } = rollDrag.current;
-    // Drag right → earlier time; drag left → later time (pan-content gesture)
     const deltaT = -((e.nativeEvent.offsetX - startX) / rollW) * WINDOW_S;
     seek(Math.max(0, Math.min(duration, startTime + deltaT)));
   };
@@ -683,14 +551,6 @@ export default function PianoRoll() {
     <div className="analysis-panel">
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Piano Roll</span>
-        <div className="analysis-panel__header-right">
-        <button
-          className={`spectro-btn${showSpectrogram ? " spectro-btn--active" : ""}`}
-          onClick={() => setShowSpectrogram((v) => !v)}
-          title={showSpectrogram ? "Hide spectrogram" : "Show spectrogram"}
-        >
-          Spectrum
-        </button>
         <div className="analysis-panel__legend">
           <span className="legend-dot legend-dot--song" />
           <span>Song</span>
@@ -706,7 +566,6 @@ export default function PianoRoll() {
               <span>Live</span>
             </>
           )}
-        </div>
         </div>
       </div>
       <div className="piano-roll__ruler-wrap">

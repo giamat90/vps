@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import PianoRoll from "../components/analysis/PianoRoll";
 import PianoKeyboard from "../components/analysis/PianoKeyboard";
+import SpectrogramPanel from "../components/analysis/SpectrogramPanel";
 import DualTuner from "../components/analysis/DualTuner";
 import MicSelector from "../components/recording/MicSelector";
 import MonitorButton from "../components/recording/MonitorButton";
@@ -71,6 +72,10 @@ function ExercisePage({ onBack }: ExercisePageProps) {
       <div className="exercise-page__roll">
         <PianoKeyboard />
         <PianoRoll />
+      </div>
+
+      <div className="exercise-page__spectro">
+        <SpectrogramPanel />
       </div>
 
       <div className="exercise-page__controls">
