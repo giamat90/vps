@@ -22,7 +22,7 @@ function _ensureMicAnalyser(stream: MediaStream): AnalyserNode | null {
     micAnalyserCtx = new AudioContext();
     const source = micAnalyserCtx.createMediaStreamSource(stream);
     micAnalyser = micAnalyserCtx.createAnalyser();
-    micAnalyser.fftSize = 4096;
+    micAnalyser.fftSize = 8192;
     micAnalyser.smoothingTimeConstant = 0.6;
     source.connect(micAnalyser);
     return micAnalyser;
