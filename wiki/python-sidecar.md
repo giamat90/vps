@@ -146,7 +146,8 @@ CREPE and pYIN were tried first and both failed on singers with strong upper har
 Additional details:
 - Vocals resampled to 22050 Hz before detection for consistent bin resolution (10.77 Hz/bin at `frame_length=2048`; parabolic interpolation on SRH score curve gives sub-Hz precision)
 - Candidate F0 grid: 0.5 Hz steps from 65 → 1400 Hz — ~2670 candidates per frame
-- Per-frame RMS amplitude gate applied before windowing — silent frames leave `f0[i]=0, confidence[i]=0`
+- Per-frame RMS amplitude gate (−50 dBFS) applied before LPC — silent frames leave `f0[i]=0, confidence[i]=0`
+- **LP residual extraction (order 12):** each frame is LP inverse-filtered before windowing, removing vocal tract formant contributions from the spectrum. Without this step the algorithm is SSH (Summation of Speech Harmonics), the inferior baseline in Drugman & Alwan 2011. LPC order 12 is optimal per the paper (robust in range 10–18); higher orders overfit the spectral envelope in noisy conditions.
 - Post-processing on voiced frames only: median filter `size=3`, Gaussian `sigma=1.0`
 - Fully deterministic — no neural network, no randomness
 - Runs synchronously on the main thread (no threading)
