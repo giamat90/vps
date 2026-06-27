@@ -383,8 +383,7 @@ selectedOutputDeviceId: string | null
 ## Current git state
 
 - **Branch:** `master` (up to date with `origin/master`)
-- **Open feature branch:** `feature/pitch-ribbon-consonant-gaps` — parked, do NOT merge. Consonant-gap suppression in the pitch ribbon (ring-window outlier suppression). User said: *"DON'T merge it in master. We will continue parallely from master."*
-- **Phase 1 (full feature set):** Complete as of session in April 2026.
+- **Phase 1 (full feature set):** Complete as of session in April 2026. Tagged `v0.1.0` on 2026-06-27.
 
 ### Recent work (last session, June 2026)
 - Added all-white-key note labels to PianoKeyboard
