@@ -12,6 +12,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 from scipy.signal import butter, sosfilt, resample_poly
+from scipy.signal.windows import chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
 
 SAMPLE_RATE = 44100
@@ -85,8 +86,8 @@ def detect_pitch(audio: np.ndarray, sr: int) -> dict:
     """
     f0, voiced_flag, voiced_probs = librosa.pyin(
         audio,
-        fmin=librosa.note_to_hz('C2'),
-        fmax=librosa.note_to_hz('C7'),
+        fmin=65.0,
+        fmax=1400.0,
         sr=sr,
         frame_length=2048,
         hop_length=512,
@@ -119,18 +120,20 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     """
 
     # Resample to 22050 Hz for consistent bin resolution
-    # Demucs outputs 44100 — halving gives 5.4 Hz/bin at frame_length=4096
+    # Zero-padding to fft_size=4096 gives 5.4 Hz/bin with only 125 ms analysis window
     target_sr = 22050
     if sr != target_sr:
         audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
         sr = target_sr
 
-    frame_length = 4096
+    frame_length = 2756  # 125 ms at 22050 Hz — optimal for singing (Babacan et al. 2019)
+    fft_size = 4096      # zero-pad to 4096: 5.4 Hz/bin with only 125 ms temporal blur
     hop_length = 512
     n_harmonics = 5
-    fmin = librosa.note_to_hz('C2')   # ~65 Hz
-    fmax = librosa.note_to_hz('C7')   # ~2093 Hz
-    voicing_threshold = 0.15
+    fmin = 65.0    # C2 — lowest practical singing fundamental
+    fmax = 1400.0  # above F#6 — matches VoceVista upper limit; no singer exceeds this
+    voicing_threshold = 0.25  # matches VoceVista XML "minimumClarity" — rejects weakly-voiced frames
+    amplitude_threshold = 10 ** (-50 / 20)  # −50 dBFS; silent frames skipped before SRH
 
     # Pad audio
     audio = np.pad(audio, frame_length // 2, mode='reflect')
@@ -141,9 +144,9 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     )
     n_frames = frames.shape[1]
 
-    # Frequency axis
-    freqs = np.fft.rfftfreq(frame_length, d=1.0 / sr)
-    bin_width = sr / frame_length  # Hz per bin
+    # Frequency axis based on zero-padded FFT size
+    freqs = np.fft.rfftfreq(fft_size, d=1.0 / sr)
+    bin_width = sr / fft_size  # Hz per bin
 
     # Candidate F0 range — evaluate SRH at each candidate
     # Use fine resolution: 0.5 Hz steps for sub-Hz precision
@@ -166,12 +169,17 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     harmonic_bins = np.clip(harmonic_bins, 0, max_bin)
     inter_bins = np.clip(inter_bins, 0, max_bin)
 
+    window = chebwin(frame_length, at=100)
     f0 = np.zeros(n_frames)
     confidence = np.zeros(n_frames)
 
     for i in range(n_frames):
-        frame = frames[:, i] * np.hanning(frame_length)
-        spectrum = np.abs(np.fft.rfft(frame))
+        raw_frame = frames[:, i]
+        if np.sqrt(np.mean(raw_frame ** 2)) < amplitude_threshold:
+            continue  # silent frame — f0[i] and confidence[i] stay 0
+
+        frame = raw_frame * window
+        spectrum = np.abs(np.fft.rfft(frame, n=fft_size))
 
         # Normalize spectrum
         spectrum = spectrum / (spectrum.max() + 1e-8)
@@ -219,11 +227,11 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     if len(voiced_indices) > 3:
         f0_smooth[voiced_indices] = median_filter(
             f0_clean[voiced_indices],
-            size=3  # lighter than before — SRH is already more stable
+            size=6  # ~140 ms at 43 fps — removes consecutive outlier pairs
         )
         f0_smooth[voiced_indices] = gaussian_filter1d(
             f0_smooth[voiced_indices],
-            sigma=1.0  # lighter sigma — preserve real pitch movement
+            sigma=1.5  # FWHM ~82 ms — reduces jitter while preserving vibrato shape
         )
 
     f0_clean = f0_smooth
