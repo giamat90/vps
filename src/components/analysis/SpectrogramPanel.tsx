@@ -6,13 +6,13 @@ import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
 
 const AXIS_W   = 56;
 const WINDOW_S = 10;   // seconds visible across full roll width
-const F_MIN    = 20;
+const F_MIN    = 30;
 const F_MAX    = 20000;
 
 export const MIN_DB = -65;
 export const MAX_DB = -10;
 
-const FREQ_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+const FREQ_TICKS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
 // ─── frequency ↔ canvas-row LUT (Float32 for bilinear interpolation) ─────────
 
@@ -164,7 +164,7 @@ export default function SpectrogramPanel() {
         const analyser = getMicAnalyser();
 
         if (active && analyser) {
-          analyser.smoothingTimeConstant = 0;
+          analyser.smoothingTimeConstant = 0.15;
           const binCount = analyser.frequencyBinCount;
 
           if (!fftScratch.current || fftScratch.current.length !== binCount) {
@@ -200,7 +200,7 @@ export default function SpectrogramPanel() {
             const hi   = Math.min(lo + 1, data.length - 1);
             const frac = idx - lo;
             const db   = data[lo] * (1 - frac) + data[hi] * frac;
-            let norm   = db < -72 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            let norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
             norm       = Math.pow(norm, 0.55);
             norms[py]  = norm;
           }
