@@ -1097,7 +1097,7 @@ body,
 }
 
 .analysis-panel__canvas.spectro-panel__canvas {
-  height: 35rem;
+  height: clamp(15rem, 45vh, 35rem);
 }
 
 .analysis-panel__legend {
