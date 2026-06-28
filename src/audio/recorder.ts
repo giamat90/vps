@@ -6,8 +6,18 @@ export class VocalRecorder {
 
   async init(deviceId?: string | null): Promise<void> {
     this.stream = await navigator.mediaDevices.getUserMedia({
-      audio: deviceId ? { deviceId: { ideal: deviceId } } : true,
+      audio: {
+        ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+        echoCancellation: { exact: false },
+        noiseSuppression: { exact: false },
+        autoGainControl: { exact: false },
+        channelCount: 1,
+        sampleRate: 44100,
+      },
+      video: false,
     });
+    const settings = this.stream.getAudioTracks()[0].getSettings();
+    console.log("[mic] track settings:", settings);
   }
 
   start(): void {

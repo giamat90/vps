@@ -42,6 +42,26 @@ if (punchOut !== null && time >= punchOut) {
 }
 ```
 
+## getUserMedia Constraints
+
+Both recording and monitoring use identical hard constraints — `{ exact: false }` rather than plain `false`, because Chrome treats plain `false` as a preference that the driver can override silently:
+
+```ts
+navigator.mediaDevices.getUserMedia({
+  audio: {
+    ...(deviceId ? { deviceId: { exact: deviceId } } : {}),
+    echoCancellation: { exact: false },
+    noiseSuppression: { exact: false },
+    autoGainControl: { exact: false },
+    channelCount: 1,
+    sampleRate: 44100,
+  },
+  video: false,
+});
+```
+
+After a successful open, `stream.getAudioTracks()[0].getSettings()` is logged to confirm the browser honored all three DSP constraints. If the device cannot satisfy `exact: false` the call rejects — which is the desired behaviour (fail loudly rather than silently apply DSP that would corrupt the spectrogram).
+
 ## startRecording Sequence
 
 ```

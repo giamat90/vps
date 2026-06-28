@@ -1,18 +1,18 @@
 import { useRef, useEffect } from "react";
-import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
+import { getMicAnalyser, usePlayerStore } from "../../stores/player";
 import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
 const AXIS_W   = 56;
-const WINDOW_S = 8;
-const F_MIN    = 20;
+const WINDOW_S = 10;   // seconds visible across full roll width
+const F_MIN    = 30;
 const F_MAX    = 20000;
 
-export const MIN_DB = -80;
+export const MIN_DB = -65;
 export const MAX_DB = -10;
 
-const FREQ_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
+const FREQ_TICKS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
 // ─── frequency ↔ canvas-row LUT (Float32 for bilinear interpolation) ─────────
 
@@ -52,7 +52,7 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   const nyquist = sampleRate / 2;
   const fMax    = Math.min(F_MAX, nyquist);
 
-  ctx.fillStyle = "#090914";
+  ctx.fillStyle = "#16213e";
   ctx.fillRect(0, 0, AXIS_W, H);
 
   ctx.strokeStyle = "#333";
@@ -66,19 +66,26 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   ctx.textBaseline = "middle";
   ctx.textAlign    = "right";
 
+  // 20k label pinned at top edge
+  if (fMax >= 20000) {
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillText("20k", AXIS_W - 6, 8 * dpr);
+  }
+
   for (const f of FREQ_TICKS) {
-    if (f > fMax) continue;
+    if (f > fMax || f === 20000) continue;
     const y = freqToY(f, H, fMax);
     if (y < 4 || y > H - 4) continue;
 
-    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    const anchor    = f === 1000 || f === 5000;
+    ctx.strokeStyle = anchor ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.3)";
     ctx.lineWidth   = 1;
     ctx.beginPath();
     ctx.moveTo(AXIS_W, y);
     ctx.lineTo(AXIS_W + 8, y);
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillStyle = anchor ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.85)";
     ctx.fillText(formatHz(f), AXIS_W - 6, y);
   }
 }
@@ -91,81 +98,54 @@ export default function SpectrogramPanel() {
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
 
-  const buffer      = useRef<{ time: number; data: Float32Array }[]>([]);
   const lastCapture = useRef(0);
+  const shiftAccum  = useRef(0);
   const fftScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const colNorms    = useRef<Float32Array | null>(null);
   const freqLut     = useRef<{ lut: Float32Array; H: number; sr: number } | null>(null);
   const drawRef     = useRef<() => void>(() => {});
 
   useEffect(() => {
-    if (!isRecording && !isMonitoring) {
-      buffer.current = [];
-    }
-  }, [isRecording, isMonitoring]);
-
-  useEffect(() => {
     drawRef.current = () => {
-      // ── capture float FFT from mic (throttled ~30 fps) ──────────────────────
-      if (isRecording || isMonitoring) {
-        const now = performance.now();
-        if (now - lastCapture.current >= 33) {
-          lastCapture.current = now;
-          const analyser = getMicAnalyser();
-          if (analyser) {
-            analyser.smoothingTimeConstant = 0;
-            const binCount = analyser.frequencyBinCount;
-            if (!fftScratch.current || fftScratch.current.length !== binCount) {
-              fftScratch.current = new Float32Array(binCount);
-            }
-            analyser.getFloatFrequencyData(fftScratch.current);
-            const col = new Float32Array(fftScratch.current);
-            const t   = getEngine().getCurrentTime();
-            buffer.current.push({ time: t, data: col });
-            const cutoff = t - WINDOW_S;
-            const keep   = buffer.current.findIndex((e) => e.time >= cutoff);
-            if (keep > 0) buffer.current.splice(0, keep);
-          }
-        }
-      }
-
-      // ── draw ────────────────────────────────────────────────────────────────
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      const dpr = window.devicePixelRatio || 1;
+      const dpr  = window.devicePixelRatio || 1;
       const cssW = canvas.clientWidth  || 600;
       const cssH = canvas.clientHeight || 200;
-      const W = Math.round(cssW * dpr);
-      const H = Math.round(cssH * dpr);
+      const W    = Math.round(cssW * dpr);
+      const H    = Math.round(cssH * dpr);
+      const rollW = W - AXIS_W;
 
+      // Resize main canvas and invalidate offscreen if dimensions changed
       if (canvas.width !== W || canvas.height !== H) {
-        canvas.width  = W;
-        canvas.height = H;
-        freqLut.current = null;
-
-        // Resize or create offscreen canvas
-        if (offscreenRef.current) {
-          if (offscreenRef.current instanceof OffscreenCanvas) {
-            offscreenRef.current = new OffscreenCanvas(W, H);
-          } else {
-            offscreenRef.current.width  = W;
-            offscreenRef.current.height = H;
-          }
-        }
+        canvas.width     = W;
+        canvas.height    = H;
+        freqLut.current  = null;
+        offscreenRef.current = null;
       }
 
-      // Lazily create offscreen canvas
-      if (!offscreenRef.current) {
+      // Lazily create offscreen — sized to roll area only (rollW × H)
+      if (
+        !offscreenRef.current ||
+        offscreenRef.current.width  !== rollW ||
+        offscreenRef.current.height !== H
+      ) {
         try {
-          offscreenRef.current = new OffscreenCanvas(W, H);
+          offscreenRef.current = new OffscreenCanvas(rollW, H);
         } catch {
           const fb = document.createElement("canvas");
-          fb.width  = W;
+          fb.width  = rollW;
           fb.height = H;
           offscreenRef.current = fb;
         }
+        const oc = offscreenRef.current;
+        const ic = oc instanceof OffscreenCanvas
+          ? oc.getContext("2d")
+          : (oc as HTMLCanvasElement).getContext("2d");
+        if (ic) { ic.fillStyle = "#000"; ic.fillRect(0, 0, rollW, H); }
       }
 
       const offscreen = offscreenRef.current;
@@ -174,134 +154,136 @@ export default function SpectrogramPanel() {
         : (offscreen as HTMLCanvasElement).getContext("2d");
       if (!offCtx) return;
 
-      const rollW = W - AXIS_W;
-      const t     = getEngine().getCurrentTime();
-      const t0    = t - WINDOW_S / 2;
+      const active = isRecording || isMonitoring;
 
-      if (buffer.current.length >= 2) {
+      // ── capture + scroll (~30 fps) ──────────────────────────────────────────
+      const now = performance.now();
+      if (now - lastCapture.current >= 33) {
+        lastCapture.current = now;
+
         const analyser = getMicAnalyser();
-        const sr       = analyser?.context.sampleRate ?? 48000;
-        const fftSize  = buffer.current[0].data.length * 2;
 
-        if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
-          freqLut.current = { lut: buildFreqBinLut(H, fftSize, sr), H, sr };
-        }
-        const lut    = freqLut.current.lut;
-        const colLut = SPECTRO_COLORMAP;
-        const dbRange = MAX_DB - MIN_DB;
+        if (active && analyser) {
+          analyser.smoothingTimeConstant = 0.15;
+          const binCount = analyser.frequencyBinCount;
 
-        const img = offCtx.createImageData(rollW, H);
-        const d   = img.data;
+          if (!fftScratch.current || fftScratch.current.length !== binCount) {
+            fftScratch.current = new Float32Array(binCount);
+          }
+          if (!colNorms.current || colNorms.current.length !== H) {
+            colNorms.current = new Float32Array(H);
+          }
 
-        let bi = 0;
-        for (let px = 0; px < rollW; px++) {
-          const tPx = t0 + (px / rollW) * WINDOW_S;
-          while (bi < buffer.current.length - 1 && buffer.current[bi + 1].time <= tPx) bi++;
-          const entry = buffer.current[bi];
-          if (!entry || Math.abs(entry.time - tPx) > 1.0) continue;
-          const data = entry.data;
+          analyser.getFloatFrequencyData(fftScratch.current);
 
+          const sr      = analyser.context.sampleRate;
+          const fftSize = binCount * 2;
+
+          if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
+            freqLut.current = { lut: buildFreqBinLut(H, fftSize, sr), H, sr };
+            const lut = freqLut.current.lut;
+            console.log(`SpectroLUT — H:${H} fftSize:${fftSize} sr:${sr} binHz:${(sr / fftSize).toFixed(2)}`);
+            console.log("2kHz bin:", lut[Math.floor(H * (1 - Math.log(2000 / 20) / Math.log(20000 / 20)))]);
+            console.log("5kHz bin:", lut[Math.floor(H * (1 - Math.log(5000 / 20) / Math.log(20000 / 20)))]);
+          }
+
+          const lut     = freqLut.current.lut;
+          const data    = fftScratch.current;
+          const norms   = colNorms.current;
+          const dbRange = MAX_DB - MIN_DB;
+          const colLut  = SPECTRO_COLORMAP;
+
+          // Pass 1: dB → normalised magnitude for each canvas row
           for (let py = 0; py < H; py++) {
             const idx  = lut[py];
             const lo   = Math.floor(idx);
             const hi   = Math.min(lo + 1, data.length - 1);
             const frac = idx - lo;
             const db   = data[lo] * (1 - frac) + data[hi] * frac;
-
-            const norm = Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            const ci   = Math.round(norm * 255);
-
-            const base = (py * rollW + px) * 4;
-            d[base]     = colLut[ci * 3];
-            d[base + 1] = colLut[ci * 3 + 1];
-            d[base + 2] = colLut[ci * 3 + 2];
-            d[base + 3] = norm < 0.03 ? 0 : 230;
+            let norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            norm       = Math.pow(norm, 0.55);
+            norms[py]  = norm;
           }
-        }
-        offCtx.putImageData(img, 0, 0);
 
-        // Horizontal grid lines over the spectrogram in offscreen
-        const nyquist = sr / 2;
-        const fMax    = Math.min(F_MAX, nyquist);
-        offCtx.save();
-        offCtx.strokeStyle = "#ffffff08";
-        offCtx.lineWidth   = 1;
-        for (const f of FREQ_TICKS) {
-          if (f > fMax) continue;
-          const y = freqToY(f, H, fMax);
-          if (y < 0 || y > H) continue;
-          offCtx.beginPath();
-          offCtx.moveTo(0, y);
-          offCtx.lineTo(rollW, y);
-          offCtx.stroke();
-        }
-        offCtx.restore();
+          // Dynamic shift: rollW pixels spans WINDOW_S seconds at ~30 fps
+          shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
+          const shift = Math.max(1, Math.floor(shiftAccum.current));
+          shiftAccum.current -= shift;
 
-        // Composite offscreen onto main canvas with temporal blending
-        ctx.fillStyle = "#0f0f1e";
-        ctx.fillRect(AXIS_W, 0, rollW, H);
-        ctx.globalAlpha = 0.85;
+          const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
+          offCtx.putImageData(shifted, 0, 0);
+
+          // Pass 2: 3-tap Gaussian bloom → write `shift` new columns at right
+          const colImg = offCtx.createImageData(shift, H);
+          const cd     = colImg.data;
+          for (let py = 0; py < H; py++) {
+            const prev    = norms[Math.max(0, py - 1)];
+            const curr    = norms[py];
+            const next    = norms[Math.min(H - 1, py + 1)];
+            const blurred = 0.25 * prev + 0.50 * curr + 0.25 * next;
+            const ci      = Math.min(255, Math.floor(blurred * 255));
+            for (let s = 0; s < shift; s++) {
+              const base    = (py * shift + s) * 4;
+              cd[base]      = colLut[ci * 3];
+              cd[base + 1]  = colLut[ci * 3 + 1];
+              cd[base + 2]  = colLut[ci * 3 + 2];
+              cd[base + 3]  = 255;
+            }
+          }
+          offCtx.putImageData(colImg, rollW - shift, 0);
+
+        } else if (active) {
+          // Active but analyser not ready yet — silence columns
+          shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
+          const shift = Math.max(1, Math.floor(shiftAccum.current));
+          shiftAccum.current -= shift;
+          const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
+          offCtx.putImageData(shifted, 0, 0);
+          offCtx.fillStyle = "#000000";
+          offCtx.fillRect(rollW - shift, 0, shift, H);
+        }
+        // Not active: no shift — canvas freezes at last frame
+      }
+
+      // ── composite to main canvas ────────────────────────────────────────────
+      // Active: blend offscreen at 72% over previous frame (temporal smoothing).
+      // Idle: clear roll area so stale spectrogram doesn't linger.
+      if (active) {
+        ctx.globalAlpha = 0.72;
         ctx.drawImage(offscreen, AXIS_W, 0);
         ctx.globalAlpha = 1.0;
-
-        // Center playhead reference line
-        const cx = AXIS_W + rollW / 2;
-        ctx.save();
-        ctx.strokeStyle = "#ffffff18";
-        ctx.lineWidth   = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.beginPath();
-        ctx.moveTo(cx, 0);
-        ctx.lineTo(cx, H);
-        ctx.stroke();
-        ctx.restore();
-
-        // Time ticks along top edge — one per whole second in the visible window
-        ctx.save();
-        ctx.strokeStyle = "rgba(255,255,255,0.2)";
-        ctx.lineWidth   = 1;
-        ctx.setLineDash([]);
-        const tFirst = Math.ceil(t0);
-        const tLast  = Math.floor(t0 + WINDOW_S);
-        for (let s = tFirst; s <= tLast; s++) {
-          const x = AXIS_W + ((s - t0) / WINDOW_S) * rollW;
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, 4 * dpr);
-          ctx.stroke();
-        }
-        ctx.restore();
-
-        // Elapsed time label — top-right, counts from first buffer entry
-        if (buffer.current.length > 0) {
-          const elapsed = t - buffer.current[0].time;
-          const mm = Math.floor(elapsed / 60).toString().padStart(2, "0");
-          const ss = Math.floor(elapsed % 60).toString().padStart(2, "0");
-          ctx.save();
-          ctx.font         = `${12 * dpr}px monospace`;
-          ctx.fillStyle    = "rgba(255,255,255,0.8)";
-          ctx.textAlign    = "right";
-          ctx.textBaseline = "top";
-          ctx.fillText(`${mm}:${ss}`, W - 8 * dpr, 8 * dpr);
-          ctx.restore();
-        }
-
-        drawFreqAxis(ctx, H, sr, dpr);
       } else {
         ctx.fillStyle = "#0f0f1e";
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillRect(AXIS_W, 0, rollW, H);
+      }
 
-        const analyser = getMicAnalyser();
-        const sr       = analyser?.context.sampleRate ?? 48000;
-        drawFreqAxis(ctx, H, sr, dpr);
+      // Grid lines and axis always drawn at full opacity after composite
+      const analyser  = getMicAnalyser();
+      const sr        = analyser?.context.sampleRate ?? 48000;
+      const nyquist   = sr / 2;
+      const fMax      = Math.min(F_MAX, nyquist);
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.07)";
+      ctx.lineWidth   = 0.5;
+      for (const f of [100, 500, 1000, 5000, 10000]) {
+        if (f > fMax) continue;
+        const y = freqToY(f, H, fMax);
+        if (y < 0 || y > H) continue;
+        ctx.beginPath();
+        ctx.moveTo(AXIS_W, y);
+        ctx.lineTo(W, y);
+        ctx.stroke();
+      }
+      ctx.restore();
 
-        if (!isRecording && !isMonitoring) {
-          ctx.fillStyle    = "#a0a0b040";
-          ctx.font         = `${11 * dpr}px sans-serif`;
-          ctx.textAlign    = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, H / 2);
-        }
+      drawFreqAxis(ctx, H, sr, dpr);
+
+      if (!active) {
+        ctx.fillStyle    = "#a0a0b040";
+        ctx.font         = `${11 * dpr}px sans-serif`;
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, H / 2);
       }
     };
   }, [isRecording, isMonitoring]);

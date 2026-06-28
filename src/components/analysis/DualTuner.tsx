@@ -3,74 +3,54 @@ import { PitchDetector } from "../../audio/pitchDetector";
 import { useAnalysisStore } from "../../stores/analysis";
 import { usePlayerStore, getMonitorStream, getRecorderStream } from "../../stores/player";
 import { pitchAtTime, centsDeviation } from "../../audio/analysisUtils";
-import { frequencyToNoteName } from "../../audio/analysisUtils";
 
-// SVG gauge dimensions
-const CX = 70;
-const CY = 70;
-const R = 55;
-const MIN_ANGLE = -90; // degrees (-50 cents)
-const MAX_ANGLE = 90;  // degrees (+50 cents)
+// ─── horizontal bar tuner constants ──────────────────────────────────────────
 
-function centsToAngle(cents: number): number {
-  const clamped = Math.max(-50, Math.min(50, cents));
-  return (clamped / 50) * 90;
-}
+const TRACK_CX    = 150;
+const PX_PER_CENT = 3; // 300 viewBox units / 100 cents
 
-function polarToXY(angleDeg: number, radius: number): { x: number; y: number } {
-  const rad = ((angleDeg - 90) * Math.PI) / 180;
-  return { x: CX + radius * Math.cos(rad), y: CY + radius * Math.sin(rad) };
-}
+// Zone boundaries matching needle color thresholds
+const X_YEL_L = TRACK_CX - 30 * PX_PER_CENT; // 60
+const X_GRN_L = TRACK_CX - 15 * PX_PER_CENT; // 105
+const X_GRN_R = TRACK_CX + 15 * PX_PER_CENT; // 195
+const X_YEL_R = TRACK_CX + 30 * PX_PER_CENT; // 240
 
-function describeArc(startDeg: number, endDeg: number, r: number): string {
-  const s = polarToXY(startDeg, r);
-  const e = polarToXY(endDeg, r);
-  const large = endDeg - startDeg > 180 ? 1 : 0;
-  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${large} 1 ${e.x} ${e.y}`;
+function centsToX(c: number): number {
+  return TRACK_CX + Math.max(-50, Math.min(50, c)) * PX_PER_CENT;
 }
 
 export default function DualTuner() {
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const currentTime  = usePlayerStore((s) => s.currentTime);
-  const songPitch = useAnalysisStore((s) => s.songPitch);
-  const takePitch = useAnalysisStore((s) => s.takePitch);
+  const songPitch    = useAnalysisStore((s) => s.songPitch);
+  const takePitch    = useAnalysisStore((s) => s.takePitch);
   const appendLivePitch = useAnalysisStore((s) => s.appendLivePitch);
   const clearLivePitch  = useAnalysisStore((s) => s.clearLivePitch);
 
   const [liveCents, setLiveCents] = useState<number | null>(null);
-  const [liveNote, setLiveNote] = useState<string>("");
   const detectorRef = useRef<PitchDetector | null>(null);
-  const rafRef = useRef<number>(0);
+  const rafRef      = useRef<number>(0);
 
-  // Refs to always have latest values inside the animation frame loop
   const currentTimeRef   = useRef(currentTime);
   const songPitchRef     = useRef(songPitch);
   const appendLiveRef    = useRef(appendLivePitch);
   const clearLiveRef     = useRef(clearLivePitch);
-  useEffect(() => { currentTimeRef.current = currentTime; }, [currentTime]);
-  useEffect(() => { songPitchRef.current = songPitch; }, [songPitch]);
+  useEffect(() => { currentTimeRef.current = currentTime; },    [currentTime]);
+  useEffect(() => { songPitchRef.current = songPitch; },        [songPitch]);
   useEffect(() => { appendLiveRef.current = appendLivePitch; }, [appendLivePitch]);
-  useEffect(() => { clearLiveRef.current = clearLivePitch; }, [clearLivePitch]);
+  useEffect(() => { clearLiveRef.current = clearLivePitch; },   [clearLivePitch]);
 
-  // Start/stop live pitch detection during recording or monitoring
   useEffect(() => {
     const isActive = isRecording || isMonitoring;
     if (!isActive) {
-      if (detectorRef.current) {
-        detectorRef.current.stop();
-        detectorRef.current = null;
-      }
+      if (detectorRef.current) { detectorRef.current.stop(); detectorRef.current = null; }
       cancelAnimationFrame(rafRef.current);
       clearLiveRef.current();
       setLiveCents(null);
-      setLiveNote("");
       return;
     }
 
-    // Both streams are owned externally: monitorStream by startMonitoring(),
-    // recorder stream by rec.init(). Reusing them avoids a second getUserMedia
-    // call to the same device, which fails on Windows WASAPI.
     const stream = isMonitoring ? getMonitorStream() : getRecorderStream();
     if (!stream) return;
 
@@ -84,8 +64,7 @@ export default function DualTuner() {
     const tick = () => {
       const reading = det.getCurrentPitch();
       if (reading) {
-        setLiveNote(reading.name);
-        const t = currentTimeRef.current;
+        const t   = currentTimeRef.current;
         const ref = pitchAtTime(songPitchRef.current, t);
         if (ref && ref.frequency > 0) {
           setLiveCents(centsDeviation(reading.frequency, ref.frequency));
@@ -100,93 +79,55 @@ export default function DualTuner() {
     };
     rafRef.current = requestAnimationFrame(tick);
 
-    return () => {
-      rafActive = false;
-      cancelAnimationFrame(rafRef.current);
-    };
+    return () => { rafActive = false; cancelAnimationFrame(rafRef.current); };
   }, [isRecording, isMonitoring]);
 
-  // Derive needle value
+  // ─── derive display values ────────────────────────────────────────────────
+
   let cents: number | null = null;
-  let noteName = "—";
-  let refName = "—";
 
   if (isRecording || isMonitoring) {
     cents = liveCents;
-    noteName = liveNote || "—";
-    const ref = pitchAtTime(songPitch, currentTime);
-    if (ref && ref.frequency > 0) refName = frequencyToNoteName(ref.frequency).name;
   } else if (takePitch.length > 0) {
     const tp = pitchAtTime(takePitch, currentTime);
     const sp = pitchAtTime(songPitch, currentTime);
     if (tp && sp && tp.confidence > 0.4 && sp.confidence > 0.4) {
       cents = centsDeviation(tp.frequency, sp.frequency);
-      noteName = frequencyToNoteName(tp.frequency).name;
-      refName = frequencyToNoteName(sp.frequency).name;
     }
   }
 
-  const needleAngle = cents !== null ? centsToAngle(cents) : 0;
   const active = cents !== null;
-
-  // Needle color
-  const abs = Math.abs(cents ?? 0);
+  const abs    = Math.abs(cents ?? 0);
   const needleColor = !active ? "#404060" : abs < 15 ? "#4ade80" : abs < 30 ? "#fbbf24" : "#e94560";
+  const nx = centsToX(cents ?? 0);
 
-  const needleEnd = polarToXY(needleAngle, R - 8);
+  // ─── render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="dual-tuner">
-      <svg width={140} height={90} viewBox="0 0 140 90" className="dual-tuner__gauge">
-        {/* Background arc */}
-        <path
-          d={describeArc(MIN_ANGLE, MAX_ANGLE, R)}
-          fill="none"
-          stroke="#1a1a2e"
-          strokeWidth={10}
-          strokeLinecap="round"
-        />
-        {/* Colored zones */}
-        <path d={describeArc(-90, -45, R)} fill="none" stroke="#e9456040" strokeWidth={8} />
-        <path d={describeArc(-45, -15, R)} fill="none" stroke="#fbbf2440" strokeWidth={8} />
-        <path d={describeArc(-15, 15, R)} fill="none" stroke="#4ade8060" strokeWidth={8} />
-        <path d={describeArc(15, 45, R)} fill="none" stroke="#fbbf2440" strokeWidth={8} />
-        <path d={describeArc(45, 90, R)} fill="none" stroke="#e9456040" strokeWidth={8} />
-        {/* Center tick */}
-        <line
-          x1={CX}
-          y1={CY - R + 2}
-          x2={CX}
-          y2={CY - R + 10}
-          stroke="#ffffff30"
-          strokeWidth={1.5}
-        />
-        {/* Needle */}
-        <line
-          x1={CX}
-          y1={CY}
-          x2={needleEnd.x}
-          y2={needleEnd.y}
-          stroke={needleColor}
-          strokeWidth={2}
-          strokeLinecap="round"
-          style={{ transition: active ? "none" : "stroke 0.3s" }}
-        />
-        <circle cx={CX} cy={CY} r={4} fill={needleColor} />
-        {/* Labels */}
-        <text x={14} y={82} fill="#a0a0b0" fontSize={8} textAnchor="middle">−50</text>
-        <text x={126} y={82} fill="#a0a0b0" fontSize={8} textAnchor="middle">+50</text>
-      </svg>
+      <svg
+        viewBox="0 0 300 8"
+        className="dual-tuner__gauge"
+        preserveAspectRatio="none"
+      >
+        {/* Track background */}
+        <rect x={0} y={0} width={300} height={8} fill="#0a0a18" />
 
-      <div className="dual-tuner__info">
-        <span className="dual-tuner__ref">{refName}</span>
-        <span className="dual-tuner__note" style={{ color: needleColor }}>{noteName}</span>
-        {cents !== null && (
-          <span className="dual-tuner__cents" style={{ color: needleColor }}>
-            {cents > 0 ? "+" : ""}{Math.round(cents)}ct
-          </span>
+        {/* Colored zones */}
+        <rect x={0}       y={0} width={X_YEL_L}            height={8} fill="#e9456038" />
+        <rect x={X_YEL_L} y={0} width={X_GRN_L - X_YEL_L} height={8} fill="#fbbf2438" />
+        <rect x={X_GRN_L} y={0} width={X_GRN_R - X_GRN_L} height={8} fill="#4ade8050" />
+        <rect x={X_GRN_R} y={0} width={X_YEL_R - X_GRN_R} height={8} fill="#fbbf2438" />
+        <rect x={X_YEL_R} y={0} width={300 - X_YEL_R}      height={8} fill="#e9456038" />
+
+        {/* Centre mark */}
+        <line x1={TRACK_CX} y1={0} x2={TRACK_CX} y2={8} stroke="#ffffff40" strokeWidth={1} />
+
+        {/* Needle */}
+        {active && (
+          <rect x={nx - 1.5} y={0} width={3} height={8} rx={1} fill={needleColor} />
         )}
-      </div>
+      </svg>
     </div>
   );
 }

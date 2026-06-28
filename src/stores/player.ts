@@ -23,7 +23,6 @@ function _ensureMicAnalyser(stream: MediaStream): AnalyserNode | null {
     const source = micAnalyserCtx.createMediaStreamSource(stream);
     micAnalyser = micAnalyserCtx.createAnalyser();
     micAnalyser.fftSize = 8192;
-    micAnalyser.smoothingTimeConstant = 0.6;
     source.connect(micAnalyser);
     return micAnalyser;
   } catch (e) {
@@ -373,8 +372,18 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const eng = getEngine();
     try {
       monitorStream = await navigator.mediaDevices.getUserMedia({
-        audio: s.selectedDeviceId ? { deviceId: { ideal: s.selectedDeviceId } } : true,
+        audio: {
+          ...(s.selectedDeviceId ? { deviceId: { exact: s.selectedDeviceId } } : {}),
+          echoCancellation: { exact: false },
+          noiseSuppression: { exact: false },
+          autoGainControl: { exact: false },
+          channelCount: 1,
+          sampleRate: 44100,
+        },
+        video: false,
       });
+      const settings = monitorStream.getAudioTracks()[0].getSettings();
+      console.log("[mic] track settings:", settings);
     } catch (e) {
       throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
     }

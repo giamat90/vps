@@ -1097,7 +1097,7 @@ body,
 }
 
 .analysis-panel__canvas.spectro-panel__canvas {
-  height: 35rem;
+  height: clamp(15rem, 45vh, 35rem);
 }
 
 .analysis-panel__legend {
@@ -1231,36 +1231,24 @@ body,
 
 /* Dual Tuner */
 .dual-tuner {
+  width: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 0.2rem;
+  justify-content: center;
 }
 
 .dual-tuner__gauge {
+  width: 100%;
+  height: 0.5rem;
   display: block;
 }
 
-.dual-tuner__info {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-size: 0.8rem;
-}
-
-.dual-tuner__ref {
-  font-size: 0.7rem;
-  color: var(--text-secondary);
-}
-
-.dual-tuner__note {
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-.dual-tuner__cents {
-  font-size: 0.75rem;
-  font-variant-numeric: tabular-nums;
+/* In PracticeRoom header, keep the tuner constrained */
+.practice-room__header .dual-tuner {
+  flex: 1;
+  min-width: 0;
+  max-width: 22rem;
+  width: auto;
 }
 
 /* Coach Panel */
@@ -1481,6 +1469,12 @@ body,
   color: var(--accent);
 }
 
+.exercise-page__keyboard {
+  flex-shrink: 0;
+  padding: 0 1rem;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
 .exercise-page__analysis {
   flex: 1;
   min-height: 0;
@@ -1495,6 +1489,11 @@ body,
   padding: 0.5rem 1rem 0;
   gap: 0.4rem;
   flex-shrink: 0;
+}
+
+.exercise-page__pitch-section {
+  display: flex;
+  flex-direction: column;
 }
 
 .exercise-page__spectro {
