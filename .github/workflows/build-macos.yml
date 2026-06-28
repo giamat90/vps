@@ -121,7 +121,7 @@ jobs:
           echo "Mounting: $DMG"
           hdiutil attach "$DMG" -mountpoint /tmp/vps-dmg -nobrowse -quiet
           APP=$(find /tmp/vps-dmg -name "*.app" -maxdepth 1 | head -1)
-          BINARY="$APP/Contents/MacOS/Vocal Practice Studio"
+          BINARY=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)
           echo "Launching binary: $BINARY"
           # Launch binary directly — bypasses Gatekeeper (no code signing on CI)
           "$BINARY" &
