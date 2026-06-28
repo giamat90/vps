@@ -32,11 +32,15 @@ export async function deleteTakeApi(songId: string, takeId: string): Promise<voi
   return invoke("delete_take", { songId, takeId });
 }
 
-/** Load song analysis data (pitchData, onsets, dynamics) */
+/** Load song analysis data (pitchData, onsets, dynamics, spectrogram) */
 export async function loadAnalysis(songId: string): Promise<{
   pitchData: import("./types").PitchData;
   onsets: number[];
   dynamics: import("./types").DynamicsPoint[];
+  spectroTimes?: number[];
+  spectroB64?: string;
+  spectroFrames?: number;
+  spectroRows?: number;
 }> {
   return invoke("load_analysis", { songId });
 }

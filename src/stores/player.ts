@@ -12,6 +12,38 @@ let monitorStream: MediaStream | null = null;
 // Captured when recording starts so stopRecording can pass it to saveTake
 let recordingStartPos = 0;
 
+// Mic analyser — shared by monitor and recording modes for live spectrogram
+let micAnalyserCtx: AudioContext | null = null;
+let micAnalyser: AnalyserNode | null = null;
+
+function _ensureMicAnalyser(stream: MediaStream): AnalyserNode | null {
+  if (micAnalyser) return micAnalyser;
+  try {
+    micAnalyserCtx = new AudioContext();
+    const source = micAnalyserCtx.createMediaStreamSource(stream);
+    micAnalyser = micAnalyserCtx.createAnalyser();
+    micAnalyser.fftSize = 8192;
+    micAnalyser.smoothingTimeConstant = 0.6;
+    source.connect(micAnalyser);
+    return micAnalyser;
+  } catch (e) {
+    console.warn("[player] Could not create mic analyser:", e);
+    return null;
+  }
+}
+
+function _destroyMicAnalyser(): void {
+  micAnalyser = null;
+  micAnalyserCtx?.close().catch((e) => console.warn("[player] AudioContext close:", e));
+  micAnalyserCtx = null;
+}
+
+export function getMicAnalyser(): AnalyserNode | null {
+  const stream = monitorStream ?? recorder?.getStream() ?? null;
+  if (!stream) return null;
+  return _ensureMicAnalyser(stream);
+}
+
 export function getMonitorStream(): MediaStream | null {
   return monitorStream;
 }
@@ -378,6 +410,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   stopMonitoring: async () => {
+    _destroyMicAnalyser();
     if (monitorStream) {
       monitorStream.getTracks().forEach((t) => t.stop());
       monitorStream = null;
@@ -477,6 +510,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
       // Release mic tracks so Windows exits communication mode and restores
       // the default audio endpoint back to the regular speakers output.
+      _destroyMicAnalyser();
       rec.releaseStream();
       // Restore output routing to the user's selection (or system default).
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) => console.warn("[recording] setOutputDevice on stop failed:", e));
@@ -496,6 +530,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
         activeTakeId: take.id,
       }));
     } catch (e) {
+      _destroyMicAnalyser();
       rec.releaseStream();
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e2: unknown) => console.warn("[recording] setOutputDevice on error-stop failed:", e2));
       set({ isRecording: false, isPlaying: false, currentTime: 0 });

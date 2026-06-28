@@ -148,7 +148,7 @@ Additional details:
 - Candidate F0 grid: 0.5 Hz steps from 65 → 1400 Hz — ~2670 candidates per frame
 - Per-frame RMS amplitude gate (−50 dBFS) applied before windowing — silent frames leave `f0[i]=0, confidence[i]=0`
 - LP residual extraction was tested and reverted: Demucs-separated vocals are already clean and Demucs distorts the spectral envelope, making LPC vocal tract modeling unreliable. The SRH noise-robustness advantage of LP residual (Drugman & Alwan 2011) only applies to raw noisy speech.
-- Post-processing on voiced frames only: median filter `size=3`, Gaussian `sigma=1.0`
+- Post-processing on voiced frames only: median filter `size=6`, Gaussian `sigma=1.5`
 - Fully deterministic — no neural network, no randomness
 - Runs synchronously on the main thread (no threading)
 

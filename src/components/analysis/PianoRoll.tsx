@@ -7,7 +7,7 @@ import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeybo
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
-const PIANO_W   = 36;       // px width of the piano key strip
+const PIANO_W   = 36;       // canvas px width of the piano key strip
 const WINDOW_S  = 8;        // seconds visible at once
 const MIDI_MIN  = 45;       // A2  — bottom of visible range
 const MIDI_MAX  = 84;       // C6  — top of visible range
@@ -42,13 +42,11 @@ function drawLanes(ctx: CanvasRenderingContext2D, W: number, H: number): void {
     ctx.fillStyle = isBlack(m) ? "#0c0c1e" : "#141428";
     ctx.fillRect(PIANO_W, top, W - PIANO_W, nh);
 
-    // Subtle horizontal rule on every white-key boundary
     if (!isBlack(m)) {
       ctx.fillStyle = "#ffffff09";
       ctx.fillRect(PIANO_W, top, W - PIANO_W, 0.5);
     }
 
-    // Stronger line at every C (octave boundary)
     if ((m % 12) === 0) {
       ctx.fillStyle = "#ffffff1a";
       ctx.fillRect(PIANO_W, top, W - PIANO_W, 1);
@@ -101,7 +99,6 @@ function drawRibbon(
       continue;
     }
 
-    // Gap detection: break line on silence/unvoiced sections
     const prev = points[i - 1];
     if (prev && p.time - prev.time > GAP_S) {
       penDown = false;
@@ -165,7 +162,6 @@ function drawPianoStrip(
   ctx.fillRect(PIANO_W - 1, 0, 1, H);
 }
 
-// Note label drawn at top-right of the roll area (feature 2)
 function drawNoteLabel(
   ctx: CanvasRenderingContext2D,
   W: number,
@@ -200,7 +196,6 @@ function drawNoteLabel(
   const y = 5;
   let x = W - 6;
 
-  // Draw right-to-left so reading order is Song → Take → Live
   if (liveNote) {
     ctx.fillStyle = COLOR_LIVE;
     ctx.fillText(liveNote, x, y);
@@ -218,7 +213,6 @@ function drawNoteLabel(
   ctx.restore();
 }
 
-// Piano roll time ruler (feature 3)
 function drawRuler(
   ctx: CanvasRenderingContext2D,
   W: number,
@@ -236,7 +230,6 @@ function drawRuler(
   ctx.fillStyle = "#090914";
   ctx.fillRect(0, 0, PIANO_W, H);
 
-  // Punch region overlay
   if (punchInT !== null && punchOutT !== null && punchOutT > punchInT) {
     const xL = tX(punchInT);
     const xR = tX(punchOutT);
@@ -262,7 +255,6 @@ function drawRuler(
     }
   }
 
-  // Time tick marks — adaptive interval targeting ~60 px spacing
   const raw = (WINDOW_S / Math.max(1, rollW)) * 60;
   let interval = 5;
   for (const n of [0.25, 0.5, 1, 2, 5]) {
@@ -287,7 +279,6 @@ function drawRuler(
     ctx.fillText(`${m}:${s.toString().padStart(2, "0")}`, x + 2, H * 0.6);
   }
 
-  // Center playhead tick
   const cx = PIANO_W + rollW / 2;
   ctx.save();
   ctx.strokeStyle = "#ffffff40";
@@ -304,44 +295,40 @@ function drawRuler(
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function PianoRoll() {
-  const canvasRef   = useRef<HTMLCanvasElement>(null);
-  const rulerRef    = useRef<HTMLCanvasElement>(null);
-  const songPitch   = useAnalysisStore((s) => s.songPitch);
-  const takePitch   = useAnalysisStore((s) => s.takePitch);
-  const livePitch   = useAnalysisStore((s) => s.livePitch);
-  const isLoaded      = useAnalysisStore((s) => s.isLoaded);
-  const isRecording   = usePlayerStore((s) => s.isRecording);
-  const exerciseMode  = usePlayerStore((s) => s.exerciseMode);
-  const punchIn     = usePlayerStore((s) => s.punchIn);
-  const punchOut    = usePlayerStore((s) => s.punchOut);
-  const punchLoop   = usePlayerStore((s) => s.punchLoop);
-  const duration    = usePlayerStore((s) => s.duration);
-  const setPunchIn  = usePlayerStore((s) => s.setPunchIn);
-  const setPunchOut = usePlayerStore((s) => s.setPunchOut);
-  const clearPunch  = usePlayerStore((s) => s.clearPunch);
-  const setPunchLoop = usePlayerStore((s) => s.setPunchLoop);
-  const seek        = usePlayerStore((s) => s.seek);
+  const canvasRef        = useRef<HTMLCanvasElement>(null);
+  const rulerRef         = useRef<HTMLCanvasElement>(null);
+  const songPitch        = useAnalysisStore((s) => s.songPitch);
+  const takePitch        = useAnalysisStore((s) => s.takePitch);
+  const livePitch        = useAnalysisStore((s) => s.livePitch);
+  const isLoaded         = useAnalysisStore((s) => s.isLoaded);
+  const isRecording      = usePlayerStore((s) => s.isRecording);
+  const exerciseMode     = usePlayerStore((s) => s.exerciseMode);
+  const punchIn          = usePlayerStore((s) => s.punchIn);
+  const punchOut         = usePlayerStore((s) => s.punchOut);
+  const punchLoop        = usePlayerStore((s) => s.punchLoop);
+  const duration         = usePlayerStore((s) => s.duration);
+  const setPunchIn       = usePlayerStore((s) => s.setPunchIn);
+  const setPunchOut      = usePlayerStore((s) => s.setPunchOut);
+  const clearPunch       = usePlayerStore((s) => s.clearPunch);
+  const setPunchLoop     = usePlayerStore((s) => s.setPunchLoop);
+  const seek             = usePlayerStore((s) => s.seek);
 
   const drawRef = useRef<() => void>(() => {});
 
-  // Ruler drag state (punch region creation/editing)
   const rulerDrag = useRef<{
     mode: "create" | "drag-in" | "drag-out" | null;
     anchorT: number;
     capturedT0: number;
   }>({ mode: null, anchorT: 0, capturedT0: 0 });
 
-  // Live override for in-progress ruler drag (so rAF shows preview before store commit)
   const rulerOverride = useRef<{ inT: number | null; outT: number | null } | null>(null);
 
-  // Main canvas drag-to-seek state (feature 4)
   const rollDrag = useRef<{ active: boolean; startX: number; startTime: number }>({
     active: false,
     startX: 0,
     startTime: 0,
   });
 
-  // Rebuild draw function whenever pitch data or punch state changes
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -418,9 +405,8 @@ export default function PianoRoll() {
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut]);
+  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut, isRecording]);
 
-  // rAF loop — no React re-renders during playback
   useEffect(() => {
     if (!isLoaded && !exerciseMode) return;
     let rafId: number;
@@ -429,7 +415,6 @@ export default function PianoRoll() {
     return () => cancelAnimationFrame(rafId);
   }, [isLoaded, exerciseMode]);
 
-  // ResizeObserver — single mount; watches both canvases
   useEffect(() => {
     const canvas = canvasRef.current;
     const ruler  = rulerRef.current;
@@ -480,7 +465,6 @@ export default function PianoRoll() {
     const t = xToT(e.nativeEvent.offsetX);
 
     if (!mode) {
-      // Hover: update cursor near handles
       if (!isRecording && punchIn !== null && punchOut !== null) {
         const ct = getEngine().getCurrentTime();
         const t0live = ct - WINDOW_S / 2;
@@ -539,7 +523,7 @@ export default function PianoRoll() {
     else if (rulerRef.current) rulerRef.current.style.cursor = "default";
   };
 
-  // ── main canvas drag-to-seek (feature 4) ────────────────────────────────────
+  // ── main canvas drag-to-seek ─────────────────────────────────────────────────
 
   const onCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isRecording) return;
@@ -557,7 +541,6 @@ export default function PianoRoll() {
     const rollW = canvas.offsetWidth - PIANO_W;
     if (rollW <= 0) return;
     const { startX, startTime } = rollDrag.current;
-    // Drag right → earlier time; drag left → later time (pan-content gesture)
     const deltaT = -((e.nativeEvent.offsetX - startX) / rollW) * WINDOW_S;
     seek(Math.max(0, Math.min(duration, startTime + deltaT)));
   };

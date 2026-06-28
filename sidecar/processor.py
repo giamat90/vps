@@ -3,6 +3,7 @@ Core processing pipeline for uploaded songs.
 Demucs stem separation → pyin pitch → librosa onsets/dynamics/BPM → key detection.
 """
 
+import base64
 import os
 import sys
 import gc
@@ -276,6 +277,58 @@ def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
     return best_key
 
 
+def compute_spectrogram(audio: np.ndarray, sr: int) -> dict:
+    """
+    Sub-semitone energy spectrogram for piano roll display.
+
+    N_SPECTRO_ROWS log-spaced rows covering MIDI 45–84 (A2–C6).
+    Row 0 = top (MIDI 84, C6), row N-1 = bottom (MIDI 45, A2).
+    Values 0–255 = normalised dB energy (0 = -80 dBFS, 255 = peak).
+    Stored as base64-encoded uint8: n_frames × N_SPECTRO_ROWS bytes.
+    """
+    MIDI_MIN, MIDI_MAX = 45, 84
+    N_SPECTRO_ROWS = 160  # 4 sub-rows per semitone → ~1.5 px per row at 240 px canvas
+
+    fft_size = 4096
+    hop_length = 512
+    window = chebwin(fft_size, at=100)
+
+    stft = np.abs(librosa.stft(
+        audio,
+        n_fft=fft_size,
+        hop_length=hop_length,
+        window=window,
+        center=True,
+    ))  # (fft_size//2+1, n_frames)
+
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=fft_size)
+    n_frames = stft.shape[1]
+    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+
+    row_width_semitones = (MIDI_MAX - MIDI_MIN) / (N_SPECTRO_ROWS - 1)
+
+    result = np.zeros((n_frames, N_SPECTRO_ROWS), dtype=np.float32)
+    for ri in range(N_SPECTRO_ROWS):
+        midi_float = MIDI_MAX - (ri / (N_SPECTRO_ROWS - 1)) * (MIDI_MAX - MIDI_MIN)
+        f_center = 440.0 * 2.0 ** ((midi_float - 69) / 12.0)
+        f_lo = f_center * 2.0 ** (-row_width_semitones / 2.0 / 12.0)
+        f_hi = f_center * 2.0 ** (row_width_semitones / 2.0 / 12.0)
+        mask = (freqs >= f_lo) & (freqs < f_hi)
+        if mask.any():
+            result[:, ri] = stft[mask, :].mean(axis=0)
+
+    ref_val = result.max() + 1e-8
+    result_db = librosa.amplitude_to_db(result, ref=ref_val, top_db=80)
+    result_u8 = np.clip((result_db + 80.0) / 80.0 * 255.0, 0, 255).astype(np.uint8)
+
+    return {
+        "spectroTimes": times.tolist(),
+        "spectroB64": base64.b64encode(result_u8.tobytes()).decode("ascii"),
+        "spectroFrames": n_frames,
+        "spectroRows": N_SPECTRO_ROWS,
+    }
+
+
 def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     """Full processing pipeline for an uploaded song."""
     if on_progress is None:
@@ -339,6 +392,7 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     _log("Running pitch detection (SRH)...")
 
     pitch_result = {"times": [], "f0": [], "voiced": [], "confidence": []}
+    spectro_result = {"spectroTimes": [], "spectroB64": "", "spectroFrames": 0}
 
     try:
         vocals_mono, sr_pyin = librosa.load(vocals_path, sr=22050, mono=True)
@@ -349,25 +403,40 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     except Exception as e:
         _log(f"pyin error: {e}\n{traceback.format_exc()}")
 
-    on_progress(0.70, "pitch-extraction")
+    on_progress(0.68, "pitch-extraction")
+
+    # ===================================================================
+    # Stage 2b: Spectrogram (0.68 – 0.76)
+    # ===================================================================
+    on_progress(0.68, "spectrogram")
+    _log("Computing spectrogram...")
+
+    try:
+        spectro_result = compute_spectrogram(vocals_mono, sr_pyin)
+        _log(f"Spectrogram complete: {spectro_result['spectroFrames']} frames")
+    except Exception as e:
+        _log(f"Spectrogram error: {e}\n{traceback.format_exc()}")
+
+    del vocals_mono
+    on_progress(0.76, "spectrogram")
     gc.collect()
 
     # ===================================================================
-    # Stage 3: Onset detection (0.70 – 0.82)
+    # Stage 3: Onset detection (0.76 – 0.84)
     # ===================================================================
-    on_progress(0.70, "onset-detection")
+    on_progress(0.76, "onset-detection")
     _log("Detecting onsets...")
 
     vocals_lr, sr_lr = librosa.load(vocals_path, sr=SAMPLE_RATE, mono=True)
     onset_frames = librosa.onset.onset_detect(y=vocals_lr, sr=sr_lr, units="frames")
     onsets = librosa.frames_to_time(onset_frames, sr=sr_lr).tolist()
     onsets = [round(t, 4) for t in onsets]
-    on_progress(0.82, "onset-detection")
+    on_progress(0.84, "onset-detection")
 
     # ===================================================================
-    # Stage 4: Dynamics / RMS (0.82 – 0.88)
+    # Stage 4: Dynamics / RMS (0.84 – 0.90)
     # ===================================================================
-    on_progress(0.82, "dynamics")
+    on_progress(0.84, "dynamics")
     _log("Computing dynamics...")
 
     rms = librosa.feature.rms(y=vocals_lr)[0]
@@ -376,26 +445,26 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
         {"time": round(float(rms_times[i]), 4), "rms": round(float(rms[i]), 6)}
         for i in range(len(rms))
     ]
-    on_progress(0.88, "dynamics")
+    on_progress(0.90, "dynamics")
 
     # ===================================================================
-    # Stage 5: BPM detection (0.88 – 0.93)
+    # Stage 5: BPM detection (0.90 – 0.95)
     # ===================================================================
-    on_progress(0.88, "bpm-detection")
+    on_progress(0.90, "bpm-detection")
     _log("Estimating BPM...")
 
     full_mix, sr_full = librosa.load(input_path, sr=SAMPLE_RATE, mono=True)
     tempo = librosa.beat.tempo(y=full_mix, sr=sr_full)
     detected_bpm = round(float(tempo[0]), 1) if len(tempo) > 0 else None
-    on_progress(0.93, "bpm-detection")
+    on_progress(0.95, "bpm-detection")
 
     del full_mix, vocals_lr
     gc.collect()
 
     # ===================================================================
-    # Stage 6: Key detection (0.93 – 1.0)
+    # Stage 6: Key detection (0.95 – 1.0)
     # ===================================================================
-    on_progress(0.93, "key-detection")
+    on_progress(0.95, "key-detection")
     _log("Detecting key...")
 
     if any(pitch_result["voiced"]):
@@ -417,6 +486,7 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
         "dynamics": dynamics,
         "detectedBpm": detected_bpm,
         "detectedKey": detected_key,
+        **spectro_result,
     }
 
 

@@ -1083,6 +1083,23 @@ body,
   letter-spacing: 0.04em;
 }
 
+.analysis-panel__header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.analysis-panel__hint {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.analysis-panel__canvas.spectro-panel__canvas {
+  height: 35rem;
+}
+
 .analysis-panel__legend {
   display: flex;
   align-items: center;
@@ -1464,14 +1481,25 @@ body,
   color: var(--accent);
 }
 
-.exercise-page__roll {
+.exercise-page__analysis {
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  padding: 0.5rem 1rem;
+}
+
+.exercise-page__roll {
+  display: flex;
+  flex-direction: column;
+  padding: 0.5rem 1rem 0;
   gap: 0.4rem;
-  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.exercise-page__spectro {
+  padding: 0.4rem 1rem 0.4rem;
+  flex-shrink: 0;
 }
 
 .exercise-page__controls {
