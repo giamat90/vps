@@ -111,7 +111,31 @@ jobs:
           releaseDraft: true    # Creates a draft release; publish manually
           prerelease: false
 
-      # ── 10. Upload .dmg as artifact (fallback if release step fails) ──────
+      # ── 10. Smoke test: mount the .dmg, launch the app, verify it stays up ─
+      # macOS GH runners have a real GUI session so open() works.
+      # pgrep -f searches the full command line (handles long app names).
+      # osascript sends a graceful quit so the app can clean up.
+      - name: Smoke test .dmg
+        run: |
+          DMG=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1)
+          echo "Mounting: $DMG"
+          hdiutil attach "$DMG" -mountpoint /tmp/vps-dmg -nobrowse -quiet
+          APP=$(find /tmp/vps-dmg -name "*.app" -maxdepth 1 | head -1)
+          echo "Launching: $APP"
+          open "$APP"
+          sleep 15
+          if pgrep -f "Vocal Practice Studio" > /dev/null; then
+            echo "✅ App is running — smoke test passed"
+            osascript -e 'tell application "Vocal Practice Studio" to quit'
+            sleep 2
+          else
+            echo "❌ App not found in process list — smoke test failed"
+            hdiutil detach /tmp/vps-dmg -quiet || true
+            exit 1
+          fi
+          hdiutil detach /tmp/vps-dmg -quiet || true
+
+      # ── 11. Upload .dmg as artifact (fallback if release step fails) ──────
       - name: Upload .dmg artifact
         uses: actions/upload-artifact@v4
         with:
