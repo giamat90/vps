@@ -360,8 +360,26 @@ body,
 }
 
 .practice-room__sidebar {
-  width: 220px;
+  width: 15rem;
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.practice-room__takes-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.practice-room__sidebar-bottom {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
 }
 
 .practice-room__transport {

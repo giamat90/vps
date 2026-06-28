@@ -119,7 +119,6 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
                   <PianoKeyboard />
                   <PianoRoll />
                   <DynamicsCurve />
-                  <CoachPanel />
                 </div>
               )}
             </div>
@@ -127,9 +126,14 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
         </div>
 
         <aside className="practice-room__sidebar">
-          <TakeList />
-          <VibratoCard />
-          <TimingChart />
+          <div className="practice-room__takes-wrap">
+            <TakeList />
+          </div>
+          <div className="practice-room__sidebar-bottom">
+            <VibratoCard />
+            <TimingChart />
+            <CoachPanel />
+          </div>
         </aside>
       </div>
     </div>
