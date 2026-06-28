@@ -18,6 +18,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # ── 1b. Sync version from git tag into all manifest files ────────────
+      # tauri.conf.json, Cargo.toml, and package.json must all agree with the
+      # tag version so that the artifact filename and app About box are correct.
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Stamping version $VERSION"
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+          sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
       # ── 2. Node.js (for Vite + React frontend) ───────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
