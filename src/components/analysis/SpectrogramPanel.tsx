@@ -248,14 +248,18 @@ export default function SpectrogramPanel() {
       }
 
       // ── composite to main canvas ────────────────────────────────────────────
-      ctx.fillStyle = "#0f0f1e";
-      ctx.fillRect(0, 0, W, H);
-
+      // Active: blend offscreen at 72% over previous frame (temporal smoothing).
+      // Idle: clear roll area so stale spectrogram doesn't linger.
       if (active) {
+        ctx.globalAlpha = 0.72;
         ctx.drawImage(offscreen, AXIS_W, 0);
+        ctx.globalAlpha = 1.0;
+      } else {
+        ctx.fillStyle = "#0f0f1e";
+        ctx.fillRect(AXIS_W, 0, rollW, H);
       }
 
-      // Grid lines drawn after composite so they stay crisp
+      // Grid lines and axis always drawn at full opacity after composite
       const analyser  = getMicAnalyser();
       const sr        = analyser?.context.sampleRate ?? 48000;
       const nyquist   = sr / 2;
