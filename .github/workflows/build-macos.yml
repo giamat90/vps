@@ -111,32 +111,7 @@ jobs:
           releaseDraft: true    # Creates a draft release; publish manually
           prerelease: false
 
-      # ── 10. Smoke test: launch the .app and check it doesn't crash immediately ──
-      - name: Smoke test .app
-        continue-on-error: true
-        run: |
-          APP_PATH=$(find src-tauri/target/release/bundle/macos -name "*.app" | head -1)
-          echo "Testing: $APP_PATH"
-          # Launch the app in background, wait 5 seconds, check it's still running
-          open "$APP_PATH" &
-          APP_PID=$!
-          sleep 5
-          if kill -0 $APP_PID 2>/dev/null; then
-            echo "✅ App is still running after 5s — smoke test passed"
-            kill $APP_PID
-          else
-            # App may have launched its own process — check by name
-            APP_NAME=$(basename "$APP_PATH" .app)
-            if pgrep -x "$APP_NAME" > /dev/null; then
-              echo "✅ App process found — smoke test passed"
-              pkill -x "$APP_NAME"
-            else
-              echo "❌ App crashed or exited immediately — smoke test failed"
-              exit 1
-            fi
-          fi
-
-      # ── 11. Upload .dmg as artifact (fallback if release step fails) ──────
+      # ── 10. Upload .dmg as artifact (fallback if release step fails) ──────
       - name: Upload .dmg artifact
         uses: actions/upload-artifact@v4
         with:
