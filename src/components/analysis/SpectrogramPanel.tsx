@@ -177,6 +177,8 @@ export default function SpectrogramPanel() {
           analyser.getFloatFrequencyData(fftScratch.current);
 
           const sr      = analyser.context.sampleRate;
+          const bin1k   = Math.round(1000 / (sr / (binCount * 2)));
+          console.log("1kHz bin:", fftScratch.current[bin1k].toFixed(1), "dB");
           const fftSize = binCount * 2;
 
           if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
