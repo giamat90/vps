@@ -61,6 +61,46 @@ npm run tauri build
 
 Output installers are placed in `src-tauri/target/release/bundle/`. Ensure the sidecar executable is built first.
 
+## CI / Release Workflow
+
+Two GitHub Actions workflows trigger on any `v*` tag push and also support `workflow_dispatch`:
+
+| Workflow | Runner | Bundle | File |
+|----------|--------|--------|------|
+| `build-macos.yml` | `macos-latest` (Apple Silicon) | `.dmg` | `.github/workflows/build-macos.yml` |
+| `build-windows.yml` | `windows-latest` (x86_64) | NSIS `.exe` | `.github/workflows/build-windows.yml` |
+
+Both workflows:
+1. Stamp all manifest versions from the git tag (`jq` + `sed`)
+2. Build the Python sidecar with PyInstaller (CPU-only PyTorch)
+3. Build the Tauri app with `tauri-action@v0` → creates a draft GitHub Release
+4. Run a smoke test (see below)
+5. Upload the installer as a workflow artifact (14-day retention fallback)
+
+### Smoke tests
+
+**macOS:** Mounts the `.dmg`, finds the binary inside the `.app` bundle via `find`, launches it directly (bypasses Gatekeeper — no code signing on CI), waits 15 s, checks liveness with `kill -0 $PID`.
+
+**Windows:** Confirms the NSIS installer file exists, launches `src-tauri/target/release/app.exe` directly, waits 15 s, checks `$proc.HasExited`.
+
+### Bumping the version locally
+
+Use the PowerShell script to keep all three manifests in sync before tagging:
+
+```powershell
+.\scripts\bump-version.ps1 0.2.0
+git add src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
+git commit -m "chore: bump version to 0.2.0"
+git tag v0.2.0
+git push origin master v0.2.0
+```
+
+`bump-version.ps1` writes UTF-8 without BOM (important — PowerShell 5.1's `Set-Content -Encoding utf8` adds a BOM that breaks the TOML parser).
+
+### Asset protocol scope
+
+`tauri.conf.json` `assetProtocol.scope` must use forward-slash globs (`$HOME/.vps/**`). Backslash variants (`$HOME\\.vps\\**`) are invalid on macOS and cause a `GlobPattern` panic at startup.
+
 ## Project Structure
 
 ```
