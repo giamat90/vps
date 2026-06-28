@@ -1096,8 +1096,8 @@ body,
   opacity: 0.6;
 }
 
-.spectro-panel__canvas {
-  height: 12rem;
+.analysis-panel__canvas.spectro-panel__canvas {
+  height: 35rem;
 }
 
 .analysis-panel__legend {

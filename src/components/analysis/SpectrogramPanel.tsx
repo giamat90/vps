@@ -4,7 +4,7 @@ import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
-const AXIS_W   = 48;
+const AXIS_W   = 56;
 const WINDOW_S = 8;
 const F_MIN    = 20;
 const F_MAX    = 20000;
@@ -48,7 +48,7 @@ function formatHz(f: number): string {
   return f >= 1000 ? `${f / 1000}k` : `${f}`;
 }
 
-function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: number): void {
+function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: number, dpr: number): void {
   const nyquist = sampleRate / 2;
   const fMax    = Math.min(F_MAX, nyquist);
 
@@ -62,7 +62,7 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   ctx.lineTo(AXIS_W - 1, H);
   ctx.stroke();
 
-  ctx.font         = "9px monospace";
+  ctx.font         = `${11 * dpr}px monospace`;
   ctx.textBaseline = "middle";
   ctx.textAlign    = "right";
 
@@ -71,15 +71,15 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
     const y = freqToY(f, H, fMax);
     if (y < 4 || y > H - 4) continue;
 
-    ctx.strokeStyle = "#2a3a4e";
+    ctx.strokeStyle = "rgba(255,255,255,0.3)";
     ctx.lineWidth   = 1;
     ctx.beginPath();
-    ctx.moveTo(AXIS_W - 5, y);
-    ctx.lineTo(AXIS_W, y);
+    ctx.moveTo(AXIS_W, y);
+    ctx.lineTo(AXIS_W + 8, y);
     ctx.stroke();
 
-    ctx.fillStyle = "#6a7a8e";
-    ctx.fillText(formatHz(f), AXIS_W - 7, y);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillText(formatHz(f), AXIS_W - 6, y);
   }
 }
 
@@ -256,14 +256,44 @@ export default function SpectrogramPanel() {
         ctx.stroke();
         ctx.restore();
 
-        drawFreqAxis(ctx, H, sr);
+        // Time ticks along top edge — one per whole second in the visible window
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,255,255,0.2)";
+        ctx.lineWidth   = 1;
+        ctx.setLineDash([]);
+        const tFirst = Math.ceil(t0);
+        const tLast  = Math.floor(t0 + WINDOW_S);
+        for (let s = tFirst; s <= tLast; s++) {
+          const x = AXIS_W + ((s - t0) / WINDOW_S) * rollW;
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, 4 * dpr);
+          ctx.stroke();
+        }
+        ctx.restore();
+
+        // Elapsed time label — top-right, counts from first buffer entry
+        if (buffer.current.length > 0) {
+          const elapsed = t - buffer.current[0].time;
+          const mm = Math.floor(elapsed / 60).toString().padStart(2, "0");
+          const ss = Math.floor(elapsed % 60).toString().padStart(2, "0");
+          ctx.save();
+          ctx.font         = `${12 * dpr}px monospace`;
+          ctx.fillStyle    = "rgba(255,255,255,0.8)";
+          ctx.textAlign    = "right";
+          ctx.textBaseline = "top";
+          ctx.fillText(`${mm}:${ss}`, W - 8 * dpr, 8 * dpr);
+          ctx.restore();
+        }
+
+        drawFreqAxis(ctx, H, sr, dpr);
       } else {
         ctx.fillStyle = "#0f0f1e";
         ctx.fillRect(0, 0, W, H);
 
         const analyser = getMicAnalyser();
         const sr       = analyser?.context.sampleRate ?? 48000;
-        drawFreqAxis(ctx, H, sr);
+        drawFreqAxis(ctx, H, sr, dpr);
 
         if (!isRecording && !isMonitoring) {
           ctx.fillStyle    = "#a0a0b040";
