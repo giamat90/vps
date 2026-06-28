@@ -197,8 +197,9 @@ export default function SpectrogramPanel() {
         const colLut = SPECTRO_COLORMAP;
         const dbRange = MAX_DB - MIN_DB;
 
-        const img = offCtx.createImageData(rollW, H);
-        const d   = img.data;
+        const img      = offCtx.createImageData(rollW, H);
+        const d        = img.data;
+        const colNorms = new Float32Array(H);
 
         let bi = 0;
         for (let px = 0; px < rollW; px++) {
@@ -211,17 +212,25 @@ export default function SpectrogramPanel() {
           }
           const data = entry.data;
 
+          // Pass 1: dB → normalised magnitude for every row in this column
           for (let py = 0; py < H; py++) {
             const idx  = lut[py];
             const lo   = Math.floor(idx);
             const hi   = Math.min(lo + 1, data.length - 1);
             const frac = idx - lo;
             const db   = data[lo] * (1 - frac) + data[hi] * frac;
-
-            let norm = db < -62 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            let norm = db < -72 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
             norm = Math.pow(norm, 0.55);
-            const ci   = Math.min(255, Math.floor(norm * 255));
+            colNorms[py] = norm;
+          }
 
+          // Pass 2: 3-tap vertical Gaussian bloom then colormap lookup
+          for (let py = 0; py < H; py++) {
+            const blurred =
+              0.25 * colNorms[Math.max(0, py - 1)] +
+              0.50 * colNorms[py] +
+              0.25 * colNorms[Math.min(H - 1, py + 1)];
+            const ci   = Math.min(255, Math.floor(blurred * 255));
             const base = (py * rollW + px) * 4;
             d[base]     = colLut[ci * 3];
             d[base + 1] = colLut[ci * 3 + 1];
@@ -286,20 +295,21 @@ export default function SpectrogramPanel() {
 
         drawFreqAxis(ctx, H, sr, dpr);
       } else {
-        ctx.fillStyle = "#0f0f1e";
-        ctx.fillRect(0, 0, W, H);
-
         const analyser = getMicAnalyser();
         const sr       = analyser?.context.sampleRate ?? 48000;
-        drawFreqAxis(ctx, H, sr, dpr);
 
         if (!isRecording && !isMonitoring) {
+          // Idle: clear canvas and show hint
+          ctx.fillStyle = "#0f0f1e";
+          ctx.fillRect(0, 0, W, H);
           ctx.fillStyle    = "#a0a0b040";
           ctx.font         = `${11 * dpr}px sans-serif`;
           ctx.textAlign    = "center";
           ctx.textBaseline = "middle";
           ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, H / 2);
         }
+        // Active but buffer warming up: leave roll pixels as-is, only redraw axis
+        drawFreqAxis(ctx, H, sr, dpr);
       }
     };
   }, [isRecording, isMonitoring]);

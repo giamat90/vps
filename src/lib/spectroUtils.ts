@@ -5,37 +5,43 @@ export const MIDI_MAX = 84;           // C6
 export const N_NOTES  = MIDI_MAX - MIDI_MIN + 1; // 40
 export const N_SPECTRO_ROWS = 160;    // 4 sub-rows per semitone for live capture
 
-// Thermal colormap: noise floor is near-black, signal rises through navy → blue → teal → yellow → orange → white.
-// Control points are non-uniformly spaced so the first 25% of entries (quiet signal) stays very dark.
+// Thermal colormap: index-based control points, segments interpolated linearly.
 // Layout: [r0,g0,b0, r1,g1,b1, ...] — 256 entries × 3 bytes.
-export const SPECTRO_COLORMAP: Uint8Array = (() => {
-  // [normalised position 0-1, r, g, b]
-  const stops: [number, number, number, number][] = [
-    [0.00,   0,   0,   0],  // pure black — silence
-    [0.10,   0,   8,  24],  // near black, hint of blue
-    [0.25,  10,  26,  58],  // dark navy
-    [0.50,  13,  79, 140],  // mid blue
-    [0.70,  26, 158, 110],  // teal — only at this level
-    [0.85, 232, 192,  32],  // yellow
-    [0.95, 224,  80,  16],  // orange
-    [1.00, 255, 255, 255],  // white peak
+function buildColormap(): Uint8Array {
+  const map = new Uint8Array(256 * 3);
+  const stops = [
+    [  0,   0,   0,   0],  // 0.00 → black
+    [ 30,   0,   4,  20],  // 0.12 → near black, faint blue
+    [ 64,   0,  15,  60],  // 0.25 → dark navy
+    [110,   0,  60, 140],  // 0.43 → medium blue
+    [148,  10, 140, 110],  // 0.58 → teal (only here)
+    [185, 200, 180,  20],  // 0.72 → yellow
+    [215, 220,  80,  10],  // 0.84 → orange
+    [230, 255,  60,  20],  // 0.90 → bright red-orange
+    [245, 255, 200, 180],  // 0.96 → hot pink/salmon
+    [255, 255, 255, 255],  // 1.00 → pure white
   ];
-  const lut = new Uint8Array(256 * 3);
-  for (let i = 0; i < 256; i++) {
-    const norm = i / 255;
-    let lo = 0;
-    for (let s = 0; s < stops.length - 1; s++) {
-      if (stops[s][0] <= norm) lo = s;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const [i0, r0, g0, b0] = stops[i];
+    const [i1, r1, g1, b1] = stops[i + 1];
+    for (let j = i0; j <= i1; j++) {
+      const t = (j - i0) / (i1 - i0);
+      map[j * 3]     = Math.round(r0 + t * (r1 - r0));
+      map[j * 3 + 1] = Math.round(g0 + t * (g1 - g0));
+      map[j * 3 + 2] = Math.round(b0 + t * (b1 - b0));
     }
-    const hi    = Math.min(lo + 1, stops.length - 1);
-    const range = stops[hi][0] - stops[lo][0];
-    const f     = range > 0 ? (norm - stops[lo][0]) / range : 0;
-    lut[i * 3]     = Math.round(stops[lo][1] * (1 - f) + stops[hi][1] * f);
-    lut[i * 3 + 1] = Math.round(stops[lo][2] * (1 - f) + stops[hi][2] * f);
-    lut[i * 3 + 2] = Math.round(stops[lo][3] * (1 - f) + stops[hi][3] * f);
   }
-  return lut;
-})();
+  return map;
+}
+
+export const SPECTRO_COLORMAP: Uint8Array = buildColormap();
+
+// Verification log — confirms correct colors are loaded at key indices.
+[0, 64, 128, 192, 255].forEach((i) => {
+  console.log(
+    `colormap[${i}]: rgb(${SPECTRO_COLORMAP[i * 3]}, ${SPECTRO_COLORMAP[i * 3 + 1]}, ${SPECTRO_COLORMAP[i * 3 + 2]})`,
+  );
+});
 
 /**
  * Build an OffscreenCanvas from raw base64-encoded spectrogram bytes.
