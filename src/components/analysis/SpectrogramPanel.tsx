@@ -4,9 +4,10 @@ import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
-const AXIS_W = 56;
-const F_MIN  = 20;
-const F_MAX  = 20000;
+const AXIS_W   = 56;
+const WINDOW_S = 10;   // seconds visible across full roll width
+const F_MIN    = 20;
+const F_MAX    = 20000;
 
 export const MIN_DB = -65;
 export const MAX_DB = -10;
@@ -98,6 +99,7 @@ export default function SpectrogramPanel() {
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
 
   const lastCapture = useRef(0);
+  const shiftAccum  = useRef(0);
   const fftScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
   const colNorms    = useRef<Float32Array | null>(null);
   const freqLut     = useRef<{ lut: Float32Array; H: number; sr: number } | null>(null);
@@ -203,12 +205,16 @@ export default function SpectrogramPanel() {
             norms[py]  = norm;
           }
 
-          // Shift offscreen left by exactly 1 pixel
-          const shifted = offCtx.getImageData(1, 0, rollW - 1, H);
+          // Dynamic shift: rollW pixels spans WINDOW_S seconds at ~30 fps
+          shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
+          const shift = Math.max(1, Math.floor(shiftAccum.current));
+          shiftAccum.current -= shift;
+
+          const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
           offCtx.putImageData(shifted, 0, 0);
 
-          // Pass 2: 3-tap Gaussian bloom → write rightmost column
-          const colImg = offCtx.createImageData(1, H);
+          // Pass 2: 3-tap Gaussian bloom → write `shift` new columns at right
+          const colImg = offCtx.createImageData(shift, H);
           const cd     = colImg.data;
           for (let py = 0; py < H; py++) {
             const prev    = norms[Math.max(0, py - 1)];
@@ -216,20 +222,25 @@ export default function SpectrogramPanel() {
             const next    = norms[Math.min(H - 1, py + 1)];
             const blurred = 0.25 * prev + 0.50 * curr + 0.25 * next;
             const ci      = Math.min(255, Math.floor(blurred * 255));
-            const base    = py * 4;
-            cd[base]      = colLut[ci * 3];
-            cd[base + 1]  = colLut[ci * 3 + 1];
-            cd[base + 2]  = colLut[ci * 3 + 2];
-            cd[base + 3]  = 255;
+            for (let s = 0; s < shift; s++) {
+              const base    = (py * shift + s) * 4;
+              cd[base]      = colLut[ci * 3];
+              cd[base + 1]  = colLut[ci * 3 + 1];
+              cd[base + 2]  = colLut[ci * 3 + 2];
+              cd[base + 3]  = 255;
+            }
           }
-          offCtx.putImageData(colImg, rollW - 1, 0);
+          offCtx.putImageData(colImg, rollW - shift, 0);
 
         } else if (active) {
-          // Active but analyser not ready yet — silence column
-          const shifted = offCtx.getImageData(1, 0, rollW - 1, H);
+          // Active but analyser not ready yet — silence columns
+          shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
+          const shift = Math.max(1, Math.floor(shiftAccum.current));
+          shiftAccum.current -= shift;
+          const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
           offCtx.putImageData(shifted, 0, 0);
           offCtx.fillStyle = "#000000";
-          offCtx.fillRect(rollW - 1, 0, 1, H);
+          offCtx.fillRect(rollW - shift, 0, shift, H);
         }
         // Not active: no shift — canvas freezes at last frame
       }
