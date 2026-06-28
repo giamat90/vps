@@ -248,10 +248,7 @@ Real-time pitch gauge. Active whenever `isRecording || isMonitoring`.
 **Form factor:** Thin SVG horizontal bar (`viewBox="0 0 300 8"`, `preserveAspectRatio="none"`) — stretches to full container width. No note labels, no ticks — pure color zones only. Range: ±50 cents. Zones: green ±0–15 ct, yellow ±15–30 ct, red >±30 ct. Needle is a 3 px rect; centre mark at x=150.
 
 **Placement:**
-- **PracticeRoom** — in the page header, sized to `max-width: 22rem`
-- **ExercisePage** — rendered inside `PianoKeyboard` (not the page header). `PianoKeyboard` owns and renders `<DualTuner />` between its header strip and the canvas key row.
-
-**Stream model:** DualTuner never opens its own `getUserMedia`.
+- **ExercisePage** — rendered inside `PianoKeyboard` (not the page header). `PianoKeyboard` owns and renders `<DualTuner />` between its header strip and the canvas key row. Not present in `PracticeRoom`.
 
 **Stream model:** DualTuner never opens its own `getUserMedia`. It reuses the already-open stream owned by the store:
 
@@ -267,6 +264,45 @@ Opening a second `getUserMedia` to the same device caused silent failures on Win
 ### PianoKeyboard
 
 Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). All white keys show a full note label with octave number at the bottom of each key: `C3`, `D3`, `E3`, `F3`, `G3`, `A3`, `B3`, `C4`, `D4` … The octave is derived as `Math.floor(midi / 12) - 1` (MIDI convention).
+
+### PracticeRoom
+
+Song practice page. Requires a processed song.
+
+**Layout:**
+```
+┌─ practice-room__header ───────────────────────────────┐
+│  ← Back   Song Title   BPM / Key                      │
+├─ practice-room__body (flex row) ──────────────────────┤
+│ ┌─ practice-room__main (flex: 1) ──────────────────┐  │
+│ │  Waveform (vocals + instrumental + take)          │  │
+│ │  Controls row: TempoControl · KeyTranspose · …    │  │
+│ │  Transport row: Play/Pause · MicSelector · Rec    │  │
+│ │  Analysis panel (when isAnalysisLoaded):          │  │
+│ │    PianoKeyboard · PianoRoll · DynamicsCurve      │  │
+│ └────────────────────────────────────────────────── ┘  │
+│ ┌─ practice-room__sidebar (15rem, flex col) ────────┐  │
+│ │  practice-room__takes-wrap (flex:1, overflow auto)│  │
+│ │    TakeList                                       │  │
+│ │  practice-room__sidebar-bottom (flex-shrink: 0)   │  │
+│ │    VibratoCard · TimingChart · CoachPanel         │  │
+│ └───────────────────────────────────────────────────┘  │
+└───────────────────────────────────────────────────────┘
+```
+
+**Sidebar layout:** The sidebar uses a constrained flex column so `TakeList` scrolls within its zone as takes accumulate, while `VibratoCard`, `TimingChart`, and `CoachPanel` remain pinned at the bottom. The full `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__sidebar`) for the takes-wrap `overflow-y: auto` to engage. `practice-room__sidebar-bottom` has `flex-shrink: 0` so it is never compressed.
+
+**Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on or `isRecording` is true. `showAnalysis` is set automatically when the user selects a take. No `DualTuner` in this page — the tuner is ExercisePage-only.
+
+### VibratoCard
+
+Compact widget showing vibrato Rate (Hz), Depth (cents), and Evenness (%) for the currently selected take. Located in the sidebar bottom section.
+
+Rendered only when `takeVibrato` is non-null in the analysis store. If all values are zero, no vibrato was detected (pitch swings < 10 ct or pattern too irregular).
+
+**Info popover (ⓘ button):** A toggle in the card header opens an inline explanation panel below the stats. The panel describes each metric's ideal range (Rate 4–7 Hz, Depth 20–100 ct, Evenness ≥ 60 %) and a note explaining zero output. CSS class: `vibrato-card__info-panel`. State is local to the component (`useState`).
+
+**Color coding:** Each value is highlighted green (`vibrato-card__val--ok`) or amber (`vibrato-card__val--warn`) based on ideal-range thresholds.
 
 ### ExercisePage
 
