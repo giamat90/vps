@@ -107,7 +107,37 @@ jobs:
           releaseDraft: true    # Creates a draft release; publish manually
           prerelease: false
 
-      # ── 10. Upload NSIS installer as artifact (fallback) ──────────────────
+      # ── 10. Smoke test: install NSIS package, launch app, verify it stays up ─
+      # Windows GH runners have a full GUI session — WebView2 is pre-installed.
+      # NSIS /S flag = silent (no UAC for per-user installs).
+      - name: Smoke test NSIS installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter "*.exe" | Select-Object -First 1
+          Write-Host "Installing: $($installer.FullName)"
+          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
+
+          # Tauri NSIS installs per-user by default
+          $installDir = "$env:LOCALAPPDATA\Programs\Vocal Practice Studio"
+          $binary = Get-ChildItem $installDir -Filter "*.exe" -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -notlike "Uninstall*" } |
+                    Select-Object -First 1
+          if (-not $binary) {
+            Write-Host "❌ Binary not found in $installDir — smoke test failed"
+            exit 1
+          }
+          Write-Host "Launching: $($binary.FullName)"
+          $proc = Start-Process -FilePath $binary.FullName -PassThru
+          Start-Sleep 15
+          if (-not $proc.HasExited) {
+            Write-Host "✅ App is running (PID $($proc.Id)) — smoke test passed"
+            $proc.Kill()
+          } else {
+            Write-Host "❌ App exited immediately (exit code $($proc.ExitCode)) — smoke test failed"
+            exit 1
+          }
+
+      # ── 11. Upload NSIS installer as artifact (fallback) ──────────────────
       - name: Upload NSIS artifact
         uses: actions/upload-artifact@v4
         with:
