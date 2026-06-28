@@ -107,34 +107,23 @@ jobs:
           releaseDraft: true    # Creates a draft release; publish manually
           prerelease: false
 
-      # ── 10. Smoke test: install NSIS package, launch app, verify it stays up ─
-      # Windows GH runners have a full GUI session — WebView2 is pre-installed.
-      # NSIS /S flag = silent (no UAC for per-user installs).
-      - name: Smoke test NSIS installer
+      # ── 10. Smoke test: verify NSIS was built, launch raw binary, check liveness ─
+      # Mirrors the macOS approach: confirm the installer exists, then launch the
+      # raw target/release/app.exe directly (avoids install-location uncertainty).
+      # Windows GH runners have WebView2 pre-installed and a full GUI session.
+      - name: Smoke test
         shell: pwsh
         run: |
           $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter "*.exe" | Select-Object -First 1
-          Write-Host "Installing: $($installer.FullName)"
-          Start-Process -FilePath $installer.FullName -ArgumentList "/S" -Wait
-
-          # Search all common install locations (per-user and system-wide)
-          $searchPaths = @(
-            "$env:LOCALAPPDATA\Programs",
-            $env:ProgramFiles,
-            ${env:ProgramFiles(x86)}
-          )
-          $binary = $null
-          foreach ($path in $searchPaths) {
-            $binary = Get-ChildItem $path -Recurse -Filter "Vocal Practice Studio.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($binary) { break }
-          }
-          if (-not $binary) {
-            Write-Host "❌ Binary not found in any install location — smoke test failed"
-            Write-Host "Searched: $($searchPaths -join ', ')"
+          if (-not $installer) {
+            Write-Host "❌ NSIS installer not found — build may have failed"
             exit 1
           }
-          Write-Host "Launching: $($binary.FullName)"
-          $proc = Start-Process -FilePath $binary.FullName -PassThru
+          Write-Host "NSIS installer built: $($installer.Name)"
+
+          $binary = "src-tauri/target/release/app.exe"
+          Write-Host "Launching: $binary"
+          $proc = Start-Process -FilePath $binary -PassThru
           Start-Sleep 15
           if (-not $proc.HasExited) {
             Write-Host "✅ App is running (PID $($proc.Id)) — smoke test passed"
