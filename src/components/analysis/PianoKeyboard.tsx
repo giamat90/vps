@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { getEngine, usePlayerStore } from "../../stores/player";
+import DualTuner from "./DualTuner";
 import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 
@@ -172,6 +173,7 @@ export default function PianoKeyboard() {
           )}
         </div>
       </div>
+      <DualTuner />
       <canvas
         ref={canvasRef}
         className="analysis-panel__canvas analysis-panel__canvas--keyboard"
