@@ -71,14 +71,15 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
     const y = freqToY(f, H, fMax);
     if (y < 4 || y > H - 4) continue;
 
-    ctx.strokeStyle = "rgba(255,255,255,0.3)";
+    const anchor  = f === 1000 || f === 5000;
+    ctx.strokeStyle = anchor ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.3)";
     ctx.lineWidth   = 1;
     ctx.beginPath();
     ctx.moveTo(AXIS_W, y);
     ctx.lineTo(AXIS_W + 8, y);
     ctx.stroke();
 
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillStyle = anchor ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.85)";
     ctx.fillText(formatHz(f), AXIS_W - 6, y);
   }
 }
@@ -272,19 +273,6 @@ export default function SpectrogramPanel() {
         }
         ctx.restore();
 
-        // Elapsed time label — top-right, counts from first buffer entry
-        if (buffer.current.length > 0) {
-          const elapsed = t - buffer.current[0].time;
-          const mm = Math.floor(elapsed / 60).toString().padStart(2, "0");
-          const ss = Math.floor(elapsed % 60).toString().padStart(2, "0");
-          ctx.save();
-          ctx.font         = `${12 * dpr}px monospace`;
-          ctx.fillStyle    = "rgba(255,255,255,0.8)";
-          ctx.textAlign    = "right";
-          ctx.textBaseline = "top";
-          ctx.fillText(`${mm}:${ss}`, W - 8 * dpr, 8 * dpr);
-          ctx.restore();
-        }
 
         drawFreqAxis(ctx, H, sr, dpr);
       } else {

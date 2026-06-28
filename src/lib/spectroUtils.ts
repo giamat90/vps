@@ -5,29 +5,34 @@ export const MIDI_MAX = 84;           // C6
 export const N_NOTES  = MIDI_MAX - MIDI_MIN + 1; // 40
 export const N_SPECTRO_ROWS = 160;    // 4 sub-rows per semitone for live capture
 
-// Thermal colormap matching VoceVista: black → deep blue → blue → teal → yellow → orange → red.
-// No green band — skips straight from teal to yellow for a natural spectral look.
-// Index: value 0–255. Layout: [r0,g0,b0, r1,g1,b1, ...]
+// Thermal colormap: noise floor is near-black, signal rises through navy → blue → teal → yellow → orange → white.
+// Control points are non-uniformly spaced so the first 25% of entries (quiet signal) stays very dark.
+// Layout: [r0,g0,b0, r1,g1,b1, ...] — 256 entries × 3 bytes.
 export const SPECTRO_COLORMAP: Uint8Array = (() => {
-  const stops: [number, number, number][] = [
-    [0,   0,   0  ],  // black  (silence)
-    [0,   0,   100],  // deep blue
-    [0,   30,  220],  // blue
-    [0,   180, 220],  // teal
-    [220, 220,  0  ],  // yellow
-    [255, 120,  0  ],  // orange
-    [255,  20,  0  ],  // red
-    [255, 255, 200],  // near-white (peak)
+  // [normalised position 0-1, r, g, b]
+  const stops: [number, number, number, number][] = [
+    [0.00,   0,   0,   0],  // pure black — silence
+    [0.10,   0,   8,  24],  // near black, hint of blue
+    [0.25,  10,  26,  58],  // dark navy
+    [0.50,  13,  79, 140],  // mid blue
+    [0.70,  26, 158, 110],  // teal — only at this level
+    [0.85, 232, 192,  32],  // yellow
+    [0.95, 224,  80,  16],  // orange
+    [1.00, 255, 255, 255],  // white peak
   ];
   const lut = new Uint8Array(256 * 3);
   for (let i = 0; i < 256; i++) {
-    const t = (i / 255) * (stops.length - 1);
-    const lo = Math.floor(t);
-    const hi = Math.min(lo + 1, stops.length - 1);
-    const f = t - lo;
-    lut[i * 3]     = Math.round(stops[lo][0] * (1 - f) + stops[hi][0] * f);
-    lut[i * 3 + 1] = Math.round(stops[lo][1] * (1 - f) + stops[hi][1] * f);
-    lut[i * 3 + 2] = Math.round(stops[lo][2] * (1 - f) + stops[hi][2] * f);
+    const norm = i / 255;
+    let lo = 0;
+    for (let s = 0; s < stops.length - 1; s++) {
+      if (stops[s][0] <= norm) lo = s;
+    }
+    const hi    = Math.min(lo + 1, stops.length - 1);
+    const range = stops[hi][0] - stops[lo][0];
+    const f     = range > 0 ? (norm - stops[lo][0]) / range : 0;
+    lut[i * 3]     = Math.round(stops[lo][1] * (1 - f) + stops[hi][1] * f);
+    lut[i * 3 + 1] = Math.round(stops[lo][2] * (1 - f) + stops[hi][2] * f);
+    lut[i * 3 + 2] = Math.round(stops[lo][3] * (1 - f) + stops[hi][3] * f);
   }
   return lut;
 })();
