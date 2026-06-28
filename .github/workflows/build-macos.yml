@@ -1,0 +1,105 @@
+name: Build macOS
+
+on:
+  push:
+    tags:
+      - 'v*'           # Triggers on version tags: v1.0.0, v0.3.1, etc.
+  workflow_dispatch:   # Also allows manual trigger from GitHub UI
+
+jobs:
+  build-macos:
+    runs-on: macos-latest   # Apple Silicon (M1/M2) runner
+    
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 2. Node.js (for Vite + React frontend) ───────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── 3. Rust (for Tauri shell) ────────────────────────────────────────
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin   # M1/M2 native target
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # ── 4. Python (for sidecar build) ────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # ── 5. Install Python sidecar dependencies ────────────────────────────
+      # CPU-only PyTorch: much smaller, sufficient for Demucs inference
+      - name: Install Python dependencies
+        working-directory: sidecar
+        run: |
+          pip install --upgrade pip
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install demucs librosa soundfile numpy pyinstaller
+
+      # ── 6. Freeze the Python sidecar with PyInstaller ────────────────────
+      # Output name MUST match Tauri's expected sidecar binary name.
+      # Tauri looks for: src-tauri/binaries/vps-sidecar-aarch64-apple-darwin
+      - name: Build Python sidecar (PyInstaller)
+        working-directory: sidecar
+        run: |
+          pyinstaller main.py \
+            --onefile \
+            --name vps-sidecar-aarch64-apple-darwin \
+            --hidden-import=demucs \
+            --hidden-import=demucs.api \
+            --hidden-import=demucs.pretrained \
+            --hidden-import=librosa \
+            --hidden-import=soundfile \
+            --hidden-import=numpy \
+            --collect-data=demucs \
+            --noconfirm \
+            --clean
+
+      # ── 7. Move sidecar binary to where Tauri expects it ─────────────────
+      - name: Stage sidecar binary
+        run: |
+          mkdir -p src-tauri/binaries
+          cp sidecar/dist/vps-sidecar-aarch64-apple-darwin src-tauri/binaries/
+
+      # ── 8. Install Node dependencies ─────────────────────────────────────
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── 9. Build the Tauri app (.dmg + .app) ─────────────────────────────
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Code signing (optional — omit if distributing outside Mac App Store)
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'VPS ${{ github.ref_name }}'
+          releaseBody: 'macOS build — see CHANGELOG for details.'
+          releaseDraft: true    # Creates a draft release; publish manually
+          prerelease: false
+
+      # ── 10. Upload .dmg as artifact (fallback if release step fails) ──────
+      - name: Upload .dmg artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vps-macos-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
+          retention-days: 14
