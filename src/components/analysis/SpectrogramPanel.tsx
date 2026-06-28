@@ -9,7 +9,7 @@ const WINDOW_S = 8;
 const F_MIN    = 20;
 const F_MAX    = 20000;
 
-export const MIN_DB = -80;
+export const MIN_DB = -65;
 export const MAX_DB = -10;
 
 const FREQ_TICKS = [20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
@@ -52,7 +52,7 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   const nyquist = sampleRate / 2;
   const fMax    = Math.min(F_MAX, nyquist);
 
-  ctx.fillStyle = "#090914";
+  ctx.fillStyle = "#16213e";
   ctx.fillRect(0, 0, AXIS_W, H);
 
   ctx.strokeStyle = "#333";
@@ -66,8 +66,14 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   ctx.textBaseline = "middle";
   ctx.textAlign    = "right";
 
+  // 20k label pinned at top edge
+  if (fMax >= 20000) {
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillText("20k", AXIS_W - 6, 8 * dpr);
+  }
+
   for (const f of FREQ_TICKS) {
-    if (f > fMax) continue;
+    if (f > fMax || f === 20000) continue;
     const y = freqToY(f, H, fMax);
     if (y < 4 || y > H - 4) continue;
 
@@ -199,7 +205,10 @@ export default function SpectrogramPanel() {
           const tPx = t0 + (px / rollW) * WINDOW_S;
           while (bi < buffer.current.length - 1 && buffer.current[bi + 1].time <= tPx) bi++;
           const entry = buffer.current[bi];
-          if (!entry || Math.abs(entry.time - tPx) > 1.0) continue;
+          if (!entry || Math.abs(entry.time - tPx) > 1.0) {
+            for (let py = 0; py < H; py++) d[(py * rollW + px) * 4 + 3] = 255;
+            continue;
+          }
           const data = entry.data;
 
           for (let py = 0; py < H; py++) {
@@ -209,41 +218,42 @@ export default function SpectrogramPanel() {
             const frac = idx - lo;
             const db   = data[lo] * (1 - frac) + data[hi] * frac;
 
-            const norm = Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            const ci   = Math.round(norm * 255);
+            let norm = db < -62 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            norm = Math.pow(norm, 0.55);
+            const ci   = Math.min(255, Math.floor(norm * 255));
 
             const base = (py * rollW + px) * 4;
             d[base]     = colLut[ci * 3];
             d[base + 1] = colLut[ci * 3 + 1];
             d[base + 2] = colLut[ci * 3 + 2];
-            d[base + 3] = norm < 0.03 ? 0 : 230;
+            d[base + 3] = 255;
           }
         }
         offCtx.putImageData(img, 0, 0);
 
-        // Horizontal grid lines over the spectrogram in offscreen
-        const nyquist = sr / 2;
-        const fMax    = Math.min(F_MAX, nyquist);
-        offCtx.save();
-        offCtx.strokeStyle = "#ffffff08";
-        offCtx.lineWidth   = 1;
-        for (const f of FREQ_TICKS) {
-          if (f > fMax) continue;
-          const y = freqToY(f, H, fMax);
-          if (y < 0 || y > H) continue;
-          offCtx.beginPath();
-          offCtx.moveTo(0, y);
-          offCtx.lineTo(rollW, y);
-          offCtx.stroke();
-        }
-        offCtx.restore();
-
         // Composite offscreen onto main canvas with temporal blending
         ctx.fillStyle = "#0f0f1e";
         ctx.fillRect(AXIS_W, 0, rollW, H);
-        ctx.globalAlpha = 0.85;
+        ctx.globalAlpha = 0.72;
         ctx.drawImage(offscreen, AXIS_W, 0);
         ctx.globalAlpha = 1.0;
+
+        // Frequency grid lines on main canvas (after composite so they stay crisp)
+        const nyquist = sr / 2;
+        const fMax    = Math.min(F_MAX, nyquist);
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,255,255,0.07)";
+        ctx.lineWidth   = 0.5;
+        for (const f of [100, 500, 1000, 5000, 10000]) {
+          if (f > fMax) continue;
+          const y = freqToY(f, H, fMax);
+          if (y < 0 || y > H) continue;
+          ctx.beginPath();
+          ctx.moveTo(AXIS_W, y);
+          ctx.lineTo(W, y);
+          ctx.stroke();
+        }
+        ctx.restore();
 
         // Center playhead reference line
         const cx = AXIS_W + rollW / 2;
