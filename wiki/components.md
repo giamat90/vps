@@ -219,23 +219,39 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 
 Scrolling live spectrogram rendered exclusively in the Free Exercise page. Shows the full audio spectrum of the microphone input in real time — not shown in song practice (`PracticeRoom`).
 
-**Frequency axis:** 20 Hz (bottom) → 20 kHz / Nyquist (top) on a **log-frequency scale** (linear in MIDI = logarithmic in Hz). This gives equal visual space to each octave.
+**Frequency axis:** 30 Hz (bottom) → 20 kHz / Nyquist (top) on a **log-frequency scale**. The 30 Hz floor (not 20 Hz) keeps the 50–100 Hz region fully visible within canvas bounds. Tick marks and Hz labels at 30 · 50 · 100 · 200 · 500 · 1k · 2k · 5k · 10k · 20k Hz (20k pinned at top edge). Faint horizontal grid lines at 100 · 500 · 1k · 5k · 10k Hz are drawn on the main canvas after the offscreen composite so they remain crisp. Axis strip: `AXIS_W = 56` physical pixels.
 
-**Resolution:** Matches VoceVista — 8192-point FFT at the browser's native sample rate (44100 Hz → 5.38 Hz/bin, 48000 Hz → 5.86 Hz/bin). Each canvas pixel row maps directly to its own FFT bin via a pre-computed `Uint16Array` LUT (`buildFreqBinLut`). The LUT is cached and rebuilt only when the canvas height or sample rate changes.
+**Resolution:** 8192-point FFT (`fftSize = 8192`, `frequencyBinCount = 4096`). `getFloatFrequencyData()` into a `Float32Array` gives full dB precision (no quantisation). Each canvas pixel row maps to an FFT bin via a pre-computed `Float32Array` LUT built by `buildFreqBinLut(H, fftSize, sampleRate)` — bilinear interpolation between adjacent bins. LUT is cached and rebuilt only on canvas resize or sample-rate change.
 
-**Rendering:** Per-pixel `ImageData` — no rectangular fill artifacts. Uses the VoceVista-aligned thermal colormap (black → deep blue → teal → yellow → orange → red → near-white). Pixels below amplitude threshold 8/255 are drawn transparent.
+**Scroll rendering (left-shift pattern):**
+1. Every ~33 ms tick, call `getFloatFrequencyData` into `fftScratch`.
+2. Compute normalised magnitude for each row → `colNorms[]`.
+3. Apply 3-tap vertical Gaussian bloom per row: `blurred[i] = 0.25·prev + 0.50·curr + 0.25·next`.
+4. Shift offscreen canvas left by `shift` pixels: `getImageData(shift, 0, rollW-shift, H)` → `putImageData(…, 0, 0)`.
+5. Write `shift` new columns at `rollW - shift` from blurred norms via colormap lookup.
+6. Composite offscreen onto main canvas at `globalAlpha = 0.72` for temporal smoothing (main canvas is **not** cleared between frames during active capture — old frames decay naturally).
 
-**Y-axis labels:** Tick marks and Hz labels at 20 · 50 · 100 · 200 · 500 · 1k · 2k · 5k · 10k · 20k Hz. Faint horizontal grid lines cross the spectrogram at each tick. Axis strip is 48 px wide (canvas coordinates — not a CSS layout value).
+`shift` is computed from a fractional accumulator: `shiftAccum += rollW * 33 / (WINDOW_S * 1000)`, so the full canvas width always represents exactly `WINDOW_S = 10` seconds regardless of physical canvas width or DPR.
 
-**Buffer:** Raw `Uint8Array` frames from `getByteFrequencyData()` (4096 bins at fftSize=8192) are stored in a rolling 8-second ring buffer. Capture is throttled to ~30 fps (33 ms gate). Buffer is cleared when mic goes fully inactive.
+**dB mapping:** `MIN_DB = -65`, `MAX_DB = -10`. Noise gate: `db < -80 → norm = 0`. Gamma correction: `Math.pow(norm, 0.55)`. `smoothingTimeConstant = 0.15` (set on every capture tick — single authoritative location).
 
-**Mic analyser:** Reads from `getMicAnalyser()` (player store singleton). The same `AnalyserNode` is shared with `DualTuner`'s pitch detector stream — no second `getUserMedia` call is made. `fftSize = 8192`, `smoothingTimeConstant = 0.6`.
+**Colormap:** Thermal — black → dark navy (index 64) → medium blue → teal (index 148) → yellow → orange → bright red-orange (index 230) → salmon (index 245) → pure white (index 255). Built by `buildColormap()` in `src/lib/spectroUtils.ts` using index-based linear interpolation so the noise floor is dark navy/black and only peak harmonics flash white.
 
-**Layout in ExercisePage:** Inside `exercise-page__spectro`, which sits below `exercise-page__roll` inside the `exercise-page__analysis` scrollable wrapper. Canvas height: `12rem`.
+**Mic analyser:** Reads from `getMicAnalyser()` (player store singleton, `fftSize = 8192`). No second `getUserMedia` is opened. Idle state (neither recording nor monitoring) freezes the canvas; the roll area is cleared to `#0f0f1e` only on true idle.
+
+**Layout in ExercisePage:** Inside `exercise-page__spectro`, below the `exercise-page__keyboard` strip and `exercise-page__roll`, inside the `exercise-page__analysis` scrollable wrapper. Canvas height: `clamp(15rem, 45vh, 35rem)`.
 
 ### DualTuner
 
-Real-time pitch gauge shown in the practice room header and the exercise page header. Active whenever `isRecording || isMonitoring`.
+Real-time pitch gauge. Active whenever `isRecording || isMonitoring`.
+
+**Form factor:** Thin SVG horizontal bar (`viewBox="0 0 300 8"`, `preserveAspectRatio="none"`) — stretches to full container width. No note labels, no ticks — pure color zones only. Range: ±50 cents. Zones: green ±0–15 ct, yellow ±15–30 ct, red >±30 ct. Needle is a 3 px rect; centre mark at x=150.
+
+**Placement:**
+- **PracticeRoom** — in the page header, sized to `max-width: 22rem`
+- **ExercisePage** — rendered inside `PianoKeyboard` (not the page header). `PianoKeyboard` owns and renders `<DualTuner />` between its header strip and the canvas key row.
+
+**Stream model:** DualTuner never opens its own `getUserMedia`.
 
 **Stream model:** DualTuner never opens its own `getUserMedia`. It reuses the already-open stream owned by the store:
 
@@ -258,24 +274,25 @@ Standalone practice page — no song required. Used for warming up, vocal exerci
 
 **Layout:**
 ```
-┌─ header ─────────────────────────────────────────────┐
-│  ← Back   FREE EXERCISE   [DualTuner]  00:00         │  ← timer turns red while active
-├─ exercise-page__analysis (flex-col, overflow-y:auto) ┤
-│  ┌─ exercise-page__roll ─────────────────────────┐   │
-│  │  PianoKeyboard                                │   │
-│  │  PianoRoll   (live orange ribbon only)        │   │
-│  └───────────────────────────────────────────────┘   │
-│  ┌─ exercise-page__spectro ──────────────────────┐   │
-│  │  SpectrogramPanel  (20 Hz – 20 kHz, live mic) │   │
-│  └───────────────────────────────────────────────┘   │
-├─ exercise-page__controls ────────────────────────────┤
-│  MicSelector · MonitorButton · ⏺ Record              │
-├──────────────────────────────────────────────────────┤
-│  Recordings (ExerciseTakeList)                       │
-└──────────────────────────────────────────────────────┘
+┌─ header ──────────────────────────────────────────────┐
+│  ← Back   FREE EXERCISE                   00:00       │  ← timer turns red while active
+├─ exercise-page__keyboard (flex-shrink: 0) ────────────┤
+│  PianoKeyboard  [DualTuner bar above keys]            │  ← pinned, does not scroll
+├─ exercise-page__analysis (flex: 1, overflow-y: auto) ─┤
+│  ┌─ exercise-page__roll ──────────────────────────┐   │
+│  │  PianoRoll   (live orange ribbon only)         │   │
+│  └────────────────────────────────────────────────┘   │
+│  ┌─ exercise-page__spectro ───────────────────────┐   │
+│  │  SpectrogramPanel  (30 Hz – 20 kHz, live mic)  │   │
+│  └────────────────────────────────────────────────┘   │
+├─ exercise-page__controls ─────────────────────────────┤
+│  MicSelector · MonitorButton · ⏺ Record               │
+├───────────────────────────────────────────────────────┤
+│  Recordings (ExerciseTakeList)                        │
+└───────────────────────────────────────────────────────┘
 ```
 
-The `exercise-page__analysis` wrapper is `flex: 1; overflow-y: auto`, so on large screens both panels are fully visible; on small screens the user can scroll. Both inner divs are `flex-shrink: 0` to prevent clipping.
+`exercise-page__keyboard` is `flex-shrink: 0` and sits **outside** the scrollable analysis wrapper — it is always visible regardless of scroll position. `PianoKeyboard` owns and renders the `DualTuner` bar internally (between its header and its canvas key row). The `exercise-page__analysis` wrapper is `flex: 1; overflow-y: auto` so PianoRoll and SpectrogramPanel scroll independently on small screens.
 
 **Time source:** `AudioEngine` exercise timer (`_exerciseMode = true`). `getCurrentTime()` returns `performance.now()` elapsed seconds — no WaveSurfer involved. The rAF tick is shared, so PianoRoll and DualTuner require no changes.
 
