@@ -26,8 +26,7 @@
                                  "assetProtocol":  {
                                                        "enable":  true,
                                                        "scope":  [
-                                                                     "$HOME/.vps/**",
-                                                                     "$HOME\\.vps\\**"
+                                                                     "$HOME/.vps/**"
                                                                  ]
                                                    }
                              }
