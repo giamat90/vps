@@ -13,7 +13,6 @@ import PianoKeyboard from "../components/analysis/PianoKeyboard";
 import DynamicsCurve from "../components/analysis/DynamicsCurve";
 import VibratoCard from "../components/analysis/VibratoCard";
 import TimingChart from "../components/analysis/TimingChart";
-import DualTuner from "../components/analysis/DualTuner";
 import CoachPanel from "../components/coaching/CoachPanel";
 import { useLibraryStore } from "../stores/library";
 import { usePlayerStore } from "../stores/player";
@@ -84,7 +83,6 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             {song.detectedKey && <span>{song.detectedKey}</span>}
           </div>
         </div>
-        <DualTuner />
       </header>
 
       <div className="practice-room__body">
