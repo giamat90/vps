@@ -383,7 +383,7 @@ selectedOutputDeviceId: string | null
 ## Current git state
 
 - **Branch:** `master` (up to date with `origin/master`)
-- **Current version:** `0.1.6` (tag `v0.1.6`)
+- **Current version:** `0.1.7` (tag `v0.1.7`)
 - **Phase 1 (full feature set):** Complete as of April 2026. Tagged `v0.1.0` on 2026-06-27.
 
 ### Recent work (June 2026)
@@ -394,6 +394,7 @@ selectedOutputDeviceId: string | null
   - Smoke tests launch binary directly (`target/release/app.exe` on Windows, binary inside `.app` on macOS)
   - `scripts/bump-version.ps1` for atomic version bumps (UTF-8 no-BOM)
   - Fixed: GlobPattern panic from backslash glob in asset scope; bundle identifier must not end in `.app`
+- **v0.1.7**: bugfix — sidecar now prefers venv Python over system Python so built app uses latest yt-dlp
 
 ### Pending
 - `feature/algorithm-improvements` branch: `preferHarmonicFundamental` evaluation remains (all other VoceVista-aligned SRH changes committed)
