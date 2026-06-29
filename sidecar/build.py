@@ -32,6 +32,7 @@ PyInstaller.__main__.run([
     "--hidden-import=torchaudio",
     "--collect-data=demucs",
     "--collect-data=crepe",
+    "--collect-all=yt_dlp",
     "--noconfirm",
     "--clean",
 ])
