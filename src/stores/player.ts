@@ -11,6 +11,8 @@ let recorder: VocalRecorder | null = null;
 let monitorStream: MediaStream | null = null;
 // Captured when recording starts so stopRecording can pass it to saveTake
 let recordingStartPos = 0;
+// Round-trip latency (output + input) measured at rec.start(); applied in stopRecording.
+let _recordingLatencyS = 0;
 
 // Mic analyser — shared by monitor and recording modes for live spectrogram
 let micAnalyserCtx: AudioContext | null = null;
@@ -465,11 +467,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     eng.pause();
 
     const rec = getRecorder();
+    let inputLatencyS = 0;
     try {
       await rec.init(get().selectedDeviceId);
       // Re-enumerate after getUserMedia succeeds — browser now populates device labels
       const devices = await navigator.mediaDevices.enumerateDevices();
       set({ audioDevices: devices.filter((d) => d.kind === "audioinput") });
+      inputLatencyS = (rec.getStream()?.getAudioTracks()[0].getSettings() as MediaTrackSettings & { latency?: number })?.latency ?? 0;
     } catch (e) {
       eng.setInteract(true);
       throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
@@ -517,6 +521,19 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     eng.play();
     rec.start();
 
+    // Measure round-trip latency to compensate for monitoring delay in stopRecording.
+    // Output latency is measured against the exact sinkId the song is playing through.
+    try {
+      const latencyCtx = new AudioContext({ sinkId: outputId } as AudioContextOptions);
+      const outputLatencyS = (latencyCtx.outputLatency ?? 0) + (latencyCtx.baseLatency ?? 0);
+      latencyCtx.close().catch((e: unknown) => console.warn("[latency] ctx close:", e));
+      _recordingLatencyS = outputLatencyS + inputLatencyS;
+      console.log("[recording] latency — output:", outputLatencyS, "input:", inputLatencyS, "total:", _recordingLatencyS);
+    } catch (e) {
+      console.warn("[recording] latency measurement failed, compensation disabled:", e);
+      _recordingLatencyS = 0;
+    }
+
     set({ isRecording: true, isPlaying: true });
   },
 
@@ -543,7 +560,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const arrayBuffer = await blob.arrayBuffer();
       const audioData = Array.from(new Uint8Array(arrayBuffer));
 
-      const take = await saveTake(song.id, audioData, recordingStartPos);
+      // Shift startPosition back by round-trip latency: singer heard the song late
+      // (output) and mic capture is buffered (input), so both offsets must be removed.
+      const compensatedStartPos = Math.max(0, recordingStartPos - _recordingLatencyS);
+      const take = await saveTake(song.id, audioData, compensatedStartPos);
 
       // Auto-select the new take — Waveform loads it into the take track.
       set((state) => ({
