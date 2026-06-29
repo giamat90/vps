@@ -21,9 +21,10 @@ export class AudioEngine {
   private _vocalsOffset = 0;
   // Duration of the vocals/take file (may differ from _duration for partial takes)
   private _vocalsDuration = 0;
-  // Take track offset and duration
+  // Take track offset, duration, and audio-file skip offset
   private _takeOffset = 0;
   private _takeDuration = 0;
+  private _takeAudioOffset = 0;
   // Whether the take WaveSurfer is currently playing (managed by window sync)
   private _takeIsPlaying = false;
   // Exercise timer — used when no song is loaded (free exercise mode)
@@ -126,7 +127,8 @@ export class AudioEngine {
     this.instrumental.play();
     if (this.take && this._takeDuration > 0) {
       const time = this.getCurrentTime();
-      if (time >= this._takeOffset && time < this._takeOffset + this._takeDuration) {
+      const takeEnd = this._takeOffset + this._takeDuration - this._takeAudioOffset;
+      if (time >= this._takeOffset && time < takeEnd) {
         this.take.play();
         this._takeIsPlaying = true;
       }
@@ -177,7 +179,7 @@ export class AudioEngine {
   private _seekTake(instrTime: number): void {
     if (!this.take) return;
     const dur = this._takeDuration > 0 ? this._takeDuration : this._duration;
-    const takeTime = Math.max(0, instrTime - this._takeOffset);
+    const takeTime = this._takeAudioOffset + Math.max(0, instrTime - this._takeOffset);
     this.take.seekTo(Math.min(1, takeTime / dur));
   }
 
@@ -237,7 +239,7 @@ export class AudioEngine {
     }
   }
 
-  async loadTakeTrack(filePath: string, container: HTMLElement, startOffset = 0): Promise<void> {
+  async loadTakeTrack(filePath: string, container: HTMLElement, startOffset = 0, audioOffset = 0): Promise<void> {
     this.take?.destroy();
     this.take = null;
 
@@ -262,11 +264,16 @@ export class AudioEngine {
     await new Promise<void>((resolve, reject) => {
       const unsubReady = this.take!.on("ready", () => { unsubReady(); unsubError(); resolve(); });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const unsubError = this.take!.on("error", (err: any) => { unsubReady(); unsubError(); reject(new Error(err?.message ?? String(err))); });
+      const unsubError = this.take!.on("error", (err: any) => {
+        unsubReady(); unsubError();
+        console.error("[engine] WaveSurfer take load failed — url:", url, "raw err:", err);
+        reject(new Error(err?.message || err?.toString?.() || "WaveSurfer load error"));
+      });
     });
 
-    this._takeOffset   = startOffset;
-    this._takeDuration = this.take.getDuration();
+    this._takeOffset      = startOffset;
+    this._takeDuration    = this.take.getDuration();
+    this._takeAudioOffset = audioOffset;
 
     // Constrain the container to the correct time window so the waveform
     // lines up visually with the other tracks (vocals, instrumental).
@@ -274,16 +281,17 @@ export class AudioEngine {
     // setOptions({ width }) forces WaveSurfer to redraw — more reliable than
     // relying on its ResizeObserver to pick up the CSS change.
     if (this._duration > 0 && this._takeDuration > 0) {
-      const railWidth = container.offsetWidth;
-      const widthPx   = Math.round((this._takeDuration / this._duration) * railWidth);
-      const marginPx  = Math.round((startOffset        / this._duration) * railWidth);
+      const railWidth      = container.offsetWidth;
+      const playableDur    = this._takeDuration - audioOffset;
+      const widthPx        = Math.round((playableDur / this._duration) * railWidth);
+      const marginPx       = Math.round((startOffset / this._duration) * railWidth);
       container.style.marginLeft = `${marginPx}px`;
       container.style.width      = `${widthPx}px`;
       this.take.setOptions({ width: widthPx });
     }
 
     this.take.on("interaction", (newTime) => {
-      const instrTime = newTime + this._takeOffset;
+      const instrTime = newTime - this._takeAudioOffset + this._takeOffset;
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
       this.instrumental?.seekTo(instrProgress);
       this._seekVocals(instrTime);
@@ -293,7 +301,8 @@ export class AudioEngine {
     if (this.instrumental) {
       const instrTime = this.instrumental.getCurrentTime();
       this._seekTake(instrTime);
-      if (wasPlaying && instrTime >= this._takeOffset && instrTime < this._takeOffset + this._takeDuration) {
+      const takeEnd = this._takeOffset + this._takeDuration - this._takeAudioOffset;
+      if (wasPlaying && instrTime >= this._takeOffset && instrTime < takeEnd) {
         this.take.play();
         this._takeIsPlaying = true;
       }
@@ -309,6 +318,7 @@ export class AudioEngine {
     this.take = null;
     this._takeOffset = 0;
     this._takeDuration = 0;
+    this._takeAudioOffset = 0;
     this._takeIsPlaying = false;
   }
 
@@ -393,6 +403,7 @@ export class AudioEngine {
     this._vocalsDuration = 0;
     this._takeOffset = 0;
     this._takeDuration = 0;
+    this._takeAudioOffset = 0;
     this._takeIsPlaying = false;
     this._exerciseMode = false;
     this._exerciseOffset = 0;
@@ -416,7 +427,8 @@ export class AudioEngine {
 
       // Take window sync: start/stop the take as the playhead enters/exits its time window
       if (this.take && this._takeDuration > 0) {
-        const inWindow = time >= this._takeOffset && time < this._takeOffset + this._takeDuration;
+        const takeEnd = this._takeOffset + this._takeDuration - this._takeAudioOffset;
+        const inWindow = time >= this._takeOffset && time < takeEnd;
         if (inWindow && !this._takeIsPlaying) {
           this.take.play();
           this._takeIsPlaying = true;

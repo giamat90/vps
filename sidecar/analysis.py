@@ -76,10 +76,11 @@ def _detect_vibrato(frequency: np.ndarray, confidence: np.ndarray, step_ms: floa
     }
 
 
-def analyze_recording(recording_path: str, output_dir=None, on_progress=None) -> dict:
+def analyze_recording(recording_path: str, output_dir=None, on_progress=None, audio_offset_s: float = 0.0) -> dict:
     """
     Analyze a vocal recording (user take).
 
+    audio_offset_s: seconds to skip at the start of the file (latency compensation).
     Returns dict with pitchData (parallel arrays), onsets, dynamics, vibrato.
     """
     if on_progress is None:
@@ -89,7 +90,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None) ->
     on_progress(0.0, "pitch-extraction")
     print("Running SRH pitch extraction on recording...", file=sys.stderr)
 
-    audio, sr = librosa.load(recording_path, sr=SRH_SR, mono=True)
+    audio, sr = librosa.load(recording_path, sr=SRH_SR, mono=True, offset=audio_offset_s)
     pitch_result = detect_pitch_srh(audio, sr)
     n_voiced = sum(pitch_result["voiced"])
     print(f"Pitch detection complete: {n_voiced} voiced frames", file=sys.stderr)
@@ -99,7 +100,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None) ->
     on_progress(0.60, "onset-detection")
     print("Detecting onsets...", file=sys.stderr)
 
-    audio_lr, sr_lr = librosa.load(recording_path, sr=SAMPLE_RATE, mono=True)
+    audio_lr, sr_lr = librosa.load(recording_path, sr=SAMPLE_RATE, mono=True, offset=audio_offset_s)
     onset_frames = librosa.onset.onset_detect(y=audio_lr, sr=sr_lr, units="frames")
     onsets = [round(t, 4) for t in librosa.frames_to_time(onset_frames, sr=sr_lr).tolist()]
     on_progress(0.70, "onset-detection")

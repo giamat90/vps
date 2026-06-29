@@ -42,6 +42,9 @@ export interface Take {
   filepath: string;
   /** Song position (seconds) where recording started; 0 for full-song takes. */
   startPosition: number;
+  /** Seconds into the audio file to skip on playback (non-zero when latency compensation
+   *  exceeds startPosition and the take was recorded from the song's beginning). */
+  audioOffset?: number;
   pitchData?: PitchData;
   onsets?: number[];
   dynamics?: DynamicsPoint[];

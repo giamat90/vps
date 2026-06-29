@@ -236,6 +236,10 @@ pub struct Take {
     /// Song position (seconds) where recording started; 0 for full-song takes.
     #[serde(default)]
     pub start_position: f64,
+    /// Seconds into the audio file to skip on playback (non-zero when latency
+    /// compensation exceeds startPosition).
+    #[serde(default, skip_serializing_if = "crate::commands::is_zero_f64")]
+    pub audio_offset: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pitch_data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -245,6 +249,8 @@ pub struct Take {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vibrato: Option<serde_json::Value>,
 }
+
+pub fn is_zero_f64(v: &f64) -> bool { *v == 0.0 }
 
 fn takes_json_path(song_id: &str) -> std::path::PathBuf {
     storage::song_dir(song_id).join("takes.json")
@@ -271,6 +277,7 @@ pub async fn save_take(
     song_id: String,
     audio_data: Vec<u8>,
     start_position: f64,
+    audio_offset: f64,
 ) -> Result<Take, String> {
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::song_dir(&song_id).join("takes");
@@ -291,6 +298,7 @@ pub async fn save_take(
                     "cmd": "analyze",
                     "recordingPath": file_path_str,
                     "outputDir": output_dir_str,
+                    "audioOffset": audio_offset,
                 });
                 let _ = sidecar.send_command(&cmd);
                 let timeout = std::time::Duration::from_secs(300);
@@ -329,6 +337,7 @@ pub async fn save_take(
         recorded_at: chrono::Utc::now().to_rfc3339(),
         filepath: file_path_str,
         start_position,
+        audio_offset,
         pitch_data,
         onsets,
         dynamics,

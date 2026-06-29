@@ -18,8 +18,13 @@ export async function deleteSong(songId: string): Promise<void> {
 }
 
 /** Save a recorded take */
-export async function saveTake(songId: string, audioData: number[], startPosition: number): Promise<Take> {
-  return invoke<Take>("save_take", { songId, audioData, startPosition });
+export async function saveTake(
+  songId: string,
+  audioData: number[],
+  startPosition: number,
+  audioOffset = 0,
+): Promise<Take> {
+  return invoke<Take>("save_take", { songId, audioData, startPosition, audioOffset });
 }
 
 /** List takes for a song */

@@ -544,25 +544,23 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     eng.play();
     rec.start();
 
-    // Measure round-trip latency to compensate for monitoring delay in stopRecording.
-    // Output latency is measured against the exact sinkId the song is playing through.
-    try {
-      const latencyCtx = new AudioContext({ sinkId: outputId } as AudioContextOptions);
-      const outputLatencyS = (latencyCtx.outputLatency ?? 0) + (latencyCtx.baseLatency ?? 0);
-      latencyCtx.close().catch((e: unknown) => console.warn("[latency] ctx close:", e));
-      _recordingLatencyS = outputLatencyS + inputLatencyS;
-      console.log("[recording] latency — output:", outputLatencyS, "input:", inputLatencyS, "total:", _recordingLatencyS);
-    } catch (e) {
-      console.warn("[recording] latency measurement failed, compensation disabled:", e);
-      _recordingLatencyS = 0;
-    }
-
-    // If device has been calibrated, its stored value IS the total compensation.
-    // Otherwise keep the auto-measured value.
+    // Calibrated value takes full priority — skip AudioContext measurement when present.
     const deviceOffsetMs = get().recordingOffsets[get().selectedDeviceId ?? ""] ?? 0;
     if (deviceOffsetMs > 0) {
       _recordingLatencyS = deviceOffsetMs / 1000;
       console.log("[recording] using calibrated compensation:", deviceOffsetMs, "ms");
+    } else {
+      // No calibration: fall back to AudioContext round-trip estimate.
+      try {
+        const latencyCtx = new AudioContext({ sinkId: outputId } as AudioContextOptions);
+        const outputLatencyS = (latencyCtx.outputLatency ?? 0) + (latencyCtx.baseLatency ?? 0);
+        latencyCtx.close().catch((e: unknown) => console.warn("[latency] ctx close:", e));
+        _recordingLatencyS = outputLatencyS + inputLatencyS;
+        console.log("[recording] latency — output:", outputLatencyS, "input:", inputLatencyS, "total:", _recordingLatencyS);
+      } catch (e) {
+        console.warn("[recording] latency measurement failed, compensation disabled:", e);
+        _recordingLatencyS = 0;
+      }
     }
 
     set({ isRecording: true, isPlaying: true });
@@ -591,10 +589,14 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const arrayBuffer = await blob.arrayBuffer();
       const audioData = Array.from(new Uint8Array(arrayBuffer));
 
-      // Shift startPosition back by round-trip latency: singer heard the song late
-      // (output) and mic capture is buffered (input), so both offsets must be removed.
-      const compensatedStartPos = Math.max(0, recordingStartPos - _recordingLatencyS);
-      const take = await saveTake(song.id, audioData, compensatedStartPos);
+      // Shift startPosition back by round-trip latency.
+      // When that pushes startPos below 0 (recording from song start), keep startPos at 0
+      // and store the remainder as audioOffset so the engine skips that many seconds into
+      // the audio file, aligning take[audioOffset] with song position 0.
+      const rawCompensated = recordingStartPos - _recordingLatencyS;
+      const compensatedStartPos = Math.max(0, rawCompensated);
+      const audioOffset = rawCompensated < 0 ? -rawCompensated : 0;
+      const take = await saveTake(song.id, audioData, compensatedStartPos, audioOffset);
 
       // Auto-select the new take — Waveform loads it into the take track.
       set((state) => ({

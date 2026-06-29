@@ -62,7 +62,7 @@ function Waveform({ song }: WaveformProps) {
     const take = takes.find((t) => t.id === activeTakeId);
     if (!take || !takeRef.current) return;
     loadedTakeId.current = activeTakeId;
-    eng.loadTakeTrack(take.filepath, takeRef.current, take.startPosition)
+    eng.loadTakeTrack(take.filepath, takeRef.current, take.startPosition, take.audioOffset ?? 0)
       .catch((e: unknown) => console.error("[Waveform] loadTakeTrack failed:", e));
   }, [activeTakeId, takes]);
 
