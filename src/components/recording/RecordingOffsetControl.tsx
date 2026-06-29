@@ -84,6 +84,7 @@ function RecordingOffsetControl() {
   const fetchAudioDevices = usePlayerStore((s) => s.fetchAudioDevices);
 
   const [phase, setPhase] = useState<CalibPhase>("idle");
+  const [calibTargetId, setCalibTargetId] = useState<string>("");
   const [countdown, setCountdown] = useState(0);
   const [measuredCount, setMeasuredCount] = useState(0);
   const [result, setResult] = useState<number | null>(null);
@@ -101,8 +102,9 @@ function RecordingOffsetControl() {
 
   const micDeviceId = selectedDeviceId ?? "";
 
-  const startCalibration = async () => {
+  const startCalibration = async (targetDeviceId: string) => {
     cancelledRef.current = false;
+    setCalibTargetId(targetDeviceId);
     setPhase("counting");
     setCountdown(N_COUNTIN);
     setMeasuredCount(0);
@@ -113,7 +115,7 @@ function RecordingOffsetControl() {
     try {
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          ...(selectedDeviceId ? { deviceId: { exact: selectedDeviceId } } : {}),
+          ...(targetDeviceId ? { deviceId: { exact: targetDeviceId } } : {}),
           echoCancellation: { exact: false },
           noiseSuppression: { exact: false },
           autoGainControl: { exact: false },
@@ -225,7 +227,7 @@ function RecordingOffsetControl() {
   };
 
   const applyResult = () => {
-    if (result !== null) setRecordingOffset(micDeviceId, result);
+    if (result !== null) setRecordingOffset(calibTargetId, result);
     setPhase("idle");
   };
 
@@ -267,6 +269,13 @@ function RecordingOffsetControl() {
                   }
                 />
                 <span className="rec-offset__unit">ms</span>
+                <button
+                  className="rec-offset__row-calib-btn"
+                  onClick={() => startCalibration(d.deviceId)}
+                  title={`Calibrate latency for ${d.label || "this device"}`}
+                >
+                  Cal
+                </button>
               </div>
             ))}
           </div>
@@ -276,7 +285,7 @@ function RecordingOffsetControl() {
               <span>Measured: <strong>{result} ms</strong></span>
               <div className="rec-offset__banner-actions">
                 <button className="rec-offset__banner-btn" onClick={applyResult}>
-                  Apply to selected mic
+                  Apply to {devices.find((d) => d.deviceId === calibTargetId)?.label?.split("(")[0].trim() ?? "device"}
                 </button>
                 <button
                   className="rec-offset__banner-btn rec-offset__banner-btn--ghost"
@@ -298,15 +307,14 @@ function RecordingOffsetControl() {
               </button>
             </div>
           )}
-
-          <button className="rec-offset__calib-btn" onClick={startCalibration}>
-            Calibrate
-          </button>
         </>
       )}
 
       {isActive && (
         <div className="rec-offset__active">
+          <p className="rec-offset__active-device">
+            {devices.find((d) => d.deviceId === calibTargetId)?.label?.split("(")[0].trim() ?? "Default microphone"}
+          </p>
           {phase === "counting" && (
             <>
               <p className="rec-offset__active-label">Count-in — get ready to clap</p>

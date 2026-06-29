@@ -1529,20 +1529,21 @@ body,
   min-width: 1.5rem;
 }
 
-.rec-offset__calib-btn {
-  margin-top: 0.6rem;
-  background: var(--bg-surface);
+.rec-offset__row-calib-btn {
+  background: none;
   border: 1px solid rgba(255,255,255,0.12);
-  border-radius: 0.3rem;
-  color: var(--text-primary);
-  font-size: 0.8rem;
+  border-radius: 0.25rem;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
   font-family: inherit;
-  padding: 0.3rem 0.8rem;
+  padding: 0.15rem 0.4rem;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
 }
-.rec-offset__calib-btn:hover {
-  background: rgba(74,158,255,0.15);
+.rec-offset__row-calib-btn:hover {
+  color: var(--accent);
   border-color: rgba(74,158,255,0.4);
 }
 
@@ -1553,6 +1554,14 @@ body,
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0 0.25rem;
+}
+
+.rec-offset__active-device {
+  font-size: 0.75rem;
+  color: var(--accent);
+  margin: 0;
+  text-align: center;
+  font-weight: 600;
 }
 
 .rec-offset__active-label {
