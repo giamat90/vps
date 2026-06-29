@@ -195,6 +195,8 @@ python build.py
 
 In development you can run the sidecar directly without building, but Tauri's `beforeDevCommand` does not start it automatically — the Rust `SidecarManager` spawns it lazily on first use.
 
+The binary is declared as `externalBin` in `tauri.conf.json` so Tauri includes it in the NSIS/DMG bundle. A 0-byte placeholder at `src-tauri/binaries/vps-sidecar-x86_64-pc-windows-msvc.exe` is committed to satisfy `tauri_build` at local-dev build time; CI always overwrites it with the real PyInstaller binary before `cargo build` runs.
+
 ## Python Interpreter Selection
 
 `SidecarManager::spawn()` calls `find_python(sidecar_dir)` to pick the interpreter:
