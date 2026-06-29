@@ -52,9 +52,12 @@ impl SidecarManager {
             return Err(format!("Sidecar not found at {}", main_py.display()));
         }
 
-        log::info!("Spawning sidecar: python {}", main_py.display());
+        // Prefer the venv Python so the built app uses the same package versions as dev
+        // (important for yt-dlp — system Python may have an outdated version YouTube rejects).
+        let python = Self::find_python(&sidecar_dir);
+        log::info!("Spawning sidecar: {} {}", python.display(), main_py.display());
 
-        let mut child = Command::new("python")
+        let mut child = Command::new(&python)
             .arg(&main_py)
             .current_dir(&sidecar_dir)
             .stdin(Stdio::piped())
@@ -140,6 +143,25 @@ impl SidecarManager {
         std::thread::sleep(Duration::from_millis(500));
         let _ = self.child.kill();
         let _ = self.child.wait();
+    }
+
+    /// Return the venv Python when present, otherwise fall back to the system `python`.
+    fn find_python(sidecar_dir: &std::path::Path) -> std::path::PathBuf {
+        let candidates = if cfg!(windows) {
+            vec![sidecar_dir.join(".venv/Scripts/python.exe")]
+        } else {
+            vec![
+                sidecar_dir.join(".venv/bin/python3"),
+                sidecar_dir.join(".venv/bin/python"),
+            ]
+        };
+        for p in candidates {
+            if p.exists() {
+                log::info!("Using venv Python: {}", p.display());
+                return p;
+            }
+        }
+        std::path::PathBuf::from("python")
     }
 
     /// Find the sidecar directory. In dev, it's ../sidecar relative to src-tauri.
