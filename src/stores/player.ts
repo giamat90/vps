@@ -316,6 +316,14 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   fetchAudioDevices: async () => {
+    // WebView2 on the installed tauri:// origin returns empty device labels until mic
+    // permission has been granted for this session. A brief probe unlocks the full list.
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      probe.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      console.warn("Mic permission probe failed — device list may be incomplete:", e);
+    }
     const devices = await navigator.mediaDevices.enumerateDevices();
     set({ audioDevices: devices.filter((d) => d.kind === "audioinput") });
   },
@@ -325,6 +333,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   fetchOutputDevices: async () => {
+    // Same WebView2 permission issue as fetchAudioDevices — probe before enumerating.
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      probe.getTracks().forEach((t) => t.stop());
+    } catch (e) {
+      console.warn("Mic permission probe failed — output device list may be incomplete:", e);
+    }
     const devices = await navigator.mediaDevices.enumerateDevices();
     set({ outputDevices: devices.filter((d) => d.kind === "audiooutput") });
   },
