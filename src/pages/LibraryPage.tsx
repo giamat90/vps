@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getVersion } from "@tauri-apps/api/app";
 import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
+import RecordingOffsetControl from "../components/recording/RecordingOffsetControl";
 import { exportStem, pitchShiftSong } from "../lib/tauri";
 import type { Song } from "../lib/types";
 import { useLibraryStore } from "../stores/library";
@@ -132,6 +133,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const initProgressListener = useLibraryStore((s) => s.initProgressListener);
 
   const [showAbout, setShowAbout] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
   const [appVersion, setAppVersion] = useState("");
 
   useEffect(() => {
@@ -152,6 +154,13 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
         <div className="library-page__header-actions">
           <button className="library-page__exercise-btn" onClick={onGoToExercise}>
             Free Exercise
+          </button>
+          <button
+            className={`library-page__settings-btn${showSettings ? " library-page__settings-btn--active" : ""}`}
+            onClick={() => setShowSettings((v) => !v)}
+            title="Recording settings"
+          >
+            ⚙
           </button>
           <button
             className="library-page__about-btn"
@@ -184,6 +193,12 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
         <DropZone />
         <YouTubeImport />
       </div>
+
+      {showSettings && (
+        <div className="library-page__settings">
+          <RecordingOffsetControl />
+        </div>
+      )}
 
       {error && (
         <div className="library-page__error" role="alert">

@@ -96,6 +96,8 @@ interface PlayerState {
   punchIn: number | null;
   punchOut: number | null;
   punchLoop: boolean;
+  // Per-device manual recording latency offset (ms), persisted to localStorage
+  recordingOffsets: Record<string, number>;
   // Free exercise mode (no song loaded)
   exerciseMode: boolean;
 }
@@ -123,6 +125,7 @@ interface PlayerActions {
   setAudioDevice: (deviceId: string | null) => void;
   fetchOutputDevices: () => Promise<void>;
   setOutputDevice: (deviceId: string | null) => Promise<void>;
+  setRecordingOffset: (deviceId: string, offsetMs: number) => void;
   // Transpose action
   setTranspose: (semitones: number) => Promise<void>;
   // Recording actions
@@ -145,6 +148,15 @@ interface PlayerActions {
   stopExercise: () => void;
   startExerciseRecording: () => Promise<void>;
   stopExerciseRecording: () => Promise<ExerciseTake>;
+}
+
+function _loadOffsets(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem("vps_recording_offsets") ?? "{}") as Record<string, number>;
+  } catch (e) {
+    console.warn("[settings] Could not load recording offsets:", e);
+    return {};
+  }
 }
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
@@ -173,6 +185,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   punchOut: null,
   punchLoop: false,
   exerciseMode: false,
+  recordingOffsets: _loadOffsets(),
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -332,6 +345,16 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
   setAudioDevice: (deviceId) => {
     set({ selectedDeviceId: deviceId });
+  },
+
+  setRecordingOffset: (deviceId, offsetMs) => {
+    const offsets = { ...get().recordingOffsets, [deviceId]: offsetMs };
+    set({ recordingOffsets: offsets });
+    try {
+      localStorage.setItem("vps_recording_offsets", JSON.stringify(offsets));
+    } catch (e) {
+      console.warn("[settings] Could not persist recording offsets:", e);
+    }
   },
 
   fetchOutputDevices: async () => {
@@ -532,6 +555,12 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     } catch (e) {
       console.warn("[recording] latency measurement failed, compensation disabled:", e);
       _recordingLatencyS = 0;
+    }
+
+    const deviceOffsetMs = get().recordingOffsets[get().selectedDeviceId ?? ""] ?? 0;
+    if (deviceOffsetMs !== 0) {
+      _recordingLatencyS += deviceOffsetMs / 1000;
+      console.log("[recording] +device offset:", deviceOffsetMs, "ms → total compensation:", _recordingLatencyS, "s");
     }
 
     set({ isRecording: true, isPlaying: true });

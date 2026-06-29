@@ -1440,6 +1440,95 @@ body,
   background: rgba(255,255,255,0.07);
 }
 
+.library-page__settings-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.3rem 0.4rem;
+  border-radius: 50%;
+  transition: color 0.15s, background 0.15s;
+}
+.library-page__settings-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255,255,255,0.07);
+}
+.library-page__settings-btn--active {
+  color: var(--accent);
+}
+
+.library-page__settings {
+  margin: 0 1rem 0.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 0.5rem;
+}
+
+/* Recording Offset Control */
+.rec-offset__title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin: 0 0 0.25rem;
+}
+
+.rec-offset__hint {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.75rem;
+  line-height: 1.4;
+}
+
+.rec-offset__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rec-offset__row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.rec-offset__row--active {
+  color: var(--text-primary);
+}
+
+.rec-offset__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rec-offset__input {
+  width: 4rem;
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.25rem;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 0.2rem 0.3rem;
+  text-align: right;
+}
+
+.rec-offset__input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.rec-offset__unit {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  min-width: 1.5rem;
+}
+
 .about-overlay {
   position: fixed;
   inset: 0;
