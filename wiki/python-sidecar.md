@@ -75,8 +75,10 @@ Returns Song metadata as `data`.
 Analyzes a recorded take (after the singer finishes recording).
 
 ```json
-{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/"}
+{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/", "audioOffset": 0.256}
 ```
+
+`audioOffset` (optional, default `0.0`) — seconds to skip at the start of the audio file before processing. Non-zero when latency compensation shifted the take's `startPosition` below 0 and the engine skips a silent prefix on playback. Both `librosa.load()` calls in `analysis.py` pass `offset=audio_offset_s`, so all output times (pitch, onsets, dynamics) are 0-based from the audible content start and correctly align with the song.
 
 Steps (in `analysis.py`):
 1. SRH pitch detection (same `detect_pitch_srh` as song processing) — resampled to 22050 Hz

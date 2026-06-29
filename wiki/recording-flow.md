@@ -88,12 +88,12 @@ The singer hears **both** original vocals and instrumental during recording — 
 ## stopRecording Sequence
 
 ```
-1. eng.stop()                           stop playback, seek to 0
-2. eng.setInteract(true)               unlock waveform
-3. blob = await rec.stop()             drain MediaRecorder chunks
-4. rec.releaseStream()                 stop mic tracks → Windows exits comm mode
-5. eng.setOutputDevice(selectedOutput) restore normal output routing
-6. saveTake(songId, blob, startPos)    write take to disk via Tauri
+1. eng.stop()                                 stop playback, seek to 0
+2. eng.setInteract(true)                     unlock waveform
+3. blob = await rec.stop()                   drain MediaRecorder chunks
+4. rec.releaseStream()                       stop mic tracks → Windows exits comm mode
+5. eng.setOutputDevice(selectedOutput)       restore normal output routing
+6. saveTake(songId, blob, startPos, offset)  write take to disk via Tauri
 7. set state: isRecording=false, activeTakeId=take.id
 ```
 
@@ -144,9 +144,46 @@ The stop button is also rerouted during recording:
 <button onClick={isRecording ? () => void stopRecording() : stop}>
 ```
 
+## Latency Compensation
+
+The singer hears the instrumental with a monitoring delay (typically 50–300 ms on USB WASAPI interfaces). To compensate, the recorded audio is shifted back in time by the measured round-trip latency.
+
+### Compensation source (priority order)
+
+1. **Calibrated offset** (preferred) — if the selected input device has a value stored in `recordingOffsets` (set by the click-clap calibration flow), that value is used as-is and the AudioContext measurement is skipped entirely.
+2. **AudioContext estimate** (fallback) — when no calibration exists, `new AudioContext({ sinkId: outputId }).outputLatency + baseLatency` is measured against the exact output device in use, plus the mic track's `getSettings().latency`.
+
+### startPosition vs audioOffset
+
+The compensated start position is:
+
+```ts
+const rawCompensated = recordingStartPos - _recordingLatencyS;
+const compensatedStartPos = Math.max(0, rawCompensated);
+const audioOffset = rawCompensated < 0 ? -rawCompensated : 0;
+```
+
+| Situation | startPosition | audioOffset |
+|-----------|---------------|-------------|
+| Recording starts at 30 s, latency 256 ms | 29.744 | 0 |
+| Recording starts at 0 s, latency 256 ms | 0 | 0.256 |
+
+When `audioOffset > 0` the engine seeks 0.256 s into the audio file when the playhead is at position 0, and Python's `librosa.load(offset=audioOffset)` skips those seconds during analysis so pitch/onset times are 0-based and correctly aligned with the song.
+
+## Per-Device Calibration
+
+`RecordingOffsetControl` (shown in home page settings) provides automatic calibration per input device:
+
+1. Plays 4 count-in clicks then 8 measured clicks at 60 BPM through the selected output
+2. Records the mic with `MediaRecorder`
+3. Detects each click's arrival in the recording via RMS envelope peak detection
+4. Computes the median clap-vs-expected offset → stored in `recordingOffsets[deviceId]` (persisted to `localStorage`)
+
+The calibrated value represents the full round-trip (output + input) latency measured through the actual signal chain. Focusrite Scarlett / Behringer UM2 typically measure 200–300 ms in WASAPI shared mode.
+
 ## startPosition Field
 
-When recording begins at a non-zero position, `recordingStartPos` is saved. It is passed to `saveTake` and stored on the `Take` as `startPosition`. The audio engine uses this offset when playing back the take to align it with the instrumental — see `_takeOffset` in [Audio Engine](audio-engine.md).
+When recording begins at a non-zero position, `recordingStartPos` is saved. After latency compensation it is passed to `saveTake` as `startPosition`. The audio engine uses this offset when playing back the take to align it with the instrumental — see `_takeOffset` and `_takeAudioOffset` in [Audio Engine](audio-engine.md).
 
 ## MediaRecorder Codec Fallback
 

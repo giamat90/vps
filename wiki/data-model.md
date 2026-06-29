@@ -28,6 +28,7 @@ interface Take {
   recordedAt: string;     // ISO timestamp
   filepath: string;       // absolute path to the recording file
   startPosition: number;  // song time (seconds) where recording began; 0 for full-song takes
+  audioOffset?: number;   // seconds to skip into the audio file on playback (see Latency Compensation)
   pitchData?: PitchData;  // raw pYIN output (parallel arrays)
   onsets?: number[];
   dynamics?: DynamicsPoint[];
@@ -146,7 +147,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `process_song` | `filePath: string` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
-| `save_take` | `songId, audioData: number[], startPosition: f64` | `Take` |
+| `save_take` | `songId, audioData: number[], startPosition: f64, audioOffset: f64` | `Take` |
 | `list_takes` | `songId: string` | `Take[]` |
 | `delete_take` | `songId, takeId: string` | `void` |
 | `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics }` |
