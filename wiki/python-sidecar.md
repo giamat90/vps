@@ -194,3 +194,12 @@ python build.py
 ```
 
 In development you can run the sidecar directly without building, but Tauri's `beforeDevCommand` does not start it automatically — the Rust `SidecarManager` spawns it lazily on first use.
+
+## Python Interpreter Selection
+
+`SidecarManager::spawn()` calls `find_python(sidecar_dir)` to pick the interpreter:
+
+1. **Venv first** — checks `sidecar/.venv/Scripts/python.exe` (Windows) or `.venv/bin/python3` / `.venv/bin/python` (Unix). If found, uses it and logs the path.
+2. **System fallback** — if no venv exists (CI PyInstaller path, or venv not set up), falls back to `python` on PATH.
+
+This matters because the venv may carry a newer `yt-dlp` than the system Python. YouTube actively rejects old yt-dlp versions, which would cause `import_yt` to fail in the built app if the system Python is stale. Always keep `yt-dlp` up to date in the venv (`pip install --upgrade yt-dlp`).
