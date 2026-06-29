@@ -1529,6 +1529,123 @@ body,
   min-width: 1.5rem;
 }
 
+.rec-offset__calib-btn {
+  margin-top: 0.6rem;
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 0.3rem;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 0.3rem 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.rec-offset__calib-btn:hover {
+  background: rgba(74,158,255,0.15);
+  border-color: rgba(74,158,255,0.4);
+}
+
+/* Calibration active panel */
+.rec-offset__active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.rec-offset__active-label {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0;
+  text-align: center;
+}
+
+.rec-offset__active-count {
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+
+.rec-offset__active-total {
+  font-size: 1.2rem;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.rec-offset__cancel-btn {
+  margin-top: 0.25rem;
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 0.3rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-family: inherit;
+  padding: 0.25rem 0.7rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.rec-offset__cancel-btn:hover {
+  color: var(--text-primary);
+  border-color: rgba(255,255,255,0.3);
+}
+
+/* Result / error banners */
+.rec-offset__banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.rec-offset__banner--ok {
+  background: rgba(74,158,255,0.1);
+  border: 1px solid rgba(74,158,255,0.3);
+  color: var(--text-primary);
+}
+
+.rec-offset__banner--err {
+  background: rgba(255,80,80,0.1);
+  border: 1px solid rgba(255,80,80,0.3);
+  color: #ff6b6b;
+}
+
+.rec-offset__banner-actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.rec-offset__banner-btn {
+  background: var(--accent);
+  border: none;
+  border-radius: 0.25rem;
+  color: #fff;
+  font-size: 0.75rem;
+  font-family: inherit;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.rec-offset__banner-btn:hover {
+  opacity: 0.85;
+}
+
+.rec-offset__banner-btn--ghost {
+  background: none;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-secondary);
+}
+.rec-offset__banner-btn--ghost:hover {
+  opacity: 1;
+  border-color: rgba(255,255,255,0.3);
+  color: var(--text-primary);
+}
+
 .about-overlay {
   position: fixed;
   inset: 0;

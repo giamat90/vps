@@ -557,10 +557,12 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       _recordingLatencyS = 0;
     }
 
+    // If device has been calibrated, its stored value IS the total compensation.
+    // Otherwise keep the auto-measured value.
     const deviceOffsetMs = get().recordingOffsets[get().selectedDeviceId ?? ""] ?? 0;
-    if (deviceOffsetMs !== 0) {
-      _recordingLatencyS += deviceOffsetMs / 1000;
-      console.log("[recording] +device offset:", deviceOffsetMs, "ms → total compensation:", _recordingLatencyS, "s");
+    if (deviceOffsetMs > 0) {
+      _recordingLatencyS = deviceOffsetMs / 1000;
+      console.log("[recording] using calibrated compensation:", deviceOffsetMs, "ms");
     }
 
     set({ isRecording: true, isPlaying: true });
