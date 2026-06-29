@@ -52,6 +52,9 @@ function friendlyError(raw: unknown, context: "youtube" | "upload"): string {
   ) {
     return "Network error. Check your internet connection (and disable VPN if active), then retry.";
   }
+  if (msg.includes("ffmpeg") || msg.includes("ffprobe")) {
+    return "ffmpeg was not found. Make sure ffmpeg is installed and on your system PATH.";
+  }
   if (context === "youtube") {
     return "YouTube import failed. Check that the URL is public and your internet connection is working.";
   }
