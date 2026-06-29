@@ -99,6 +99,7 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CARGO_HTTP_MULTIPLEXING: false
         with:
           args: --bundles nsis
           tagName: ${{ github.ref_name }}
