@@ -124,6 +124,48 @@ jobs:
           fi
           hdiutil detach /tmp/vps-dmg -quiet || true
 
+      # ── 10b. Gatekeeper smoke test ──────────────────────────────────────
+      # The check above launches the raw binary directly, which never goes
+      # through Gatekeeper — it can pass even when a real user's download
+      # would refuse to open. This reproduces the actual user path: a
+      # quarantined .dmg opened via `open` (same launch path as Finder).
+      - name: Gatekeeper smoke test (simulates a real download + double-click)
+        # Non-blocking: the app is currently unsigned/un-notarized, so this is
+        # expected to report a Gatekeeper rejection on every run until we
+        # codesign + notarize with an Apple Developer ID. It's here to make
+        # that failure visible in CI logs rather than only from testers.
+        continue-on-error: true
+        run: |
+          DMG=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1)
+          QDMG=/tmp/vps-dmg-quarantined.dmg
+          cp "$DMG" "$QDMG"
+          # Tag it the way Safari/Chrome tag a browser download.
+          xattr -w com.apple.quarantine "0081;00000000;Safari;" "$QDMG"
+
+          echo "--- hdiutil attach (quarantined) ---"
+          hdiutil attach "$QDMG" -mountpoint /tmp/vps-dmg-q -nobrowse -quiet
+          APP=$(find /tmp/vps-dmg-q -name "*.app" -maxdepth 1 | head -1)
+          echo "App: $APP"
+
+          echo "--- codesign -dv --verbose=4 ---"
+          codesign -dv --verbose=4 "$APP" || echo "(no valid signature)"
+
+          echo "--- spctl --assess --type execute -v (Gatekeeper verdict) ---"
+          set +e
+          spctl --assess --type execute -v "$APP"
+          SPCTL_STATUS=$?
+          set -e
+          if [ $SPCTL_STATUS -ne 0 ]; then
+            echo "GATEKEEPER WOULD BLOCK THIS APP (spctl exit $SPCTL_STATUS)."
+            echo "This is what a tester sees on first double-click of a downloaded build."
+            echo "Fix: codesign + notarize with an Apple Developer ID, or document the bypass for testers."
+          else
+            echo "Gatekeeper accepts this app."
+          fi
+
+          hdiutil detach /tmp/vps-dmg-q -quiet || true
+          exit $SPCTL_STATUS
+
       # ── 11. Publish to GitHub Release (create or update) ─────────────────
       - name: Upload DMG to GitHub Release
         uses: softprops/action-gh-release@v2

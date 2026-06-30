@@ -79,9 +79,26 @@ Both workflows:
 
 ### Smoke tests
 
-**macOS:** Mounts the `.dmg`, finds the binary inside the `.app` bundle via `find`, launches it directly (bypasses Gatekeeper — no code signing on CI), waits 15 s, checks liveness with `kill -0 $PID`.
+**macOS:** Two checks run in sequence.
+1. Mounts the `.dmg`, finds the binary inside the `.app` bundle via `find`, launches it directly (bypasses Gatekeeper — no code signing on CI), waits 15 s, checks liveness with `kill -0 $PID`. This only proves the binary itself can execute; it does not reflect what a real user experiences.
+2. **Gatekeeper smoke test** (`continue-on-error: true`, informational only): copies the `.dmg`, tags it with `com.apple.quarantine` (the xattr a browser sets on download), mounts it, and runs `codesign -dv` + `spctl --assess --type execute -v` against the `.app`. Since the app is currently unsigned and not notarized, this step is expected to report a Gatekeeper rejection on every run — it exists to surface that fact in CI logs instead of only from testers. See [macOS testers: app won't open](#macos-testers-app-wont-open) below.
 
 **Windows:** Confirms the NSIS installer file exists, launches `src-tauri/target/release/app.exe` directly, waits 15 s, checks `$proc.HasExited`.
+
+### macOS testers: app won't open
+
+The app is **not code-signed or notarized** (no Apple Developer ID yet). When a `.dmg` is downloaded via a browser, macOS Gatekeeper blocks the unsigned/unnotarized `.app` — usually silently, or with "Apple could not verify... is free of malware" / "app is damaged, move to Trash." This is expected, not a build bug, until we get an Apple Developer ID and wire up the `APPLE_CERTIFICATE`/`APPLE_ID`/notarization secrets already stubbed out (commented) in `build-macos.yml`.
+
+**Stopgap for testers**, after downloading and before double-clicking:
+```bash
+# Option A: strip the quarantine flag entirely
+xattr -cr /path/to/VPS.app    # or run on the mounted .dmg before dragging to Applications
+
+# Option B: right-click (or Control-click) the app in Finder → "Open" →
+# confirm in the dialog. This one-time override is recorded by Gatekeeper
+# and only needs to be done once per app version.
+```
+If neither works, ask the tester to run `spctl --assess --type execute -v /path/to/VPS.app` and `codesign -dv --verbose=4 /path/to/VPS.app` and share the output — that's the same diagnostic the CI Gatekeeper smoke test produces.
 
 ### Bumping the version locally
 
