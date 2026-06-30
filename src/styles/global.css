@@ -884,7 +884,39 @@ body,
   50% { opacity: 0.4; }
 }
 
-.record-btn:hover {
+.record-btn--saving {
+  border-color: var(--warning);
+  cursor: default;
+}
+
+.record-btn--saving .record-btn__dot {
+  background: transparent;
+  border: 2px solid var(--warning);
+  border-top-color: transparent;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.record-btn-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.record-btn__saving-label {
+  font-size: 0.75rem;
+  color: var(--warning);
+}
+
+.record-btn__error {
+  font-size: 0.75rem;
+  color: var(--accent);
+}
+
+.record-btn:hover:not(:disabled) {
   background: rgba(233, 69, 96, 0.1);
 }
 

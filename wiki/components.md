@@ -53,6 +53,8 @@ Manages the song list, import/upload flow, and error state.
 
 Actions: `fetchSongs`, `uploadSong`, `importYoutube`, `deleteSong`, `clearError`, `initProgressListener`.
 
+Both `uploadSong` and `importYoutube` set an initial `processing` state ("Preparing…" / "Connecting…" at 0%) before calling the Tauri command, eliminating the dead-time gap before the sidecar sends its first progress event.
+
 Errors from `importYoutube` and `uploadSong` are parsed by `friendlyError()` into human-readable messages covering bot-detection, VPN/proxy blocks, private/geo-blocked videos, and network failures.
 
 ### Player Store
@@ -84,6 +86,7 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `transpose` | `number` | Active semitone shift |
 | `isTransposing` | `boolean` | Pitch-shift in progress |
 | `isRecording` | `boolean` | Recording in progress |
+| `isSavingTake` | `boolean` | Post-recording: blob flush + pYIN analysis in progress |
 | `isMonitoring` | `boolean` | Live mic monitor active (no recording) |
 | `takes` | `Take[]` | All takes for current song |
 | `activeTakeId` | `string \| null` | Selected take (loads it as the take track) |

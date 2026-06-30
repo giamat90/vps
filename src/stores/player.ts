@@ -88,6 +88,7 @@ interface PlayerState {
   isTransposing: boolean;
   // Recording / monitoring state
   isRecording: boolean;
+  isSavingTake: boolean;
   isMonitoring: boolean;
   takes: Take[];
   activeTakeId: string | null;
@@ -177,6 +178,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   transpose: 0,
   isTransposing: false,
   isRecording: false,
+  isSavingTake: false,
   isMonitoring: false,
   takes: [],
   activeTakeId: null,
@@ -324,6 +326,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       transpose: 0,
       isTransposing: false,
       isRecording: false,
+      isSavingTake: false,
       isMonitoring: false,
       takes: [],
       activeTakeId: null,
@@ -575,6 +578,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     eng.stop();
     eng.setInteract(true);
 
+    // Immediately flip recording off so the button stops pulsing,
+    // then show a saving indicator while the blob is flushed and analyzed.
+    set({ isRecording: false, isPlaying: false, isSavingTake: true });
+
     try {
       const blob = await rec.stop();
 
@@ -600,8 +607,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
       // Auto-select the new take — Waveform loads it into the take track.
       set((state) => ({
-        isRecording: false,
-        isPlaying: false,
+        isSavingTake: false,
         currentTime: 0,
         takes: [...state.takes, take],
         activeTakeId: take.id,
@@ -610,7 +616,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       _destroyMicAnalyser();
       rec.releaseStream();
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e2: unknown) => console.warn("[recording] setOutputDevice on error-stop failed:", e2));
-      set({ isRecording: false, isPlaying: false, currentTime: 0 });
+      set({ isSavingTake: false, currentTime: 0 });
       throw e;
     }
   },

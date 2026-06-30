@@ -35,7 +35,7 @@ function YouTubeImport() {
         onClick={handleImport}
         disabled={isProcessing || !url.trim()}
       >
-        Import
+        {isProcessing ? "Importing…" : "Import"}
       </button>
       {error && <p className="yt-import__error">{error}</p>}
     </div>
