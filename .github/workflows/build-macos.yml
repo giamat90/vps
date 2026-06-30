@@ -3,24 +3,22 @@ name: Build macOS
 on:
   push:
     tags:
-      - 'v*'           # Triggers on version tags: v1.0.0, v0.3.1, etc.
-  workflow_dispatch:   # Also allows manual trigger from GitHub UI
+      - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
   build-macos:
-    runs-on: macos-latest   # Apple Silicon (M1/M2) runner
-    
+    runs-on: macos-latest
+
     steps:
       # ── 1. Checkout ──────────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # ── 1b. Sync version from git tag into all manifest files ────────────
-      # tauri.conf.json, Cargo.toml, and package.json must all agree with the
-      # tag version so that the artifact filename and app About box are correct.
       - name: Sync version from tag
         if: startsWith(github.ref, 'refs/tags/')
         run: |
@@ -30,32 +28,31 @@ jobs:
           jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
           sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
-      # ── 2. Node.js (for Vite + React frontend) ───────────────────────────
+      # ── 2. Node.js ───────────────────────────────────────────────────────
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
 
-      # ── 3. Rust (for Tauri shell) ────────────────────────────────────────
+      # ── 3. Rust ──────────────────────────────────────────────────────────
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-apple-darwin   # M1/M2 native target
+          targets: aarch64-apple-darwin
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: './src-tauri -> target'
 
-      # ── 4. Python (for sidecar build) ────────────────────────────────────
+      # ── 4. Python ────────────────────────────────────────────────────────
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       # ── 5. Install Python sidecar dependencies ────────────────────────────
-      # CPU-only PyTorch: much smaller, sufficient for Demucs inference
       - name: Install Python dependencies
         working-directory: sidecar
         run: |
@@ -64,8 +61,6 @@ jobs:
           pip install demucs librosa soundfile numpy yt-dlp pyinstaller
 
       # ── 6. Freeze the Python sidecar with PyInstaller ────────────────────
-      # Output name MUST match Tauri's expected sidecar binary name.
-      # Tauri looks for: src-tauri/binaries/vps-sidecar-aarch64-apple-darwin
       - name: Build Python sidecar (PyInstaller)
         working-directory: sidecar
         run: |
@@ -83,13 +78,13 @@ jobs:
             --noconfirm \
             --clean
 
-      # ── 7. Move sidecar binary to where Tauri expects it ─────────────────
+      # ── 7. Stage sidecar binary ───────────────────────────────────────────
       - name: Stage sidecar binary
         run: |
           mkdir -p src-tauri/binaries
           cp sidecar/dist/vps-sidecar-aarch64-apple-darwin src-tauri/binaries/
 
-      # ── 8. Install Node dependencies ─────────────────────────────────────
+      # ── 8. Install Node dependencies ──────────────────────────────────────
       - name: Install frontend dependencies
         run: npm ci
 
@@ -97,7 +92,6 @@ jobs:
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_HTTP_MULTIPLEXING: false
           # Code signing (optional — omit if distributing outside Mac App Store)
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -106,17 +100,8 @@ jobs:
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'VPS ${{ github.ref_name }}'
-          releaseBody: 'macOS build — see CHANGELOG for details.'
-          releaseDraft: true    # Creates a draft release; publish manually
-          prerelease: false
 
-      # ── 10. Smoke test: mount the .dmg, launch the app, verify it stays up ─
-      # macOS GH runners have a real GUI session so open() works.
-      # pgrep -f searches the full command line (handles long app names).
-      # osascript sends a graceful quit so the app can clean up.
+      # ── 10. Smoke test ────────────────────────────────────────────────────
       - name: Smoke test .dmg
         run: |
           DMG=$(find src-tauri/target/release/bundle/dmg -name "*.dmg" | head -1)
@@ -125,25 +110,25 @@ jobs:
           APP=$(find /tmp/vps-dmg -name "*.app" -maxdepth 1 | head -1)
           BINARY=$(find "$APP/Contents/MacOS" -maxdepth 1 -type f | head -1)
           echo "Launching binary: $BINARY"
-          # Launch binary directly — bypasses Gatekeeper (no code signing on CI)
           "$BINARY" &
           APP_PID=$!
           sleep 15
           if kill -0 $APP_PID 2>/dev/null; then
-            echo "✅ App is running (PID $APP_PID) — smoke test passed"
+            echo "App is running (PID $APP_PID) — smoke test passed"
             kill $APP_PID
             wait $APP_PID 2>/dev/null || true
           else
-            echo "❌ App exited immediately — smoke test failed"
+            echo "App exited immediately — smoke test failed"
             hdiutil detach /tmp/vps-dmg -quiet || true
             exit 1
           fi
           hdiutil detach /tmp/vps-dmg -quiet || true
 
-      # ── 11. Upload .dmg as artifact (fallback if release step fails) ──────
-      - name: Upload .dmg artifact
-        uses: actions/upload-artifact@v4
+      # ── 11. Publish to GitHub Release (create or update) ─────────────────
+      - name: Upload DMG to GitHub Release
+        uses: softprops/action-gh-release@v2
         with:
-          name: vps-macos-dmg
-          path: src-tauri/target/release/bundle/dmg/*.dmg
-          retention-days: 14
+          name: VPS ${{ github.ref_name }}
+          body: See CHANGELOG for details.
+          draft: false
+          files: src-tauri/target/release/bundle/dmg/*.dmg

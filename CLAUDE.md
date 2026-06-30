@@ -389,7 +389,7 @@ selectedOutputDeviceId: string | null
 ### Recent work (June 2026)
 - Added all-white-key note labels to PianoKeyboard
 - Piano roll: note label moved to top-right, time ruler with punch region, drag-to-seek
-- Song Analyzer fork created at `C:\Workspace\GiaMat90\SongAnalyzer` (separate project)
+- Song Practice Studio fork created at `C:\Workspace\GiaMat90\SongAnalyzer` (separate project, GitHub: `giamat90/SongPracticeStudio`)
 - **CI pipeline** (`v0.1.1`–`v0.1.6`): GitHub Actions for macOS DMG and Windows NSIS with smoke tests
   - Smoke tests launch binary directly (`target/release/app.exe` on Windows, binary inside `.app` on macOS)
   - `scripts/bump-version.ps1` for atomic version bumps (UTF-8 no-BOM)
