@@ -185,4 +185,5 @@ jobs:
           draft: false
           files: |
             src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
             scripts/macos/fix-gatekeeper-macos.zip
