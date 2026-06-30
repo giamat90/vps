@@ -285,15 +285,15 @@ Song practice page. Requires a processed song.
 │ │    PianoKeyboard · PianoRoll · DynamicsCurve      │  │
 │ └────────────────────────────────────────────────── ┘  │
 │ ┌─ practice-room__sidebar (15rem, flex col) ────────┐  │
-│ │  practice-room__takes-wrap (flex:1, overflow auto)│  │
+│ │  practice-room__takes-wrap (flex: 1 1 50%, auto)  │  │
 │ │    TakeList                                       │  │
-│ │  practice-room__sidebar-bottom (flex-shrink: 0)   │  │
+│ │  practice-room__sidebar-bottom (flex: 1 1 50%, auto)│ │
 │ │    VibratoCard · TimingChart · CoachPanel         │  │
 │ └───────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────┘
 ```
 
-**Sidebar layout:** The sidebar uses a constrained flex column so `TakeList` scrolls within its zone as takes accumulate, while `VibratoCard`, `TimingChart`, and `CoachPanel` remain pinned at the bottom. The full `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__sidebar`) for the takes-wrap `overflow-y: auto` to engage. `practice-room__sidebar-bottom` has `flex-shrink: 0` so it is never compressed.
+**Sidebar layout:** The sidebar splits 50/50 between `practice-room__takes-wrap` (TakeList) and `practice-room__sidebar-bottom` (VibratoCard, TimingChart, CoachPanel), each independently scrollable (`overflow-y: auto`) so neither zone can crowd out the other. The full `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__sidebar`) for the `overflow-y: auto` zones to engage.
 
 **Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on or `isRecording` is true. `showAnalysis` is set automatically when the user selects a take. No `DualTuner` in this page — the tuner is ExercisePage-only.
 
@@ -306,6 +306,20 @@ Rendered only when `takeVibrato` is non-null in the analysis store. If all value
 **Info popover (ⓘ button):** A toggle in the card header opens an inline explanation panel below the stats. The panel describes each metric's ideal range (Rate 4–7 Hz, Depth 20–100 ct, Evenness ≥ 60 %) and a note explaining zero output. CSS class: `vibrato-card__info-panel`. State is local to the component (`useState`).
 
 **Color coding:** Each value is highlighted green (`vibrato-card__val--ok`) or amber (`vibrato-card__val--warn`) based on ideal-range thresholds.
+
+### TakeList
+
+List of recorded takes for the current song, in `practice-room__takes-wrap`. Each row shows the take's display name (`take.name || "Take {n}"`) and the recorded date; clicking a row calls `setActiveTake`. Three icon buttons sit on each row (`take-item__actions`):
+
+- **✎ rename** — or double-click the name itself — swaps the name for an inline `<input>` (local `editingId`/`editValue` state). Enter or blur commits via `renameTake(takeId, name)`; Escape cancels without saving. Trimmed-empty names clear back to the default `"Take N"` label (Rust command `rename_take` stores `None` in that case).
+- **↓ download** — calls `exportTake(take.filepath, "{Song Title} - {display name}.wav")`, opening a native Save-As dialog. The take is always exported as WAV: the Rust `export_take` command first sends a `convert_take` request to the Python sidecar (`analysis.py: convert_take_to_wav`, decodes the source webm/opus via `librosa.load` + writes `soundfile.write` — the same backend already used for take analysis, so no new dependency) into a temp file, copies that to the chosen destination, and deletes the temp file (`TempFile` RAII guard). The sidecar mutex guard is dropped in an inner block before the dialog `.await` so the command future stays `Send`. Mirrors the `exportStem` pattern used by `SongCard`. The download button shows `…` and disables itself while the conversion/dialog is in flight.
+- **× delete** — calls `deleteTake(take.id)`.
+
+All three buttons call `e.stopPropagation()` so clicking them doesn't also select the take. `Take.name` is persisted in `takes.json` (optional field, omitted when unset) and round-trips through `list_takes`/`save_take`/`rename_take`.
+
+### CoachPanel
+
+Generates coaching tips from pitch deviation, timing deviation, vibrato, and dynamics comparisons (`generateTips`). Tips are hidden by default — a header toggle button (`coach-panel__toggle`, "See Tips (N)" / "Hide Tips") reveals `coach-panel__tips`. State is local (`useState`), so it resets to hidden whenever a new take is selected and the component remounts/rerenders with fresh tips. This keeps the sidebar bottom zone compact until the user opts in.
 
 ### ExercisePage
 

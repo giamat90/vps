@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { AudioEngine } from "../audio/engine";
 import { VocalRecorder } from "../audio/recorder";
 import type { Song, Take } from "../lib/types";
-import { saveTake, listTakes, deleteTakeApi, pitchShiftSong, saveExerciseTake } from "../lib/tauri";
+import { saveTake, listTakes, deleteTakeApi, renameTakeApi, pitchShiftSong, saveExerciseTake } from "../lib/tauri";
 import type { ExerciseTake } from "../lib/types";
 
 // Singletons outside Zustand
@@ -137,6 +137,7 @@ interface PlayerActions {
   stopMonitoring: () => Promise<void>;
   fetchTakes: () => Promise<void>;
   deleteTake: (takeId: string) => Promise<void>;
+  renameTake: (takeId: string, name: string) => Promise<void>;
   setActiveTake: (takeId: string) => void;
   setTakeVolume: (v: number) => void;
   // Punch region actions
@@ -635,6 +636,15 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set((state) => ({
       takes: state.takes.filter((t) => t.id !== takeId),
       activeTakeId: activeTakeId === takeId ? null : activeTakeId,
+    }));
+  },
+
+  renameTake: async (takeId, name) => {
+    const { song } = get();
+    if (!song) return;
+    const updated = await renameTakeApi(song.id, takeId, name);
+    set((state) => ({
+      takes: state.takes.map((t) => (t.id === takeId ? updated : t)),
     }));
   },
 

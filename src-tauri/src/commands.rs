@@ -233,6 +233,9 @@ pub struct Take {
     pub song_id: String,
     pub recorded_at: String,
     pub filepath: String,
+    /// User-assigned display name; falls back to "Take N" in the UI when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     /// Song position (seconds) where recording started; 0 for full-song takes.
     #[serde(default)]
     pub start_position: f64,
@@ -336,6 +339,7 @@ pub async fn save_take(
         song_id: song_id.clone(),
         recorded_at: chrono::Utc::now().to_rfc3339(),
         filepath: file_path_str,
+        name: None,
         start_position,
         audio_offset,
         pitch_data,
@@ -377,6 +381,20 @@ pub async fn delete_take(song_id: String, take_id: String) -> Result<(), String>
     }
     let filtered: Vec<Take> = takes.into_iter().filter(|t| t.id != take_id).collect();
     save_takes(&song_id, &filtered)
+}
+
+#[tauri::command]
+pub async fn rename_take(song_id: String, take_id: String, name: String) -> Result<Take, String> {
+    let mut takes = load_takes(&song_id)?;
+    let trimmed = name.trim();
+    let take = takes
+        .iter_mut()
+        .find(|t| t.id == take_id)
+        .ok_or_else(|| format!("Take not found: {take_id}"))?;
+    take.name = if trimmed.is_empty() { None } else { Some(trimmed.to_string()) };
+    let updated = take.clone();
+    save_takes(&song_id, &takes)?;
+    Ok(updated)
 }
 
 // --- Exercise take commands ---
@@ -656,4 +674,74 @@ pub async fn export_stem(
             .map_err(|e| format!("Copy failed: {e}"))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+pub async fn export_take(
+    app: AppHandle,
+    state: State<'_, SidecarState>,
+    take_path: String,
+    suggested_name: String,
+) -> Result<(), String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let src = std::path::Path::new(&take_path);
+    if !src.exists() {
+        return Err(format!("Take not found: {take_path}"));
+    }
+
+    // The take is typically webm/opus; decode it via the sidecar into a
+    // temp WAV file, then offer that file through the Save-As dialog.
+    let temp_path = std::env::temp_dir().join(format!("{}.wav", uuid::Uuid::new_v4()));
+    let cmd = serde_json::json!({
+        "cmd": "convert_take",
+        "recordingPath": take_path,
+        "outputPath": temp_path.to_string_lossy(),
+    });
+    {
+        let guard = ensure_sidecar(&state)?;
+        let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
+        sidecar.send_command(&cmd)?;
+
+        let timeout = Duration::from_secs(120);
+        loop {
+            match sidecar.recv_timeout(timeout)? {
+                SidecarMessage::Result { .. } => break,
+                SidecarMessage::Error { message, .. } => return Err(message),
+                _ => {}
+            }
+        }
+    }
+    let _temp_guard = TempFile(temp_path.clone());
+
+    let dest = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        let suggested_name = suggested_name.clone();
+        move || {
+            app.dialog()
+                .file()
+                .set_file_name(&suggested_name)
+                .add_filter("Audio", &["wav"])
+                .blocking_save_file()
+        }
+    })
+    .await
+    .map_err(|e| format!("Dialog task: {e}"))?;
+
+    if let Some(path) = dest {
+        std::fs::copy(&temp_path, path.as_path().ok_or("Invalid path")?)
+            .map_err(|e| format!("Copy failed: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Deletes the wrapped temp file when dropped.
+struct TempFile(std::path::PathBuf);
+
+impl Drop for TempFile {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::remove_file(&self.0) {
+            log::warn!("Failed to remove temp export file {:?}: {e}", self.0);
+        }
+    }
 }

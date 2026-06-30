@@ -37,6 +37,11 @@ export async function deleteTakeApi(songId: string, takeId: string): Promise<voi
   return invoke("delete_take", { songId, takeId });
 }
 
+/** Rename a take (empty/whitespace name clears it back to the default "Take N" label) */
+export async function renameTakeApi(songId: string, takeId: string, name: string): Promise<Take> {
+  return invoke<Take>("rename_take", { songId, takeId, name });
+}
+
 /** Load song analysis data (pitchData, onsets, dynamics, spectrogram) */
 export async function loadAnalysis(songId: string): Promise<{
   pitchData: import("./types").PitchData;
@@ -69,6 +74,18 @@ export async function exportStem(
   suggestedName: string,
 ): Promise<void> {
   return invoke("export_stem", { stemPath, suggestedName });
+}
+
+/**
+ * Open a native Save As dialog and write a recorded take to a user-chosen
+ * location as WAV. The take (typically webm/opus) is decoded via the
+ * Python sidecar first.
+ */
+export async function exportTake(
+  takePath: string,
+  suggestedName: string,
+): Promise<void> {
+  return invoke("export_take", { takePath, suggestedName });
 }
 
 /** Save a free-exercise recorded take */

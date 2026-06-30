@@ -6,6 +6,7 @@ Uses SRH pitch detection — spectral, avoids locking onto the second formant.
 import sys
 import numpy as np
 import librosa
+import soundfile as sf
 from processor import detect_pitch_srh
 
 SAMPLE_RATE = 44100
@@ -74,6 +75,18 @@ def _detect_vibrato(frequency: np.ndarray, confidence: np.ndarray, step_ms: floa
         "depth": round(depth, 1),
         "regularity": round(regularity, 3),
     }
+
+
+def convert_take_to_wav(recording_path: str, output_path: str) -> dict:
+    """
+    Decode a take (typically .webm/opus) to PCM and write it out as WAV
+    for export. Keeps the file's native sample rate and channel count,
+    and exports the full recording (no latency-offset trimming).
+    """
+    audio, sr = librosa.load(recording_path, sr=None, mono=False)
+    data = audio.T if audio.ndim > 1 else audio
+    sf.write(output_path, data, sr)
+    return {"path": output_path}
 
 
 def analyze_recording(recording_path: str, output_dir=None, on_progress=None, audio_offset_s: float = 0.0) -> dict:

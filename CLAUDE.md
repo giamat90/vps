@@ -163,6 +163,7 @@ interface Take {
   songId: string;
   recordedAt: string;
   filepath: string;
+  name?: string;          // user-assigned; falls back to "Take N" in the UI
   startPosition: number;  // song time (s) where recording began; 0 = full-song
   pitchData?: PitchData;
   onsets?: number[];
@@ -209,10 +210,12 @@ interface PitchPoint {       // frontend-internal representation
 | `save_take(songId, audioData, startPosition)` | `Take` | triggers pYIN analyze |
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
+| `rename_take(songId, takeId, name)` | `Take` | empty/whitespace name clears back to default |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics}` | reads analysis.json |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
 | `import_youtube(url)` | `Song` | yt-dlp + Demucs; 15-min timeout |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
+| `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |
 
 ---
 
@@ -339,6 +342,7 @@ Horizontal key strip. MIDI 45–84. Highlights current note in song=blue / take=
 | `analyze` | pYIN pitch → onsets → dynamics → vibrato (for recorded takes) | 300 s |
 | `pitch_shift` | phase-vocoder shift vocals + instrumental; cached in `pitched/{n}/` | 300 s |
 | `import_yt` | yt-dlp download → `process` pipeline; bot-detection browser cookie fallback | 900 s |
+| `convert_take` | decode a take (webm/opus) via `librosa.load` + write WAV via `soundfile`; used for take export | 120 s |
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices

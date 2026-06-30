@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { avgCentsDeviation } from "../../audio/analysisUtils";
 import type { CoachingTip } from "../../lib/types";
@@ -161,6 +162,7 @@ export default function CoachPanel() {
   const takeDynamics = useAnalysisStore((s) => s.takeDynamics);
   const songDynamics = useAnalysisStore((s) => s.songDynamics);
   const isLoaded = useAnalysisStore((s) => s.isLoaded);
+  const [showTips, setShowTips] = useState(false);
 
   if (!isLoaded || takePitch.length === 0) {
     return (
@@ -174,18 +176,28 @@ export default function CoachPanel() {
 
   return (
     <div className="coach-panel">
-      <h3 className="coach-panel__title">Coaching</h3>
-      <div className="coach-panel__tips">
-        {tips.map((tip, i) => (
-          <div key={i} className={`coach-tip coach-tip--${tip.category}`}>
-            <div className="coach-tip__header">
-              <span className="coach-tip__icon">{CATEGORY_ICONS[tip.category]}</span>
-              <span className="coach-tip__title">{tip.title}</span>
-            </div>
-            <p className="coach-tip__detail">{tip.detail}</p>
-          </div>
-        ))}
+      <div className="coach-panel__header">
+        <h3 className="coach-panel__title">Coaching</h3>
+        <button
+          className="coach-panel__toggle"
+          onClick={() => setShowTips((v) => !v)}
+        >
+          {showTips ? "Hide Tips" : "See Tips"} ({tips.length})
+        </button>
       </div>
+      {showTips && (
+        <div className="coach-panel__tips">
+          {tips.map((tip, i) => (
+            <div key={i} className={`coach-tip coach-tip--${tip.category}`}>
+              <div className="coach-tip__header">
+                <span className="coach-tip__icon">{CATEGORY_ICONS[tip.category]}</span>
+                <span className="coach-tip__title">{tip.title}</span>
+              </div>
+              <p className="coach-tip__detail">{tip.detail}</p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

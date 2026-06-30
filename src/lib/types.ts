@@ -40,6 +40,8 @@ export interface Take {
   songId: string;
   recordedAt: string;
   filepath: string;
+  /** User-assigned display name; falls back to "Take N" in the UI when absent. */
+  name?: string;
   /** Song position (seconds) where recording started; 0 for full-song takes. */
   startPosition: number;
   /** Seconds into the audio file to skip on playback (non-zero when latency compensation

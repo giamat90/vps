@@ -11,7 +11,7 @@ import json
 import traceback
 
 from processor import process
-from analysis import analyze_recording
+from analysis import analyze_recording, convert_take_to_wav
 
 
 def send(msg: dict):
@@ -56,6 +56,10 @@ def main():
                     audio_offset_s=float(cmd.get("audioOffset", 0.0)),
                 )
                 send({"type": "result", "cmd": "analyze", "data": result})
+
+            elif cmd.get("cmd") == "convert_take":
+                result = convert_take_to_wav(cmd["recordingPath"], cmd["outputPath"])
+                send({"type": "result", "cmd": "convert_take", "data": result})
 
             elif cmd.get("cmd") == "pitch_shift":
                 from processor import pitch_shift_song
