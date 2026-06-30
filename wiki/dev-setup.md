@@ -89,16 +89,22 @@ Both workflows:
 
 The app is **not code-signed or notarized** (no Apple Developer ID yet). When a `.dmg` is downloaded via a browser, macOS Gatekeeper blocks the unsigned/unnotarized `.app` — usually silently, or with "Apple could not verify... is free of malware" / "app is damaged, move to Trash." This is expected, not a build bug, until we get an Apple Developer ID and wire up the `APPLE_CERTIFICATE`/`APPLE_ID`/notarization secrets already stubbed out (commented) in `build-macos.yml`.
 
-**Stopgap for testers**, after downloading and before double-clicking:
-```bash
-# Option A: strip the quarantine flag entirely
-xattr -cr /path/to/VPS.app    # or run on the mounted .dmg before dragging to Applications
+**Stopgap for testers — `fix-gatekeeper.command`:**
 
-# Option B: right-click (or Control-click) the app in Finder → "Open" →
-# confirm in the dialog. This one-time override is recorded by Gatekeeper
-# and only needs to be done once per app version.
+Every macOS Release now includes `fix-gatekeeper-macos.zip` alongside the `.dmg` (source: `scripts/macos/fix-gatekeeper.command`, built/zipped in `build-macos.yml`'s "Package fix-gatekeeper.command" step). Instructions to give a tester:
+
+1. Install the app from the `.dmg` as normal (drag to Applications).
+2. Download and unzip `fix-gatekeeper-macos.zip` (Archive Utility preserves the executable bit; a raw `.command` download would not).
+3. Double-click `fix-gatekeeper.command`. The first run still triggers a Gatekeeper "unidentified developer" prompt for the *script itself* — Control-click it → Open → confirm once. It then opens Terminal, locates the installed `.app` (checks Applications, Downloads, Desktop, and any mounted volume), and runs `xattr -cr` on it.
+4. Vocal Practice Studio should now open normally.
+
+Manual fallback, if the script isn't available or doesn't find the app:
+```bash
+xattr -cr /path/to/VPS.app    # or run on the mounted .dmg before dragging to Applications
 ```
-If neither works, ask the tester to run `spctl --assess --type execute -v /path/to/VPS.app` and `codesign -dv --verbose=4 /path/to/VPS.app` and share the output — that's the same diagnostic the CI Gatekeeper smoke test produces.
+or right-click (Control-click) the app in Finder → "Open" → confirm in the dialog.
+
+If none of this works, ask the tester to run `spctl --assess --type execute -v /path/to/VPS.app` and `codesign -dv --verbose=4 /path/to/VPS.app` and share the output — that's the same diagnostic the CI Gatekeeper smoke test produces.
 
 ### Bumping the version locally
 

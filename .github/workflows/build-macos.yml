@@ -166,6 +166,16 @@ jobs:
           hdiutil detach /tmp/vps-dmg-q -quiet || true
           exit $SPCTL_STATUS
 
+      # ── 10c. Package the Gatekeeper-bypass helper for testers ────────────
+      # Plain downloads lose the executable bit and get quarantined too, so
+      # ship it as a .zip — Archive Utility restores Unix permissions on
+      # unzip, unlike a raw .command download.
+      - name: Package fix-gatekeeper.command
+        run: |
+          chmod +x scripts/macos/fix-gatekeeper.command
+          cd scripts/macos
+          zip -X fix-gatekeeper-macos.zip fix-gatekeeper.command
+
       # ── 11. Publish to GitHub Release (create or update) ─────────────────
       - name: Upload DMG to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -173,4 +183,6 @@ jobs:
           name: VPS ${{ github.ref_name }}
           body: See CHANGELOG for details.
           draft: false
-          files: src-tauri/target/release/bundle/dmg/*.dmg
+          files: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            scripts/macos/fix-gatekeeper-macos.zip
