@@ -3,7 +3,11 @@ import { useLibraryStore } from "../../stores/library";
 
 const YT_PATTERN = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//;
 
-function YouTubeImport() {
+interface YouTubeImportProps {
+  highQuality?: boolean;
+}
+
+function YouTubeImport({ highQuality }: YouTubeImportProps) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const importYoutube = useLibraryStore((s) => s.importYoutube);
@@ -15,7 +19,7 @@ function YouTubeImport() {
       return;
     }
     setError(null);
-    await importYoutube(url);
+    await importYoutube(url, highQuality);
     setUrl("");
   };
 

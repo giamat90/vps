@@ -36,6 +36,7 @@ pub async fn process_song(
     app: AppHandle,
     state: State<'_, SidecarState>,
     file_path: String,
+    high_quality: Option<bool>,
 ) -> Result<Song, String> {
     let song_id = uuid::Uuid::new_v4().to_string();
     let output_dir = storage::song_dir(&song_id);
@@ -64,6 +65,7 @@ pub async fn process_song(
         "cmd": "process",
         "filePath": dest_str,
         "outputDir": output_dir_str,
+        "highQuality": high_quality.unwrap_or(false),
     });
 
     // Hold the lock for the duration of the processing to prevent concurrent jobs
@@ -527,6 +529,7 @@ pub async fn import_youtube(
     app: AppHandle,
     state: State<'_, SidecarState>,
     url: String,
+    high_quality: Option<bool>,
 ) -> Result<Song, String> {
     if !url.contains("youtube.com/") && !url.contains("youtu.be/") {
         return Err("Not a valid YouTube URL".to_string());
@@ -540,6 +543,7 @@ pub async fn import_youtube(
         "cmd": "import_yt",
         "url": url,
         "outputDir": output_dir_str,
+        "highQuality": high_quality.unwrap_or(false),
     });
 
     let guard = ensure_sidecar(&state)?;

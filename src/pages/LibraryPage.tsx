@@ -135,6 +135,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const [showAbout, setShowAbout] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [appVersion, setAppVersion] = useState("");
+  const [highQuality, setHighQuality] = useState(false);
 
   useEffect(() => {
     fetchSongs();
@@ -190,8 +191,18 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
 
 
       <div className="library-page__import">
-        <DropZone />
-        <YouTubeImport />
+        <DropZone highQuality={highQuality} />
+        <YouTubeImport highQuality={highQuality} />
+        <label className="library-page__quality-toggle">
+          <input
+            type="checkbox"
+            checked={highQuality}
+            onChange={(e) => setHighQuality(e.target.checked)}
+          />
+          {highQuality
+            ? "htdemucs_ft — better isolation, ~2–3× slower"
+            : "htdemucs — fast standard quality"}
+        </label>
       </div>
 
       {showSettings && (

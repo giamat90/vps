@@ -329,8 +329,12 @@ def compute_spectrogram(audio: np.ndarray, sr: int) -> dict:
     }
 
 
-def process(input_path: str, output_dir: str, on_progress=None) -> dict:
-    """Full processing pipeline for an uploaded song."""
+def process(input_path: str, output_dir: str, on_progress=None, high_quality: bool = False) -> dict:
+    """Full processing pipeline for an uploaded song.
+
+    high_quality: use htdemucs_ft (fine-tuned, ~2-3x slower, better isolation)
+      instead of htdemucs (fast, standard quality).
+    """
     if on_progress is None:
         on_progress = lambda v, s: None
 
@@ -347,7 +351,8 @@ def process(input_path: str, output_dir: str, on_progress=None) -> dict:
     from demucs.apply import apply_model
     from demucs.audio import AudioFile
 
-    model = get_model("htdemucs")
+    model_name = "htdemucs_ft" if high_quality else "htdemucs"
+    model = get_model(model_name)
     model.eval()
     on_progress(0.05, "stem-separation")
 

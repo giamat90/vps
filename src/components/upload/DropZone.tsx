@@ -3,7 +3,11 @@ import { useLibraryStore } from "../../stores/library";
 
 const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
 
-function DropZone() {
+interface DropZoneProps {
+  highQuality?: boolean;
+}
+
+function DropZone({ highQuality }: DropZoneProps) {
   const uploadSong = useLibraryStore((s) => s.uploadSong);
   const processing = useLibraryStore((s) => s.processing);
   const isProcessing = processing !== null;
@@ -22,7 +26,7 @@ function DropZone() {
     });
 
     if (selected) {
-      uploadSong(selected);
+      uploadSong(selected, highQuality);
     }
   };
 

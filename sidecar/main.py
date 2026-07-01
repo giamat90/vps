@@ -45,6 +45,7 @@ def main():
                     cmd["filePath"],
                     cmd["outputDir"],
                     on_progress=make_progress_callback("process"),
+                    high_quality=cmd.get("highQuality", False),
                 )
                 send({"type": "result", "cmd": "process", "data": result})
 
@@ -77,6 +78,7 @@ def main():
                     cmd["url"],
                     cmd["outputDir"],
                     on_progress=make_progress_callback("import_yt"),
+                    high_quality=cmd.get("highQuality", False),
                 )
                 send({"type": "result", "cmd": "import_yt", "data": result})
 
