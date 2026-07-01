@@ -33,7 +33,7 @@ VPS is a three-tier desktop application:
 | State management | Zustand | latest |
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
-| Stem separation | Demucs | htdemucs model |
+| Stem separation | Demucs | htdemucs (standard) / htdemucs_ft (high quality, opt-in) |
 | Pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
 | Pitch shifting | librosa | — |
 

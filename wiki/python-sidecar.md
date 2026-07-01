@@ -57,11 +57,13 @@ Rust sends one command at a time (the sidecar processes synchronously):
 Separates a mixed audio file and extracts analysis data.
 
 ```json
-{"cmd": "process", "filePath": "/path/to/song.mp3", "outputDir": "/path/to/output/"}
+{"cmd": "process", "filePath": "/path/to/song.mp3", "outputDir": "/path/to/output/", "highQuality": false}
 ```
 
+`highQuality` (optional, default `false`) — selects the Demucs model: `htdemucs_ft` (fine-tuned, ~2-3x slower, better isolation) instead of `htdemucs` (fast, standard quality). Only affects model selection in `processor.process()`; no other stage changes.
+
 Steps (in `processor.py`):
-1. Demucs `htdemucs` model — produces `vocals.wav` and `instrumental.wav`
+1. Demucs `htdemucs` (or `htdemucs_ft` if `highQuality`) — produces `vocals.wav` and `instrumental.wav`
 2. SRH pitch detection on the vocals track (see [Pitch Detection](#pitch-detection))
 3. Onset detection
 4. RMS dynamics
@@ -105,13 +107,15 @@ Returns `{"vocalsPath": "...", "instrumentalPath": "..."}` as `data`.
 Downloads a YouTube video as audio and runs it through the full `process` pipeline.
 
 ```json
-{"cmd": "import_yt", "url": "https://youtube.com/watch?v=...", "outputDir": "/path/to/output/"}
+{"cmd": "import_yt", "url": "https://youtube.com/watch?v=...", "outputDir": "/path/to/output/", "highQuality": false}
 ```
+
+`highQuality` (optional, default `false`) — same meaning as in `process`; threaded straight through to `processor.process()`.
 
 Implemented in `yt_importer.py` via `yt-dlp`. Steps:
 
 1. Download best audio → `source.wav` (via FFmpegExtractAudio post-processor). Progress maps to 0–15%.
-2. Run `processor.process(source_wav, output_dir)` for separation + analysis. Progress maps to 15–100%.
+2. Run `processor.process(source_wav, output_dir, high_quality=high_quality)` for separation + analysis. Progress maps to 15–100%.
 
 Returns the same dict as `process`, with `"title"` added (extracted from yt-dlp metadata).
 

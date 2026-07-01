@@ -144,7 +144,8 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 
 | Command | Arguments | Returns |
 |---------|-----------|---------|
-| `process_song` | `filePath: string` | `Song` |
+| `process_song` | `filePath: string, highQuality?: boolean` | `Song` |
+| `import_youtube` | `url: string, highQuality?: boolean` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
 | `save_take` | `songId, audioData: number[], startPosition: f64, audioOffset: f64` | `Take` |

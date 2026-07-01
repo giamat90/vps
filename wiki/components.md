@@ -53,6 +53,8 @@ Manages the song list, import/upload flow, and error state.
 | `isLoading` | `boolean` | Initial fetch in progress |
 | `error` | `string \| null` | Last friendly error message (cleared on next import attempt) |
 
+`uploadSong(filePath, highQuality?)` and `importYoutube(url, highQuality?)` both accept an optional `highQuality` flag (default `false`), threaded straight through to the Rust commands → sidecar → `processor.process()`'s Demucs model choice (`htdemucs_ft` vs `htdemucs`). `LibraryPage` owns the toggle's state and passes it down to both `DropZone` and `YouTubeImport`.
+
 Actions: `fetchSongs`, `uploadSong`, `importYoutube`, `deleteSong`, `clearError`, `initProgressListener`.
 
 Both `uploadSong` and `importYoutube` set an initial `processing` state ("Preparing…" / "Connecting…" at 0%) before calling the Tauri command, eliminating the dead-time gap before the sidecar sends its first progress event.
@@ -376,7 +378,11 @@ Flat list of recorded exercise takes. Each row shows the recorded date and durat
 
 ### YouTubeImport
 
-Input + button for pasting a YouTube URL. Validates the URL client-side with a regex before calling `importYoutube(url)` on the library store. Disabled while any processing job is active. Errors from the store are shown as a dismissible red banner in `LibraryPage`.
+Input + button for pasting a YouTube URL. Validates the URL client-side with a regex before calling `importYoutube(url, highQuality)` on the library store (`highQuality` passed down as a prop from `LibraryPage`). Disabled while any processing job is active. Errors from the store are shown as a dismissible red banner in `LibraryPage`.
+
+### DropZone
+
+Click-to-browse file picker (native `open()` dialog filtered to audio extensions) that calls `uploadSong(filePath, highQuality)` on the library store. Shows a progress bar driven by `processing.progress` while a job is active; disabled during processing. `highQuality` is passed down as a prop from `LibraryPage`, which owns the checkbox state shared between this and `YouTubeImport`.
 
 ### SongCard (inline in `LibraryPage`)
 
