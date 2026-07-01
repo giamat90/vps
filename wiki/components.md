@@ -34,8 +34,10 @@ App
 │   ├── VibratoCard        — vibrato rate / depth / regularity summary
 │   ├── TimingChart        — timing deviation chart (user vs. reference onsets)
 │   └── DynamicsCurve      — RMS dynamics over time
-└── coaching/
-    └── CoachPanel         — AI coaching tips panel
+├── coaching/
+│   └── CoachPanel         — AI coaching tips panel
+└── updater/
+    └── UpdateDialog       — auto-update modal (release notes, install/restart, progress)
 ```
 
 ## State Management
@@ -107,6 +109,19 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `activeExerciseTakeId` | `string \| null` | Expanded take (shows audio player) |
 
 Actions: `fetchExerciseTakes`, `addExerciseTake`, `deleteExerciseTake`, `setActiveExerciseTake`.
+
+### Updater Store (`src/stores/updater.ts`)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `status` | `"idle" \| "checking" \| "available" \| "downloading" \| "ready" \| "error"` | Update lifecycle state |
+| `update` | `Update \| null` | Tauri `Update` object (version, release notes body, `downloadAndInstall()`) once found |
+| `progress` | `number` | Download progress, 0..1, derived from `downloadAndInstall`'s chunk callback |
+| `dismissed` | `boolean` | User clicked "Later" |
+
+Actions: `checkForUpdates` (called once on app mount from `App.tsx`; failures are `console.warn`-logged and swallowed — a failed background check must never interrupt startup or surface as a user-facing error), `installAndRestart` (download → verify signature → silent install → `relaunch()`; failures set `status: "error"` so `UpdateDialog` can offer a retry), `dismiss`.
+
+See [Architecture: Auto-Update](architecture.md#auto-update) for the endpoint/signing configuration this depends on.
 
 ## GUI Rule
 

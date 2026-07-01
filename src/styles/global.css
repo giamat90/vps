@@ -1797,6 +1797,81 @@ body,
   background: rgba(74,158,255,0.2);
 }
 
+.update-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.update-modal {
+  background: var(--bg-secondary);
+  border: 0.0625rem solid rgba(255,255,255,0.1);
+  border-radius: 0.625rem;
+  padding: 2rem 2.5rem;
+  min-width: 22rem;
+  max-width: 90vw;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+.update-modal__title {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.update-modal__version {
+  font-size: 0.9rem;
+  color: rgba(74,158,255,0.9);
+  font-family: monospace;
+  margin: 0;
+}
+.update-modal__notes {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+  max-width: 28rem;
+  white-space: pre-wrap;
+}
+.update-modal__actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+.update-modal__install,
+.update-modal__later {
+  border: 0.0625rem solid rgba(255,255,255,0.1);
+  padding: 0.4rem 1.2rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: background 0.15s;
+}
+.update-modal__install {
+  background: var(--accent);
+  color: var(--text-primary);
+}
+.update-modal__install:hover {
+  filter: brightness(1.1);
+}
+.update-modal__later {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+}
+.update-modal__later:hover {
+  background: rgba(74,158,255,0.2);
+}
+.update-modal .progress-bar {
+  width: 100%;
+}
+
 /* Exercise Page */
 .exercise-page {
   height: 100%;
