@@ -106,6 +106,10 @@ export default function SpectrogramPanel() {
   const drawRef     = useRef<() => void>(() => {});
 
   useEffect(() => {
+    console.log('[Spectrogram] thermal LUT active, gamma=0.4, blur=3-tap');
+  }, []);
+
+  useEffect(() => {
     drawRef.current = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -200,9 +204,10 @@ export default function SpectrogramPanel() {
             const hi   = Math.min(lo + 1, data.length - 1);
             const frac = idx - lo;
             const db   = data[lo] * (1 - frac) + data[hi] * frac;
-            let norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            norm       = Math.pow(norm, 0.55);
-            norms[py]  = norm;
+            const norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            // gamma 0.4 — boosts midrange, pushes noise floor to black
+            const curved = Math.pow(norm, 0.4);
+            norms[py]  = curved;
           }
 
           // Dynamic shift: rollW pixels spans WINDOW_S seconds at ~30 fps
@@ -220,6 +225,7 @@ export default function SpectrogramPanel() {
             const prev    = norms[Math.max(0, py - 1)];
             const curr    = norms[py];
             const next    = norms[Math.min(H - 1, py + 1)];
+            // 3-tap keeps harmonic lines sharper vertically
             const blurred = 0.25 * prev + 0.50 * curr + 0.25 * next;
             const ci      = Math.min(255, Math.floor(blurred * 255));
             for (let s = 0; s < shift; s++) {
