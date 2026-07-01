@@ -63,19 +63,25 @@ Output installers are placed in `src-tauri/target/release/bundle/`. Ensure the s
 
 ## CI / Release Workflow
 
-Two GitHub Actions workflows trigger on any `v*` tag push and also support `workflow_dispatch`:
+A single workflow, `.github/workflows/release.yml`, triggers on any `v*` tag push and also supports `workflow_dispatch`. It has three jobs:
 
-| Workflow | Runner | Bundle | File |
-|----------|--------|--------|------|
-| `build-macos.yml` | `macos-latest` (Apple Silicon) | `.dmg` | `.github/workflows/build-macos.yml` |
-| `build-windows.yml` | `windows-latest` (x86_64) | NSIS `.exe` | `.github/workflows/build-windows.yml` |
+| Job | Runner | Bundle |
+|-----|--------|--------|
+| `build-windows` | `windows-latest` (x86_64) | NSIS `.exe` |
+| `build-macos` | `macos-latest` (Apple Silicon) | `.dmg` + `.app.tar.gz` |
+| `finalize` | `ubuntu-latest` | — |
 
-Both workflows:
+Both `build-*` jobs:
 1. Stamp all manifest versions from the git tag (`jq` + `sed`)
 2. Build the Python sidecar with PyInstaller (CPU-only PyTorch)
-3. Build the Tauri app with `tauri-action@v0` → creates a draft GitHub Release
+3. Build the Tauri app with `tauri-action@v0`, passing `tagName`/`releaseDraft: true` and the updater signing secrets — this makes `tauri-action` create-or-reuse **the same draft GitHub Release** for both jobs and sign the artifacts (producing `.sig` files + a per-platform `latest.json` fragment)
 4. Run a smoke test (see below)
-5. Upload the installer as a workflow artifact (14-day retention fallback)
+
+`tauri-action` fetches the release's existing `latest.json` asset (if the other platform's job already uploaded one), merges in its own platform's entry, and re-uploads — so no custom merge step is needed, but both jobs must resolve to the *same* release, which is why they now live in one workflow file instead of two independent ones (GitHub Actions can't `needs:` across separate top-level workflows). The `finalize` job (`needs: [build-windows, build-macos]`) runs `gh release edit "$TAG" --draft=false` once both platforms succeed, so the release is only published — and `latest.json` only has both platform keys — after both builds are in.
+
+**Updater signing secrets** (required for CI builds to produce valid `.sig` files): `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, set on the repo via `gh secret set`. The matching private key file (`tauri-updater-key.pem`, gitignored) is the only copy outside GitHub — losing it means future releases can no longer be signed to match the pubkey already shipped in installed apps. See [Architecture: Auto-Update](architecture.md#auto-update) for the pubkey/endpoint config and the HTTPS-only constraint.
+
+**Testing the update flow locally without a real release:** build a signed installer with `TAURI_SIGNING_PRIVATE_KEY`/`_PASSWORD` env vars set, then serve a hand-crafted `latest.json` + the installer from a local HTTPS server (Tauri rejects plain `http`, even `localhost`, so a self-signed cert imported into the Windows trust store is required — generate it with a proper openssl config file specifying Subject/Issuer, not a bare `-subj` shortcut, or `rustls-platform-verifier`'s schannel chain validation fails with a non-obvious `TRUST_E_CERT_SIGNATURE` error instead of a clear "untrusted CA" message).
 
 ### Smoke tests
 
@@ -87,11 +93,11 @@ Both workflows:
 
 ### macOS testers: app won't open
 
-The app is **not code-signed or notarized** (no Apple Developer ID yet). When a `.dmg` is downloaded via a browser, macOS Gatekeeper blocks the unsigned/unnotarized `.app` — usually silently, or with "Apple could not verify... is free of malware" / "app is damaged, move to Trash." This is expected, not a build bug, until we get an Apple Developer ID and wire up the `APPLE_CERTIFICATE`/`APPLE_ID`/notarization secrets already stubbed out (commented) in `build-macos.yml`.
+The app is **not code-signed or notarized** (no Apple Developer ID yet). When a `.dmg` is downloaded via a browser, macOS Gatekeeper blocks the unsigned/unnotarized `.app` — usually silently, or with "Apple could not verify... is free of malware" / "app is damaged, move to Trash." This is expected, not a build bug, until we get an Apple Developer ID and wire up the `APPLE_CERTIFICATE`/`APPLE_ID`/notarization secrets already stubbed out (commented) in `release.yml`.
 
 **Stopgap for testers — `fix-gatekeeper.command`:**
 
-Every macOS Release now includes `fix-gatekeeper-macos.zip` alongside the `.dmg` (source: `scripts/macos/fix-gatekeeper.command`, built/zipped in `build-macos.yml`'s "Package fix-gatekeeper.command" step). Instructions to give a tester:
+Every macOS Release now includes `fix-gatekeeper-macos.zip` alongside the `.dmg` (source: `scripts/macos/fix-gatekeeper.command`, built/zipped in `release.yml`'s "Package fix-gatekeeper.command" step). Instructions to give a tester:
 
 1. Install the app from the `.dmg` as normal (drag to Applications).
 2. Download and unzip `fix-gatekeeper-macos.zip` (Archive Utility preserves the executable bit; a raw `.command` download would not).
