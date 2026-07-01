@@ -1,4 +1,4 @@
-name: Build macOS
+name: Release
 
 on:
   push:
@@ -10,6 +10,127 @@ permissions:
   contents: write
 
 jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      # ── 1. Checkout ──────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── 1b. Sync version from git tag into all manifest files ────────────
+      - name: Sync version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "Stamping version $VERSION"
+          jq --arg v "$VERSION" '.version = $v' src-tauri/tauri.conf.json > tmp.json && mv tmp.json src-tauri/tauri.conf.json
+          jq --arg v "$VERSION" '.version = $v' package.json > tmp.json && mv tmp.json package.json
+          sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
+
+      # ── 2. Node.js ───────────────────────────────────────────────────────
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      # ── 3. Rust ──────────────────────────────────────────────────────────
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      # ── 4. Python ────────────────────────────────────────────────────────
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      # ── 5. Install Python sidecar dependencies ────────────────────────────
+      - name: Install Python dependencies
+        working-directory: sidecar
+        run: |
+          pip install --upgrade pip
+          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+          pip install demucs librosa soundfile numpy yt-dlp pyinstaller
+
+      # ── 6. Freeze the Python sidecar with PyInstaller ────────────────────
+      - name: Build Python sidecar (PyInstaller)
+        working-directory: sidecar
+        shell: bash
+        run: |
+          pyinstaller main.py \
+            --onefile \
+            --name vps-sidecar-x86_64-pc-windows-msvc \
+            --hidden-import=demucs \
+            --hidden-import=demucs.api \
+            --hidden-import=demucs.pretrained \
+            --hidden-import=librosa \
+            --hidden-import=soundfile \
+            --hidden-import=numpy \
+            --collect-data=demucs \
+            --collect-all=yt_dlp \
+            --noconfirm \
+            --clean
+
+      # ── 7. Stage sidecar binary ───────────────────────────────────────────
+      - name: Stage sidecar binary
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
+          Copy-Item sidecar/dist/vps-sidecar-x86_64-pc-windows-msvc.exe src-tauri/binaries/
+
+      # ── 8. Install Node dependencies ──────────────────────────────────────
+      - name: Install frontend dependencies
+        run: npm ci
+
+      # ── 9. Build the Tauri app (NSIS installer) and publish to the release ─
+      - name: Build Tauri app (NSIS) and publish
+        uses: tauri-apps/tauri-action@v0
+        env:
+          CARGO_HTTP_MULTIPLEXING: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'VPS ${{ github.ref_name }}'
+          releaseBody: 'See CHANGELOG for details.'
+          releaseDraft: true
+          prerelease: false
+          updaterJsonPreferNsis: true
+          args: --bundles nsis
+
+      # ── 10. Smoke test ────────────────────────────────────────────────────
+      - name: Smoke test
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem src-tauri/target/release/bundle/nsis -Filter "*.exe" | Select-Object -First 1
+          if (-not $installer) {
+            Write-Host "NSIS installer not found — build may have failed"
+            exit 1
+          }
+          Write-Host "NSIS installer built: $($installer.Name)"
+
+          $binary = "src-tauri/target/release/app.exe"
+          Write-Host "Launching: $binary"
+          $proc = Start-Process -FilePath $binary -PassThru
+          Start-Sleep 15
+          if (-not $proc.HasExited) {
+            Write-Host "App is running (PID $($proc.Id)) — smoke test passed"
+            $proc.Kill()
+          } else {
+            Write-Host "App exited immediately (exit code $($proc.ExitCode)) — smoke test failed"
+            exit 1
+          }
+
   build-macos:
     runs-on: macos-latest
 
@@ -88,11 +209,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      # ── 9. Build the Tauri app (.dmg + .app) ─────────────────────────────
-      - name: Build Tauri app
+      # ── 9. Build the Tauri app (.dmg + .app) and publish to the release ──
+      - name: Build Tauri app and publish
         uses: tauri-apps/tauri-action@v0
         env:
           CARGO_HTTP_MULTIPLEXING: false
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Code signing (optional — omit if distributing outside Mac App Store)
           # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -100,6 +224,12 @@ jobs:
           # APPLE_ID: ${{ secrets.APPLE_ID }}
           # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'VPS ${{ github.ref_name }}'
+          releaseBody: 'See CHANGELOG for details.'
+          releaseDraft: true
+          prerelease: false
 
       # ── 10. Smoke test ────────────────────────────────────────────────────
       - name: Smoke test .dmg
@@ -176,14 +306,25 @@ jobs:
           cd scripts/macos
           zip -X fix-gatekeeper-macos.zip fix-gatekeeper.command
 
-      # ── 11. Publish to GitHub Release (create or update) ─────────────────
-      - name: Upload DMG to GitHub Release
+      # ── 11. Upload the Gatekeeper-bypass helper ──────────────────────────
+      # This file isn't a Tauri bundle artifact, so tauri-action doesn't know
+      # about it — add it to the (still-draft) release tauri-action just
+      # created/reused. draft:true here is required so this step doesn't
+      # publish the release before the other platform's job finishes.
+      - name: Upload Gatekeeper helper to release
         uses: softprops/action-gh-release@v2
         with:
-          name: VPS ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          name: 'VPS ${{ github.ref_name }}'
           body: See CHANGELOG for details.
-          draft: false
-          files: |
-            src-tauri/target/release/bundle/dmg/*.dmg
-            src-tauri/target/release/bundle/macos/*.app.tar.gz
-            scripts/macos/fix-gatekeeper-macos.zip
+          draft: true
+          files: scripts/macos/fix-gatekeeper-macos.zip
+
+  finalize:
+    needs: [build-windows, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish release (undraft)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release edit "${{ github.ref_name }}" --repo "${{ github.repository }}" --draft=false

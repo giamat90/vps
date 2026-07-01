@@ -43,6 +43,15 @@
                                 "icons/128x128@2x.png",
                                 "icons/icon.icns",
                                 "icons/icon.ico"
-                            ]
-               }
+                            ],
+                   "createUpdaterArtifacts":  true
+               },
+    "plugins":  {
+                    "updater":  {
+                                    "pubkey":  "RWSBkgoy6GCXwbSJ3jDgbgF7P82ZoTuYC8IFdBoCH3ZZ3JZNzrXc3Nrx",
+                                    "endpoints":  [
+                                                      "https://github.com/giamat90/vps/releases/latest/download/latest.json"
+                                                  ]
+                                }
+                }
 }

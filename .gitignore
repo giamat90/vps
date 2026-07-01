@@ -39,3 +39,7 @@ build/
 
 # Logs
 *.log
+
+# Updater signing keys (secret — never commit)
+tauri-updater-key.pem
+*.pem

@@ -1,12 +1,19 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import LibraryPage from "./pages/LibraryPage";
 import PracticeRoom from "./pages/PracticeRoom";
 import ExercisePage from "./pages/ExercisePage";
+import UpdateDialog from "./components/updater/UpdateDialog";
+import { useUpdaterStore } from "./stores/updater";
 
 type Route = { page: "library" } | { page: "practice"; songId: string } | { page: "exercise" };
 
 function App() {
   const [route, setRoute] = useState<Route>({ page: "library" });
+  const checkForUpdates = useUpdaterStore((s) => s.checkForUpdates);
+
+  useEffect(() => {
+    checkForUpdates();
+  }, [checkForUpdates]);
 
   return (
     <div className="app">
@@ -23,6 +30,7 @@ function App() {
           onBack={() => setRoute({ page: "library" })}
         />
       )}
+      <UpdateDialog />
     </div>
   );
 }
