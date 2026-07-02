@@ -31,6 +31,26 @@ function formatHz(f: number): string {
   return f >= 1000 ? `${f / 1000}k` : `${f}`;
 }
 
+// Moving average with a window that widens with frequency — formants are
+// proportionally wider at high frequencies on a log axis.
+function smoothEnvelope(
+  points: { x: number; y: number; normalized: number }[],
+): { x: number; y: number; normalized: number }[] {
+  const result: { x: number; y: number; normalized: number }[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const windowSize = Math.round(15 + (i / points.length) * 25);
+    const start = Math.max(0, i - windowSize);
+    const end = Math.min(points.length - 1, i + windowSize);
+    let sum = 0, count = 0;
+    for (let j = start; j <= end; j++) {
+      sum += points[j].normalized;
+      count++;
+    }
+    result.push({ x: points[i].x, y: 0, normalized: sum / count });
+  }
+  return result;
+}
+
 export default function ShortTermSpectrumPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const isRecording  = usePlayerStore((s) => s.isRecording);
@@ -43,6 +63,10 @@ export default function ShortTermSpectrumPanel() {
       loggedRef.current = true;
       console.log('[ShortTermSpectrum] panel active, height-colored stroke, sharing FLOOR/CEILING from spectrogram');
     }
+  }, []);
+
+  useEffect(() => {
+    console.log('[ShortTermSpectrum] envelope overlay: moving-average, window 15-40 columns');
   }, []);
 
   useEffect(() => {
@@ -190,6 +214,22 @@ export default function ShortTermSpectrumPanel() {
         ctx.closePath();
         ctx.fill();
         ctx.restore();
+      }
+
+      // ── smoothed spectral envelope overlay, drawn on top of the comb ────
+      if (points.length > 1) {
+        const envelopePoints = smoothEnvelope(points);
+        envelopePoints.forEach((p) => { p.y = plotH * (1 - p.normalized); });
+
+        ctx.beginPath();
+        ctx.moveTo(envelopePoints[0].x, envelopePoints[0].y);
+        for (let i = 1; i < envelopePoints.length; i++) {
+          ctx.lineTo(envelopePoints[i].x, envelopePoints[i].y);
+        }
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+        ctx.lineWidth = 2 * dpr;
+        ctx.setLineDash([]);
+        ctx.stroke();
       }
     };
   }, [isRecording, isMonitoring]);
