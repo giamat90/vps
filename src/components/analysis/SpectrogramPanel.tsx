@@ -114,6 +114,10 @@ export default function SpectrogramPanel() {
   }, []);
 
   useEffect(() => {
+    console.log('[Spectrogram] LUT: nearest-neighbor, gamma=0.35');
+  }, []);
+
+  useEffect(() => {
     drawRef.current = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -203,14 +207,12 @@ export default function SpectrogramPanel() {
 
           // Pass 1: dB → normalised magnitude for each canvas row
           for (let py = 0; py < H; py++) {
-            const idx  = lut[py];
-            const lo   = Math.floor(idx);
-            const hi   = Math.min(lo + 1, data.length - 1);
-            const frac = idx - lo;
-            const db   = data[lo] * (1 - frac) + data[hi] * frac;
+            // nearest-neighbor bin mapping — eliminates inter-bin blur
+            const bin  = Math.min(data.length - 1, Math.round(lut[py]));
+            const db   = data[bin];
             const norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            // gamma 0.4 — boosts midrange, pushes noise floor to black
-            const curved = Math.pow(norm, 0.4);
+            // gamma 0.35 — brightens upper harmonics
+            const curved = Math.pow(norm, 0.35);
             norms[py]  = curved;
           }
 
