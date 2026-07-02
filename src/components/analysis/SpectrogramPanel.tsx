@@ -9,7 +9,7 @@ const WINDOW_S = 10;   // seconds visible across full roll width
 const F_MIN    = 30;
 const F_MAX    = 20000;
 
-export const MIN_DB = -75; // floor -75dB — keeps weak upper harmonics visible
+export const MIN_DB = -85; // floor -85dB — matches VoceVista dynamic range
 export const MAX_DB = -20; // ceiling -20dB — loud bins reach top of thermal LUT
 
 const FREQ_TICKS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
@@ -117,7 +117,7 @@ export default function SpectrogramPanel() {
   }, []);
 
   useEffect(() => {
-    console.log('[Spectrogram] dB range: floor=-75, ceiling=-20, span=55dB');
+    console.log('[Spectrogram] dB range: floor=-85, ceiling=-20, span=65dB');
   }, []);
 
   useEffect(() => {
