@@ -9,8 +9,8 @@ const WINDOW_S = 10;   // seconds visible across full roll width
 const F_MIN    = 30;
 const F_MAX    = 20000;
 
-export const MIN_DB = -65;
-export const MAX_DB = -10;
+export const MIN_DB = -85; // floor -85dB — matches VoceVista dynamic range
+export const MAX_DB = -20; // ceiling -20dB — loud bins reach top of thermal LUT
 
 const FREQ_TICKS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
@@ -20,20 +20,27 @@ function buildFreqBinLut(
   H: number,
   fftSize: number,
   sampleRate: number,
-): Float32Array {
+): { low: Uint16Array; high: Uint16Array } {
   const nyquist = sampleRate / 2;
   const fMax    = Math.min(F_MAX, nyquist);
   const binHz   = sampleRate / fftSize;
   const maxBin  = fftSize / 2 - 1;
   const logFMin = Math.log(F_MIN);
   const logFMax = Math.log(fMax);
-  const lut     = new Float32Array(H);
+  const low     = new Uint16Array(H);
+  const high    = new Uint16Array(H);
   for (let py = 0; py < H; py++) {
-    const t = py / (H - 1);
-    const f = Math.exp(logFMax + t * (logFMin - logFMax));
-    lut[py] = Math.max(0, Math.min(maxBin, f / binHz));
+    const tLo   = Math.max(0, (py - 0.5) / (H - 1));
+    const tHi   = Math.min(1, (py + 0.5) / (H - 1));
+    const fHigh = Math.exp(logFMax + tLo * (logFMin - logFMax));
+    const fLow  = Math.exp(logFMax + tHi * (logFMin - logFMax));
+    const binLow  = Math.max(0, Math.floor(fLow / binHz));
+    let   binHigh = Math.min(maxBin, Math.ceil(fHigh / binHz));
+    if (binHigh < binLow + 1) binHigh = Math.min(maxBin, binLow + 1);
+    low[py]  = binLow;
+    high[py] = binHigh;
   }
-  return lut;
+  return { low, high };
 }
 
 // ─── frequency axis ───────────────────────────────────────────────────────────
@@ -90,6 +97,61 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   }
 }
 
+// ─── dB legend ────────────────────────────────────────────────────────────────
+
+const LEGEND_WIDTH  = 52;   // px reserved on right for legend
+const BAR_WIDTH     = 10;   // px width of gradient bar
+const LEGEND_MARGIN = 6;    // px gap between bar and labels
+const LEGEND_TICKS  = [-20, -30, -40, -50, -60, -70, -80, -85];
+
+function drawDbLegend(ctx: CanvasRenderingContext2D, W: number, H: number, dpr: number): void {
+  const barX = W - LEGEND_WIDTH;
+
+  // Inset the bar vertically so the min/max labels have room to render
+  // fully instead of clipping at the canvas edge — this is what made
+  // the legend feel "too tall" with the extremes barely visible.
+  const padY  = 12 * dpr;
+  const barTop = padY;
+  const barH   = H - padY * 2;
+
+  // Step 1: thermal gradient bar (only within the inset region)
+  for (let r = 0; r < barH; r++) {
+    const normalized = 1 - r / barH; // top = loud
+    const curved = Math.pow(normalized, 0.38); // same gamma
+    const idx = Math.floor(curved * 255);
+    const R = SPECTRO_COLORMAP[idx * 3];
+    const G = SPECTRO_COLORMAP[idx * 3 + 1];
+    const B = SPECTRO_COLORMAP[idx * 3 + 2];
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.fillRect(barX, barTop + r, BAR_WIDTH, 1);
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(barX, barTop, BAR_WIDTH, barH);
+
+  // Step 2: dB tick labels — normalized against the existing floor/ceiling
+  // constants (MIN_DB/MAX_DB) so the legend always matches them. Min/max
+  // are bolded and brightened so the range endpoints stand out clearly.
+  for (const dbValue of LEGEND_TICKS) {
+    const isEdge     = dbValue === MAX_DB || dbValue === MIN_DB;
+    const normalized = (dbValue - MIN_DB) / (MAX_DB - MIN_DB); // 0..1
+    const y = barTop + (1 - normalized) * barH; // flip: loud = top
+
+    ctx.strokeStyle = isEdge ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(barX - 2, y);
+    ctx.lineTo(barX + BAR_WIDTH, y);
+    ctx.stroke();
+
+    ctx.fillStyle = isEdge ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.7)";
+    ctx.font = isEdge ? `bold ${11 * dpr}px monospace` : `${9.5 * dpr}px monospace`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${dbValue}`, barX + BAR_WIDTH + LEGEND_MARGIN, y);
+  }
+}
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function SpectrogramPanel() {
@@ -102,8 +164,32 @@ export default function SpectrogramPanel() {
   const shiftAccum  = useRef(0);
   const fftScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
   const colNorms    = useRef<Float32Array | null>(null);
-  const freqLut     = useRef<{ lut: Float32Array; H: number; sr: number } | null>(null);
+  const freqLut     = useRef<{ low: Uint16Array; high: Uint16Array; H: number; sr: number } | null>(null);
   const drawRef     = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    console.log('[Spectrogram] thermal LUT active, gamma=0.4, blur=3-tap');
+  }, []);
+
+  useEffect(() => {
+    console.log('[Spectrogram] dB range: floor=-85, ceiling=-20, span=65dB');
+  }, []);
+
+  useEffect(() => {
+    console.log('[Spectrogram] LUT: nearest-neighbor, gamma=0.35');
+  }, []);
+
+  useEffect(() => {
+    console.log('[Spectrogram] LUT: max-in-range, gamma=0.38');
+  }, []);
+
+  useEffect(() => {
+    console.log('[Spectrogram] soft gate: threshold=0.15');
+  }, []);
+
+  useEffect(() => {
+    console.log('[Spectrogram] dB legend: -85 to -20 dB, width=48px');
+  }, []);
 
   useEffect(() => {
     drawRef.current = () => {
@@ -117,7 +203,7 @@ export default function SpectrogramPanel() {
       const cssH = canvas.clientHeight || 200;
       const W    = Math.round(cssW * dpr);
       const H    = Math.round(cssH * dpr);
-      const rollW = W - AXIS_W;
+      const rollW = W - AXIS_W - LEGEND_WIDTH;
 
       // Resize main canvas and invalidate offscreen if dimensions changed
       if (canvas.width !== W || canvas.height !== H) {
@@ -180,14 +266,17 @@ export default function SpectrogramPanel() {
           const fftSize = binCount * 2;
 
           if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
-            freqLut.current = { lut: buildFreqBinLut(H, fftSize, sr), H, sr };
-            const lut = freqLut.current.lut;
+            const { low, high } = buildFreqBinLut(H, fftSize, sr);
+            freqLut.current = { low, high, H, sr };
+            const rowAt = (freq: number) =>
+              Math.floor(H * (1 - Math.log(freq / F_MIN) / Math.log((Math.min(F_MAX, sr / 2)) / F_MIN)));
             console.log(`SpectroLUT — H:${H} fftSize:${fftSize} sr:${sr} binHz:${(sr / fftSize).toFixed(2)}`);
-            console.log("2kHz bin:", lut[Math.floor(H * (1 - Math.log(2000 / 20) / Math.log(20000 / 20)))]);
-            console.log("5kHz bin:", lut[Math.floor(H * (1 - Math.log(5000 / 20) / Math.log(20000 / 20)))]);
+            console.log("2kHz bin range:", low[rowAt(2000)], high[rowAt(2000)]);
+            console.log("5kHz bin range:", low[rowAt(5000)], high[rowAt(5000)]);
           }
 
-          const lut     = freqLut.current.lut;
+          const lutLow  = freqLut.current.low;
+          const lutHigh = freqLut.current.high;
           const data    = fftScratch.current;
           const norms   = colNorms.current;
           const dbRange = MAX_DB - MIN_DB;
@@ -195,14 +284,20 @@ export default function SpectrogramPanel() {
 
           // Pass 1: dB → normalised magnitude for each canvas row
           for (let py = 0; py < H; py++) {
-            const idx  = lut[py];
-            const lo   = Math.floor(idx);
-            const hi   = Math.min(lo + 1, data.length - 1);
-            const frac = idx - lo;
-            const db   = data[lo] * (1 - frac) + data[hi] * frac;
-            let norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            norm       = Math.pow(norm, 0.55);
-            norms[py]  = norm;
+            // max-in-range bin mapping — fills gaps on log scale
+            let maxDb = -Infinity;
+            for (let b = lutLow[py]; b <= lutHigh[py]; b++) {
+              if (data[b] > maxDb) maxDb = data[b];
+            }
+            const db   = maxDb;
+            const norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            // soft gate pushes noise floor to black like VoceVista
+            const gated = norm < 0.15
+              ? norm * (norm / 0.15) * 0.3
+              : norm;
+            // gamma 0.38 — preserves fundamental peak brightness
+            const curved = Math.pow(gated, 0.38);
+            norms[py]  = curved;
           }
 
           // Dynamic shift: rollW pixels spans WINDOW_S seconds at ~30 fps
@@ -213,15 +308,13 @@ export default function SpectrogramPanel() {
           const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
           offCtx.putImageData(shifted, 0, 0);
 
-          // Pass 2: 3-tap Gaussian bloom → write `shift` new columns at right
+          // Pass 2: write `shift` new columns at right (no vertical blur —
+          // relies on temporal blending only)
           const colImg = offCtx.createImageData(shift, H);
           const cd     = colImg.data;
           for (let py = 0; py < H; py++) {
-            const prev    = norms[Math.max(0, py - 1)];
             const curr    = norms[py];
-            const next    = norms[Math.min(H - 1, py + 1)];
-            const blurred = 0.25 * prev + 0.50 * curr + 0.25 * next;
-            const ci      = Math.min(255, Math.floor(blurred * 255));
+            const ci      = Math.min(255, Math.floor(curr * 255));
             for (let s = 0; s < shift; s++) {
               const base    = (py * shift + s) * 4;
               cd[base]      = colLut[ci * 3];
@@ -271,12 +364,13 @@ export default function SpectrogramPanel() {
         if (y < 0 || y > H) continue;
         ctx.beginPath();
         ctx.moveTo(AXIS_W, y);
-        ctx.lineTo(W, y);
+        ctx.lineTo(W - LEGEND_WIDTH, y);
         ctx.stroke();
       }
       ctx.restore();
 
       drawFreqAxis(ctx, H, sr, dpr);
+      drawDbLegend(ctx, W, H, dpr);
 
       if (!active) {
         ctx.fillStyle    = "#a0a0b040";
