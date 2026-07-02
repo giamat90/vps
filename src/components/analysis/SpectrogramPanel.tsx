@@ -4,10 +4,10 @@ import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
-const AXIS_W   = 56;
+export const AXIS_W   = 56;
 const WINDOW_S = 10;   // seconds visible across full roll width
-const F_MIN    = 30;
-const F_MAX    = 20000;
+export const F_MIN    = 30;
+export const F_MAX    = 20000;
 
 export const MIN_DB = -85; // floor -85dB — matches VoceVista dynamic range
 export const MAX_DB = -20; // ceiling -20dB — loud bins reach top of thermal LUT
@@ -45,7 +45,7 @@ function buildFreqBinLut(
 
 // ─── frequency axis ───────────────────────────────────────────────────────────
 
-function freqToY(f: number, H: number, fMax: number): number {
+export function freqToY(f: number, H: number, fMax: number): number {
   const logFMin = Math.log(F_MIN);
   const logFMax = Math.log(fMax);
   return ((logFMax - Math.log(f)) / (logFMax - logFMin)) * H;
@@ -99,7 +99,7 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
 
 // ─── dB legend ────────────────────────────────────────────────────────────────
 
-const LEGEND_WIDTH  = 52;   // px reserved on right for legend
+export const LEGEND_WIDTH  = 52;   // px reserved on right for legend
 const BAR_WIDTH     = 10;   // px width of gradient bar
 const LEGEND_MARGIN = 6;    // px gap between bar and labels
 const LEGEND_TICKS  = [-20, -30, -40, -50, -60, -70, -80, -85];
