@@ -20,20 +20,27 @@ function buildFreqBinLut(
   H: number,
   fftSize: number,
   sampleRate: number,
-): Float32Array {
+): { low: Uint16Array; high: Uint16Array } {
   const nyquist = sampleRate / 2;
   const fMax    = Math.min(F_MAX, nyquist);
   const binHz   = sampleRate / fftSize;
   const maxBin  = fftSize / 2 - 1;
   const logFMin = Math.log(F_MIN);
   const logFMax = Math.log(fMax);
-  const lut     = new Float32Array(H);
+  const low     = new Uint16Array(H);
+  const high    = new Uint16Array(H);
   for (let py = 0; py < H; py++) {
-    const t = py / (H - 1);
-    const f = Math.exp(logFMax + t * (logFMin - logFMax));
-    lut[py] = Math.max(0, Math.min(maxBin, f / binHz));
+    const tLo   = Math.max(0, (py - 0.5) / (H - 1));
+    const tHi   = Math.min(1, (py + 0.5) / (H - 1));
+    const fHigh = Math.exp(logFMax + tLo * (logFMin - logFMax));
+    const fLow  = Math.exp(logFMax + tHi * (logFMin - logFMax));
+    const binLow  = Math.max(0, Math.floor(fLow / binHz));
+    let   binHigh = Math.min(maxBin, Math.ceil(fHigh / binHz));
+    if (binHigh < binLow + 1) binHigh = Math.min(maxBin, binLow + 1);
+    low[py]  = binLow;
+    high[py] = binHigh;
   }
-  return lut;
+  return { low, high };
 }
 
 // ─── frequency axis ───────────────────────────────────────────────────────────
@@ -102,7 +109,7 @@ export default function SpectrogramPanel() {
   const shiftAccum  = useRef(0);
   const fftScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
   const colNorms    = useRef<Float32Array | null>(null);
-  const freqLut     = useRef<{ lut: Float32Array; H: number; sr: number } | null>(null);
+  const freqLut     = useRef<{ low: Uint16Array; high: Uint16Array; H: number; sr: number } | null>(null);
   const drawRef     = useRef<() => void>(() => {});
 
   useEffect(() => {
@@ -115,6 +122,10 @@ export default function SpectrogramPanel() {
 
   useEffect(() => {
     console.log('[Spectrogram] LUT: nearest-neighbor, gamma=0.35');
+  }, []);
+
+  useEffect(() => {
+    console.log('[Spectrogram] LUT: max-in-range, gamma=0.38');
   }, []);
 
   useEffect(() => {
@@ -192,14 +203,17 @@ export default function SpectrogramPanel() {
           const fftSize = binCount * 2;
 
           if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
-            freqLut.current = { lut: buildFreqBinLut(H, fftSize, sr), H, sr };
-            const lut = freqLut.current.lut;
+            const { low, high } = buildFreqBinLut(H, fftSize, sr);
+            freqLut.current = { low, high, H, sr };
+            const rowAt = (freq: number) =>
+              Math.floor(H * (1 - Math.log(freq / F_MIN) / Math.log((Math.min(F_MAX, sr / 2)) / F_MIN)));
             console.log(`SpectroLUT — H:${H} fftSize:${fftSize} sr:${sr} binHz:${(sr / fftSize).toFixed(2)}`);
-            console.log("2kHz bin:", lut[Math.floor(H * (1 - Math.log(2000 / 20) / Math.log(20000 / 20)))]);
-            console.log("5kHz bin:", lut[Math.floor(H * (1 - Math.log(5000 / 20) / Math.log(20000 / 20)))]);
+            console.log("2kHz bin range:", low[rowAt(2000)], high[rowAt(2000)]);
+            console.log("5kHz bin range:", low[rowAt(5000)], high[rowAt(5000)]);
           }
 
-          const lut     = freqLut.current.lut;
+          const lutLow  = freqLut.current.low;
+          const lutHigh = freqLut.current.high;
           const data    = fftScratch.current;
           const norms   = colNorms.current;
           const dbRange = MAX_DB - MIN_DB;
@@ -207,12 +221,15 @@ export default function SpectrogramPanel() {
 
           // Pass 1: dB → normalised magnitude for each canvas row
           for (let py = 0; py < H; py++) {
-            // nearest-neighbor bin mapping — eliminates inter-bin blur
-            const bin  = Math.min(data.length - 1, Math.round(lut[py]));
-            const db   = data[bin];
+            // max-in-range bin mapping — fills gaps on log scale
+            let maxDb = -Infinity;
+            for (let b = lutLow[py]; b <= lutHigh[py]; b++) {
+              if (data[b] > maxDb) maxDb = data[b];
+            }
+            const db   = maxDb;
             const norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            // gamma 0.35 — brightens upper harmonics
-            const curved = Math.pow(norm, 0.35);
+            // gamma 0.38 — preserves fundamental peak brightness
+            const curved = Math.pow(norm, 0.38);
             norms[py]  = curved;
           }
 
