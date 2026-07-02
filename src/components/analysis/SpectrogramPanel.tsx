@@ -129,6 +129,10 @@ export default function SpectrogramPanel() {
   }, []);
 
   useEffect(() => {
+    console.log('[Spectrogram] soft gate: threshold=0.15');
+  }, []);
+
+  useEffect(() => {
     drawRef.current = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -228,8 +232,12 @@ export default function SpectrogramPanel() {
             }
             const db   = maxDb;
             const norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
+            // soft gate pushes noise floor to black like VoceVista
+            const gated = norm < 0.15
+              ? norm * (norm / 0.15) * 0.3
+              : norm;
             // gamma 0.38 — preserves fundamental peak brightness
-            const curved = Math.pow(norm, 0.38);
+            const curved = Math.pow(gated, 0.38);
             norms[py]  = curved;
           }
 
