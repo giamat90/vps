@@ -1190,6 +1190,10 @@ body,
   height: clamp(15rem, 45vh, 35rem);
 }
 
+.analysis-panel__canvas.short-term-spectrum-panel__canvas {
+  height: 12.5rem;
+}
+
 .analysis-panel__legend {
   display: flex;
   align-items: center;
