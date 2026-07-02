@@ -222,16 +222,13 @@ export default function SpectrogramPanel() {
           const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
           offCtx.putImageData(shifted, 0, 0);
 
-          // Pass 2: 3-tap Gaussian bloom → write `shift` new columns at right
+          // Pass 2: write `shift` new columns at right (no vertical blur —
+          // relies on temporal blending only)
           const colImg = offCtx.createImageData(shift, H);
           const cd     = colImg.data;
           for (let py = 0; py < H; py++) {
-            const prev    = norms[Math.max(0, py - 1)];
             const curr    = norms[py];
-            const next    = norms[Math.min(H - 1, py + 1)];
-            // 3-tap keeps harmonic lines sharper vertically
-            const blurred = 0.25 * prev + 0.50 * curr + 0.25 * next;
-            const ci      = Math.min(255, Math.floor(blurred * 255));
+            const ci      = Math.min(255, Math.floor(curr * 255));
             for (let s = 0; s < shift; s++) {
               const base    = (py * shift + s) * 4;
               cd[base]      = colLut[ci * 3];
