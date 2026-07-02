@@ -97,6 +97,61 @@ function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: numb
   }
 }
 
+// ─── dB legend ────────────────────────────────────────────────────────────────
+
+const LEGEND_WIDTH  = 52;   // px reserved on right for legend
+const BAR_WIDTH     = 10;   // px width of gradient bar
+const LEGEND_MARGIN = 6;    // px gap between bar and labels
+const LEGEND_TICKS  = [-20, -30, -40, -50, -60, -70, -80, -85];
+
+function drawDbLegend(ctx: CanvasRenderingContext2D, W: number, H: number, dpr: number): void {
+  const barX = W - LEGEND_WIDTH;
+
+  // Inset the bar vertically so the min/max labels have room to render
+  // fully instead of clipping at the canvas edge — this is what made
+  // the legend feel "too tall" with the extremes barely visible.
+  const padY  = 12 * dpr;
+  const barTop = padY;
+  const barH   = H - padY * 2;
+
+  // Step 1: thermal gradient bar (only within the inset region)
+  for (let r = 0; r < barH; r++) {
+    const normalized = 1 - r / barH; // top = loud
+    const curved = Math.pow(normalized, 0.38); // same gamma
+    const idx = Math.floor(curved * 255);
+    const R = SPECTRO_COLORMAP[idx * 3];
+    const G = SPECTRO_COLORMAP[idx * 3 + 1];
+    const B = SPECTRO_COLORMAP[idx * 3 + 2];
+    ctx.fillStyle = `rgb(${R},${G},${B})`;
+    ctx.fillRect(barX, barTop + r, BAR_WIDTH, 1);
+  }
+  ctx.strokeStyle = "rgba(255,255,255,0.25)";
+  ctx.lineWidth   = 1;
+  ctx.strokeRect(barX, barTop, BAR_WIDTH, barH);
+
+  // Step 2: dB tick labels — normalized against the existing floor/ceiling
+  // constants (MIN_DB/MAX_DB) so the legend always matches them. Min/max
+  // are bolded and brightened so the range endpoints stand out clearly.
+  for (const dbValue of LEGEND_TICKS) {
+    const isEdge     = dbValue === MAX_DB || dbValue === MIN_DB;
+    const normalized = (dbValue - MIN_DB) / (MAX_DB - MIN_DB); // 0..1
+    const y = barTop + (1 - normalized) * barH; // flip: loud = top
+
+    ctx.strokeStyle = isEdge ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.4)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(barX - 2, y);
+    ctx.lineTo(barX + BAR_WIDTH, y);
+    ctx.stroke();
+
+    ctx.fillStyle = isEdge ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.7)";
+    ctx.font = isEdge ? `bold ${11 * dpr}px monospace` : `${9.5 * dpr}px monospace`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${dbValue}`, barX + BAR_WIDTH + LEGEND_MARGIN, y);
+  }
+}
+
 // ─── component ───────────────────────────────────────────────────────────────
 
 export default function SpectrogramPanel() {
@@ -133,6 +188,10 @@ export default function SpectrogramPanel() {
   }, []);
 
   useEffect(() => {
+    console.log('[Spectrogram] dB legend: -85 to -20 dB, width=48px');
+  }, []);
+
+  useEffect(() => {
     drawRef.current = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -144,7 +203,7 @@ export default function SpectrogramPanel() {
       const cssH = canvas.clientHeight || 200;
       const W    = Math.round(cssW * dpr);
       const H    = Math.round(cssH * dpr);
-      const rollW = W - AXIS_W;
+      const rollW = W - AXIS_W - LEGEND_WIDTH;
 
       // Resize main canvas and invalidate offscreen if dimensions changed
       if (canvas.width !== W || canvas.height !== H) {
@@ -305,12 +364,13 @@ export default function SpectrogramPanel() {
         if (y < 0 || y > H) continue;
         ctx.beginPath();
         ctx.moveTo(AXIS_W, y);
-        ctx.lineTo(W, y);
+        ctx.lineTo(W - LEGEND_WIDTH, y);
         ctx.stroke();
       }
       ctx.restore();
 
       drawFreqAxis(ctx, H, sr, dpr);
+      drawDbLegend(ctx, W, H, dpr);
 
       if (!active) {
         ctx.fillStyle    = "#a0a0b040";
