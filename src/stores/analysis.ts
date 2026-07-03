@@ -9,7 +9,7 @@ import type {
 } from "../lib/types";
 import { loadAnalysis } from "../lib/tauri";
 import { computeTimingDeviations } from "../audio/analysisUtils";
-import { buildSpectroCanvas } from "../lib/spectroUtils";
+import { buildSpectroCanvas, decodeSTSpectrumFrames } from "../lib/spectroUtils";
 
 export interface SongSpectrogram {
   times: number[];
@@ -17,6 +17,33 @@ export interface SongSpectrogram {
   frames: number;
   rows: number;
   hopTime: number;
+}
+
+/** Log-Hz spectral envelope over time — one frame of `bins` bytes per time entry. */
+export interface STSpectrum {
+  times: number[];
+  bytes: Uint8Array;
+  frames: number;
+  bins: number;
+  minDb: number;
+  maxDb: number;
+}
+
+function decodeSTSpectrum(
+  times: number[] | undefined,
+  b64: string | undefined,
+  frames: number | undefined,
+  bins: number | undefined,
+  minDb: number | undefined,
+  maxDb: number | undefined,
+): STSpectrum | null {
+  if (!times?.length || !b64 || !frames || !bins || minDb === undefined || maxDb === undefined) return null;
+  try {
+    return { times, bytes: decodeSTSpectrumFrames(b64), frames, bins, minDb, maxDb };
+  } catch (e) {
+    console.warn("Failed to decode short-term spectrum:", e);
+    return null;
+  }
 }
 
 function pitchDataToPoints(pd: PitchData): PitchPoint[] {
@@ -34,10 +61,12 @@ interface AnalysisState {
   songOnsets: number[];
   songDynamics: DynamicsPoint[];
   songSpectrogram: SongSpectrogram | null;
+  songSTSpectrum: STSpectrum | null;
   takePitch: PitchPoint[];
   takeOnsets: number[];
   takeDynamics: DynamicsPoint[];
   takeVibrato: VibratoMetrics | null;
+  takeSTSpectrum: STSpectrum | null;
   timingDeviations: TimingDeviation[];
   livePitch: PitchPoint[];
   isLoaded: boolean;
@@ -56,10 +85,12 @@ const empty: AnalysisState = {
   songOnsets: [],
   songDynamics: [],
   songSpectrogram: null,
+  songSTSpectrum: null,
   takePitch: [],
   takeOnsets: [],
   takeDynamics: [],
   takeVibrato: null,
+  takeSTSpectrum: null,
   timingDeviations: [],
   livePitch: [],
   isLoaded: false,
@@ -87,11 +118,17 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
           }
         }
 
+        const songSTSpectrum = decodeSTSpectrum(
+          data.stSpectrumTimes, data.stSpectrumB64, data.stSpectrumFrames, data.stSpectrumBins,
+          data.stSpectrumMinDb, data.stSpectrumMaxDb,
+        );
+
         set({
           songPitch: data.pitchData ? pitchDataToPoints(data.pitchData) : [],
           songOnsets: (data.onsets as number[]) ?? [],
           songDynamics: (data.dynamics as DynamicsPoint[]) ?? [],
           songSpectrogram,
+          songSTSpectrum,
           isLoaded: true,
         });
       } catch (e) {
@@ -106,8 +143,12 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
       const takeDynamics = take.dynamics ?? [];
       const takeVibrato = take.vibrato ?? null;
       const timingDeviations = computeTimingDeviations(songOnsets, takeOnsets);
+      const takeSTSpectrum = decodeSTSpectrum(
+        take.stSpectrumTimes, take.stSpectrumB64, take.stSpectrumFrames, take.stSpectrumBins,
+        take.stSpectrumMinDb, take.stSpectrumMaxDb,
+      );
 
-      set({ takePitch, takeOnsets, takeDynamics, takeVibrato, timingDeviations, livePitch: [] });
+      set({ takePitch, takeOnsets, takeDynamics, takeVibrato, takeSTSpectrum, timingDeviations, livePitch: [] });
     },
 
     appendLivePitch: (point) =>

@@ -51,6 +51,12 @@ export async function loadAnalysis(songId: string): Promise<{
   spectroB64?: string;
   spectroFrames?: number;
   spectroRows?: number;
+  stSpectrumTimes?: number[];
+  stSpectrumB64?: string;
+  stSpectrumFrames?: number;
+  stSpectrumBins?: number;
+  stSpectrumMinDb?: number;
+  stSpectrumMaxDb?: number;
 }> {
   return invoke("load_analysis", { songId });
 }

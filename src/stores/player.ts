@@ -25,6 +25,13 @@ function _ensureMicAnalyser(stream: MediaStream): AnalyserNode | null {
     const source = micAnalyserCtx.createMediaStreamSource(stream);
     micAnalyser = micAnalyserCtx.createAnalyser();
     micAnalyser.fftSize = 8192;
+    // Widened from the Web Audio defaults (-100/-30) so getFloatFrequencyData
+    // can report the full -100..0 dBFS range the Short-Term Spectrum
+    // comparison panel now plots — the live spectrogram/live-only panels
+    // still use their own tighter -85..-20 display window, which sits well
+    // inside this range, so they're unaffected.
+    micAnalyser.minDecibels = -100;
+    micAnalyser.maxDecibels = 0;
     source.connect(micAnalyser);
     return micAnalyser;
   } catch (e) {

@@ -31,6 +31,36 @@ fn ensure_sidecar(
     Ok(guard)
 }
 
+/// Backfill helper: compute the Short-Term Spectrum dataset for an audio file
+/// already on disk, for library entries that predate this feature. Returns
+/// None (logged, non-fatal) on any failure — callers just skip the backfill.
+fn compute_st_spectrum(
+    state: &SidecarState,
+    audio_path: &str,
+    audio_offset: f64,
+) -> Option<serde_json::Value> {
+    let guard = ensure_sidecar(state).ok()?;
+    let sidecar = guard.as_ref()?;
+    let cmd = serde_json::json!({
+        "cmd": "compute_st_spectrum",
+        "audioPath": audio_path,
+        "audioOffset": audio_offset,
+    });
+    sidecar.send_command(&cmd).ok()?;
+    let timeout = Duration::from_secs(120);
+    loop {
+        match sidecar.recv_timeout(timeout) {
+            Ok(SidecarMessage::Result { data, .. }) => return Some(data),
+            Ok(SidecarMessage::Error { message, .. }) => {
+                log::warn!("compute_st_spectrum backfill error: {message}");
+                return None;
+            }
+            Ok(SidecarMessage::Progress { .. }) => continue,
+            _ => return None,
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn process_song(
     app: AppHandle,
@@ -139,6 +169,12 @@ pub async fn process_song(
                     "spectroB64":   data.get("spectroB64").cloned().unwrap_or(serde_json::Value::String(String::new())),
                     "spectroFrames":data.get("spectroFrames").cloned().unwrap_or(serde_json::Value::Number(0.into())),
                     "spectroRows":  data.get("spectroRows").cloned().unwrap_or(serde_json::Value::Number(40.into())),
+                    "stSpectrumTimes": data.get("stSpectrumTimes").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                    "stSpectrumB64":   data.get("stSpectrumB64").cloned().unwrap_or(serde_json::Value::String(String::new())),
+                    "stSpectrumFrames":data.get("stSpectrumFrames").cloned().unwrap_or(serde_json::Value::Number(0.into())),
+                    "stSpectrumBins":  data.get("stSpectrumBins").cloned().unwrap_or(serde_json::Value::Number(0.into())),
+                    "stSpectrumMinDb": data.get("stSpectrumMinDb").cloned().unwrap_or(serde_json::Value::Null),
+                    "stSpectrumMaxDb": data.get("stSpectrumMaxDb").cloned().unwrap_or(serde_json::Value::Null),
                 });
                 let analysis_path = output_dir.join("analysis.json");
                 if let Ok(json) = serde_json::to_string_pretty(&analysis) {
@@ -253,6 +289,18 @@ pub struct Take {
     pub dynamics: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub vibrato: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st_spectrum_times: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st_spectrum_b64: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st_spectrum_frames: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st_spectrum_bins: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st_spectrum_min_db: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st_spectrum_max_db: Option<serde_json::Value>,
 }
 
 pub fn is_zero_f64(v: &f64) -> bool { *v == 0.0 }
@@ -295,7 +343,7 @@ pub async fn save_take(
     let output_dir_str = takes_dir.to_string_lossy().to_string();
 
     // Analyze the recording via sidecar
-    let (pitch_data, onsets, dynamics, vibrato) = {
+    let (pitch_data, onsets, dynamics, vibrato, st_spectrum_times, st_spectrum_b64, st_spectrum_frames, st_spectrum_bins, st_spectrum_min_db, st_spectrum_max_db) = {
         let guard = ensure_sidecar(&state);
         if let Ok(guard) = guard {
             if let Some(sidecar) = guard.as_ref() {
@@ -307,7 +355,7 @@ pub async fn save_take(
                 });
                 let _ = sidecar.send_command(&cmd);
                 let timeout = std::time::Duration::from_secs(300);
-                let mut result = (None, None, None, None);
+                let mut result = (None, None, None, None, None, None, None, None, None, None);
                 loop {
                     match sidecar.recv_timeout(timeout) {
                         Ok(SidecarMessage::Result { data, .. }) => {
@@ -316,6 +364,12 @@ pub async fn save_take(
                                 data.get("onsets").cloned(),
                                 data.get("dynamics").cloned(),
                                 data.get("vibrato").cloned(),
+                                data.get("stSpectrumTimes").cloned(),
+                                data.get("stSpectrumB64").cloned(),
+                                data.get("stSpectrumFrames").cloned(),
+                                data.get("stSpectrumBins").cloned(),
+                                data.get("stSpectrumMinDb").cloned(),
+                                data.get("stSpectrumMaxDb").cloned(),
                             );
                             break;
                         }
@@ -329,10 +383,10 @@ pub async fn save_take(
                 }
                 result
             } else {
-                (None, None, None, None)
+                (None, None, None, None, None, None, None, None, None, None)
             }
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None, None, None, None, None, None)
         }
     };
 
@@ -348,6 +402,12 @@ pub async fn save_take(
         onsets,
         dynamics,
         vibrato,
+        st_spectrum_times,
+        st_spectrum_b64,
+        st_spectrum_frames,
+        st_spectrum_bins,
+        st_spectrum_min_db,
+        st_spectrum_max_db,
     };
 
     let mut takes = load_takes(&song_id)?;
@@ -358,18 +418,88 @@ pub async fn save_take(
 }
 
 #[tauri::command]
-pub async fn load_analysis(song_id: String) -> Result<serde_json::Value, String> {
-    let path = storage::song_dir(&song_id).join("analysis.json");
+pub async fn load_analysis(
+    state: State<'_, SidecarState>,
+    song_id: String,
+) -> Result<serde_json::Value, String> {
+    let song_dir = storage::song_dir(&song_id);
+    let path = song_dir.join("analysis.json");
     if !path.exists() {
         return Ok(serde_json::json!({"pitchData": [], "onsets": [], "dynamics": []}));
     }
     let data = std::fs::read_to_string(&path).map_err(|e| format!("Read analysis: {e}"))?;
-    serde_json::from_str(&data).map_err(|e| format!("Parse analysis: {e}"))
+    let mut analysis: serde_json::Value =
+        serde_json::from_str(&data).map_err(|e| format!("Parse analysis: {e}"))?;
+
+    // Backfill: songs processed before the Short-Term Spectrum feature (or
+    // before its dB range was widened to -100..0) won't have both range
+    // fields in analysis.json — stSpectrumMinDb/MaxDb double as a version
+    // marker, so any older encoding is transparently recomputed rather than
+    // misread. Uses the already-separated vocals.wav, so future loads skip
+    // straight to the cached data.
+    let has_spectrum = analysis
+        .get("stSpectrumB64")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty())
+        && analysis.get("stSpectrumMinDb").is_some_and(|v| v.is_number())
+        && analysis.get("stSpectrumMaxDb").is_some_and(|v| v.is_number());
+    if !has_spectrum {
+        let vocals_path = song_dir.join("vocals.wav");
+        if vocals_path.exists() {
+            if let Some(result) = compute_st_spectrum(&state, &vocals_path.to_string_lossy(), 0.0) {
+                if let Some(obj) = analysis.as_object_mut() {
+                    for key in [
+                        "stSpectrumTimes", "stSpectrumB64", "stSpectrumFrames",
+                        "stSpectrumBins", "stSpectrumMinDb", "stSpectrumMaxDb",
+                    ] {
+                        if let Some(v) = result.get(key) {
+                            obj.insert(key.to_string(), v.clone());
+                        }
+                    }
+                }
+                if let Ok(json) = serde_json::to_string_pretty(&analysis) {
+                    let _ = std::fs::write(&path, json);
+                }
+            }
+        }
+    }
+
+    Ok(analysis)
 }
 
 #[tauri::command]
-pub async fn list_takes(song_id: String) -> Result<Vec<Take>, String> {
-    load_takes(&song_id)
+pub async fn list_takes(state: State<'_, SidecarState>, song_id: String) -> Result<Vec<Take>, String> {
+    let mut takes = load_takes(&song_id)?;
+    let mut changed = false;
+
+    // Same backfill/version-marker logic as load_analysis, per-take, using
+    // each take's own recording file and stored latency offset.
+    for take in takes.iter_mut() {
+        let has_spectrum = take
+            .st_spectrum_b64
+            .as_ref()
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty())
+            && take.st_spectrum_min_db.as_ref().is_some_and(|v| v.is_number())
+            && take.st_spectrum_max_db.as_ref().is_some_and(|v| v.is_number());
+        if has_spectrum || !std::path::Path::new(&take.filepath).exists() {
+            continue;
+        }
+        if let Some(result) = compute_st_spectrum(&state, &take.filepath, take.audio_offset) {
+            take.st_spectrum_times = result.get("stSpectrumTimes").cloned();
+            take.st_spectrum_b64 = result.get("stSpectrumB64").cloned();
+            take.st_spectrum_frames = result.get("stSpectrumFrames").cloned();
+            take.st_spectrum_bins = result.get("stSpectrumBins").cloned();
+            take.st_spectrum_min_db = result.get("stSpectrumMinDb").cloned();
+            take.st_spectrum_max_db = result.get("stSpectrumMaxDb").cloned();
+            changed = true;
+        }
+    }
+
+    if changed {
+        save_takes(&song_id, &takes)?;
+    }
+    Ok(takes)
 }
 
 #[tauri::command]
@@ -615,6 +745,12 @@ pub async fn import_youtube(
                     "spectroB64":   data.get("spectroB64").cloned().unwrap_or(serde_json::Value::String(String::new())),
                     "spectroFrames":data.get("spectroFrames").cloned().unwrap_or(serde_json::Value::Number(0.into())),
                     "spectroRows":  data.get("spectroRows").cloned().unwrap_or(serde_json::Value::Number(40.into())),
+                    "stSpectrumTimes": data.get("stSpectrumTimes").cloned().unwrap_or(serde_json::Value::Array(vec![])),
+                    "stSpectrumB64":   data.get("stSpectrumB64").cloned().unwrap_or(serde_json::Value::String(String::new())),
+                    "stSpectrumFrames":data.get("stSpectrumFrames").cloned().unwrap_or(serde_json::Value::Number(0.into())),
+                    "stSpectrumBins":  data.get("stSpectrumBins").cloned().unwrap_or(serde_json::Value::Number(0.into())),
+                    "stSpectrumMinDb": data.get("stSpectrumMinDb").cloned().unwrap_or(serde_json::Value::Null),
+                    "stSpectrumMaxDb": data.get("stSpectrumMaxDb").cloned().unwrap_or(serde_json::Value::Null),
                 });
                 let analysis_path = output_dir.join("analysis.json");
                 if let Ok(json) = serde_json::to_string_pretty(&analysis) {

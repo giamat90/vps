@@ -346,6 +346,78 @@ def compute_spectrogram(audio: np.ndarray, sr: int) -> dict:
     }
 
 
+def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
+    """
+    Log-Hz spectral envelope over time, for the Short-Term Spectrum comparison
+    panel (song vocals vs. take, overlaid at the current playback frame).
+
+    N_BINS log-spaced bins from F_MIN to F_MAX (matches SpectrogramPanel.tsx's
+    live-mic axis, so a precomputed frame and a live frame line up visually).
+    Values 0-255 = normalised dB energy over MIN_DB..MAX_DB — a full -100..0
+    dBFS span (NOT the live spectrogram panels' tighter -85..-20 display
+    range, nor compute_spectrogram's -80..0-relative-to-peak scale), wide
+    enough to show a vocal's full dynamic range without clipping the quiet
+    end. MIN_DB/MAX_DB are returned alongside the data so the frontend
+    decodes with the exact range this was encoded at, and so a range change
+    here naturally invalidates any already-cached blobs (the frontend backfill
+    keys off their presence).
+    Stored as base64-encoded uint8: n_frames x N_BINS bytes.
+    """
+    F_MIN, F_MAX = 30.0, 20000.0
+    MIN_DB, MAX_DB = -100.0, 0.0
+    N_BINS = 128
+
+    fft_size = 4096
+    hop_length = 2048  # coarser than compute_spectrogram — this is a snapshot line, not a waterfall
+    window = chebwin(fft_size, at=100)
+
+    stft = np.abs(librosa.stft(
+        audio,
+        n_fft=fft_size,
+        hop_length=hop_length,
+        window=window,
+        center=True,
+    ))  # (fft_size//2+1, n_frames)
+
+    # librosa's STFT magnitude is unnormalized (scales with the window's
+    # coherent gain, ~fft_size/2), so a raw amplitude-1.0 tone would read as
+    # hundreds of dB. Normalize by the window's coherent gain so a full-scale
+    # tone lands near 0 dBFS — matching the dBFS scale MIN_DB/MAX_DB assume
+    # (the same scale Web Audio's getFloatFrequencyData reports in the live
+    # panels).
+    stft = stft / (window.sum() / 2.0)
+
+    freqs = librosa.fft_frequencies(sr=sr, n_fft=fft_size)
+    n_frames = stft.shape[1]
+    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+
+    f_max = min(F_MAX, sr / 2.0)
+    log_f_min, log_f_max = np.log(F_MIN), np.log(f_max)
+
+    result = np.zeros((n_frames, N_BINS), dtype=np.float32)
+    for bi in range(N_BINS):
+        t_lo = bi / N_BINS
+        t_hi = (bi + 1) / N_BINS
+        f_lo = np.exp(log_f_min + t_lo * (log_f_max - log_f_min))
+        f_hi = np.exp(log_f_min + t_hi * (log_f_max - log_f_min))
+        mask = (freqs >= f_lo) & (freqs < f_hi)
+        if mask.any():
+            # max-in-range — matches the live panel's frequency bin mapping
+            result[:, bi] = stft[mask, :].max(axis=0)
+
+    result_db = librosa.amplitude_to_db(result, ref=1.0)
+    result_u8 = np.clip((result_db - MIN_DB) / (MAX_DB - MIN_DB) * 255.0, 0, 255).astype(np.uint8)
+
+    return {
+        "stSpectrumTimes": times.tolist(),
+        "stSpectrumB64": base64.b64encode(result_u8.tobytes()).decode("ascii"),
+        "stSpectrumFrames": n_frames,
+        "stSpectrumBins": N_BINS,
+        "stSpectrumMinDb": MIN_DB,
+        "stSpectrumMaxDb": MAX_DB,
+    }
+
+
 def process(input_path: str, output_dir: str, on_progress=None, high_quality: bool = False) -> dict:
     """Full processing pipeline for an uploaded song.
 
@@ -474,6 +546,21 @@ def process(input_path: str, output_dir: str, on_progress=None, high_quality: bo
     on_progress(0.90, "dynamics")
 
     # ===================================================================
+    # Stage 4b: Short-Term Spectrum (0.90 – 0.92)
+    # ===================================================================
+    on_progress(0.90, "short-term-spectrum")
+    _log("Computing short-term spectrum...")
+
+    st_spectrum_result = {"stSpectrumTimes": [], "stSpectrumB64": "", "stSpectrumFrames": 0, "stSpectrumBins": 0}
+    try:
+        st_spectrum_result = compute_short_term_spectrum(vocals_lr, sr_lr)
+        _log(f"Short-term spectrum complete: {st_spectrum_result['stSpectrumFrames']} frames")
+    except Exception as e:
+        _log(f"Short-term spectrum error: {e}\n{traceback.format_exc()}")
+
+    on_progress(0.92, "short-term-spectrum")
+
+    # ===================================================================
     # Stage 5: BPM detection (0.90 – 0.95)
     # ===================================================================
     on_progress(0.90, "bpm-detection")
@@ -513,7 +600,19 @@ def process(input_path: str, output_dir: str, on_progress=None, high_quality: bo
         "detectedBpm": detected_bpm,
         "detectedKey": detected_key,
         **spectro_result,
+        **st_spectrum_result,
     }
+
+
+def compute_st_spectrum_from_file(audio_path: str, offset_s: float = 0.0) -> dict:
+    """
+    Backfill helper: compute the Short-Term Spectrum dataset for an audio
+    file already on disk (song vocals.wav or a take's recording), without
+    re-running the full process/analyze pipeline. Used to lazily migrate
+    library entries that predate this feature.
+    """
+    audio, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True, offset=offset_s)
+    return compute_short_term_spectrum(audio, sr)
 
 
 def pitch_shift_song(song_dir: str, cache_dir: str, n_steps: float, on_progress=None):
