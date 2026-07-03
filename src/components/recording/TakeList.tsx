@@ -53,8 +53,12 @@ function TakeList() {
   };
 
   useEffect(() => {
+    // song loads asynchronously (Waveform's loadSong awaits eng.load()), so
+    // fetch again once it actually becomes available — otherwise this can
+    // fire while song is still null right after remount and never retry.
+    if (!song) return;
     fetchTakes();
-  }, []);
+  }, [song?.id]);
 
   if (takes.length === 0) {
     return (
