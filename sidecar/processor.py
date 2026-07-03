@@ -9,15 +9,49 @@ import sys
 import gc
 import time
 import traceback
+from typing import TypedDict
 import numpy as np
 import soundfile as sf
 import librosa
-from scipy.signal import butter, sosfilt, resample_poly
+from scipy.signal import butter, sosfilt, resample_poly, correlate
 from scipy.signal.windows import chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
 
 SAMPLE_RATE = 44100
 CONFIDENCE_THRESHOLD = 0.5
+
+# SRH candidate selection: among local maxima on the SRH score curve within
+# this fraction of the top score, prefer the lowest-frequency one. Fixes
+# formant-driven lock-on to a harmonic instead of a weaker true fundamental.
+SRH_LOW_FREQ_MARGIN = 0.90
+
+# MPM (McLeod & Wyvill 2005) key-maximum cutoff — matches Tartini's default.
+MPM_CUTOFF_K = 0.93
+
+# SRH harmonic-term weighting scheme: "none" = original equal-weight SRH
+# (w(n)=1 for all n=1..5). "1/n" = decaying weight on both the harmonic and
+# inter-harmonic terms, favoring the fundamental's own (n=1) term — tests
+# whether a candidate at n*F0 (whose apparent harmonics are really the true
+# fundamental's higher harmonics) can be stopped from out-scoring the true
+# fundamental on belted/formant-heavy passages where upper-harmonic energy
+# dominates. Kept as a toggle so unweighted behavior stays directly comparable.
+SRH_HARMONIC_WEIGHTING = "none"
+
+
+def _srh_weight_vector(n_harmonics: int, scheme: str) -> np.ndarray:
+    """Per-harmonic weight w(n) for n=1..n_harmonics. See SRH_HARMONIC_WEIGHTING."""
+    if scheme == "none":
+        return np.ones(n_harmonics)
+    if scheme == "1/n":
+        return 1.0 / np.arange(1, n_harmonics + 1)
+    raise ValueError(f"Unknown SRH harmonic weighting scheme: {scheme!r}")
+
+
+class PitchData(TypedDict):
+    times: list
+    f0: list
+    voiced: list
+    confidence: list
 
 # Krumhansl-Kessler key profiles
 MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
@@ -105,19 +139,99 @@ def detect_pitch(audio: np.ndarray, sr: int) -> dict:
     }
 
 
-def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
+def _correct_srh_subharmonic(
+    spectrum: np.ndarray,
+    bin_width: float,
+    max_bin: int,
+    f_best: float,
+    amplitude_threshold: float,
+    fmin: float,
+    debug: bool = False,
+    frame_time: float = 0.0,
+) -> tuple:
+    """
+    Subharmonic-multiple correction for SRH's winning candidate (post low-freq-
+    margin). Targets the failure mode where the winner is really n*F0: every
+    harmonic of n*F0 coincides with a harmonic of the true F0 (k*f_best) —
+    "shared" evidence that would be present either way and so proves nothing.
+    A magnitude-fraction test against f_best's own score can't discriminate on
+    that shared evidence (this replaced an earlier version that tried exactly
+    that and fired constantly on already-correct fundamentals).
+
+    Instead this checks only the DISTINGUISHING harmonics of the f_best/n
+    candidate: multiples m*(f_best/n) for m in 1..5 (matching SRH's own
+    n_harmonics=5 range) where m is NOT a multiple of n — frequencies that
+    would only carry energy if f_best/n were genuinely the fundamental.
+    Sampled from the same normalized magnitude spectrum the SRH score itself
+    sums over, at the same nearest-FFT-bin resolution the harmonic/inter-
+    harmonic sums use (no separate computation, no semitone window).
+
+    A correction is accepted only if at least 2 of the distinguishing
+    multiples, and at least half of those checked, clear the pipeline's
+    existing -50 dBFS noise floor (amplitude_threshold) — an absolute
+    noise-floor test, not a relative-magnitude guess.
+
+    Checks n = 2, 3, 4 independently and prefers the lowest qualifying
+    frequency. Returns (f0_hz, corrected); f0_hz is f_best unchanged if no
+    candidate n qualifies.
+    """
+    def bin_mag(freq: float) -> float:
+        idx = int(np.clip(round(freq / bin_width), 0, max_bin))
+        return float(spectrum[idx])
+
+    qualifying = []
+    for n in (2, 3, 4):
+        f_sub = f_best / n
+        if f_sub < fmin:
+            continue
+        distinguishing_m = [m for m in range(1, 6) if m % n != 0]
+        hits = sum(1 for m in distinguishing_m if bin_mag(m * f_sub) > amplitude_threshold)
+        total = len(distinguishing_m)
+        if hits >= 2 and (hits / total) >= 0.5:
+            qualifying.append((f_sub, n, hits, total))
+
+    if not qualifying:
+        return f_best, False
+
+    f_sub, n, hits, total = min(qualifying, key=lambda item: item[0])
+
+    if debug:
+        _log(
+            f"[SRH subharmonic correction] t={frame_time:.3f}s "
+            f"f_best={f_best:.2f}Hz -> corrected f0={f_sub:.2f}Hz "
+            f"(n={n}, {hits}/{total} distinguishing harmonics above noise floor)"
+        )
+
+    return f_sub, True
+
+
+def detect_pitch_srh(
+    audio: np.ndarray, sr: int, debug: bool = False, weighting: str = SRH_HARMONIC_WEIGHTING
+) -> dict:
     """
     Summation of Residual Harmonics (SRH) pitch detection.
 
     For each candidate F0, SRH sums spectral energy at harmonics
     and subtracts energy at inter-harmonic frequencies:
 
-        SRH(f) = sum_n [ X(n*f) - X((n+0.5)*f) ]  for n = 1..N
+        SRH(f) = sum_n [ w(n) * X(n*f) - w(n) * X((n+0.5)*f) ]  for n = 1..N
 
-    The true F0 maximizes this score. More stable than HPS because:
+    w(n) is 1 for all n (original, unweighted SRH) unless weighting="1/n" is
+    passed — see SRH_HARMONIC_WEIGHTING. The true F0 maximizes this score.
+    More stable than HPS because:
     - Addition is robust to weak/missing harmonics (HPS multiplication is not)
     - Inter-harmonic subtraction actively suppresses non-fundamental candidates
     - Sub-bin precision via parabolic interpolation on the SRH score curve
+
+    Candidate selection: among local maxima of the SRH score curve within
+    SRH_LOW_FREQ_MARGIN of the top score, the LOWEST-frequency one is chosen
+    (not just the global argmax). Strong vocal formants can make a harmonic's
+    SRH peak edge out a weaker true-fundamental peak; when the two are close
+    competitors this recovers the lower (true) fundamental instead. When there
+    is only one dominant maximum, behavior is unchanged from a plain argmax.
+
+    debug: if True, logs frames where the low-frequency pick differs from the
+    raw global-max pick (time, chosen/rejected f0 and their scores).
     """
 
     # Resample to 22050 Hz for consistent bin resolution
@@ -170,6 +284,8 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     harmonic_bins = np.clip(harmonic_bins, 0, max_bin)
     inter_bins = np.clip(inter_bins, 0, max_bin)
 
+    harmonic_weights = _srh_weight_vector(n_harmonics, weighting)
+
     window = chebwin(frame_length, at=100)
     f0 = np.zeros(n_frames)
     confidence = np.zeros(n_frames)
@@ -186,20 +302,54 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         spectrum = spectrum / (spectrum.max() + 1e-8)
 
         # Compute SRH score for each candidate
-        # SRH(f) = sum_n [ X(n*f) - X((n+0.5)*f) ]
-        harmonic_energy = spectrum[harmonic_bins].sum(axis=1)
-        inter_energy = spectrum[inter_bins].sum(axis=1)
+        # SRH(f) = sum_n [ w(n)*X(n*f) - w(n)*X((n+0.5)*f) ]
+        harmonic_energy = (spectrum[harmonic_bins] * harmonic_weights).sum(axis=1)
+        inter_energy = (spectrum[inter_bins] * harmonic_weights).sum(axis=1)
         srh_scores = harmonic_energy - inter_energy
 
-        # Find best candidate
+        # Global-max candidate (today's baseline choice)
         best_idx = np.argmax(srh_scores)
         best_score = srh_scores[best_idx]
 
+        # Local maxima of the score curve — interior points plus the global
+        # max itself (guards against the global max sitting on a plateau/edge
+        # that the strict interior-maxima test would otherwise miss).
+        score_diffs = np.diff(srh_scores)
+        local_max_mask = np.zeros(len(srh_scores), dtype=bool)
+        local_max_mask[1:-1] = (score_diffs[:-1] > 0) & (score_diffs[1:] < 0)
+        local_max_mask[best_idx] = True
+
+        candidate_idx = np.where(local_max_mask)[0]
+        threshold = best_score * SRH_LOW_FREQ_MARGIN
+        qualifying_idx = candidate_idx[srh_scores[candidate_idx] >= threshold]
+
+        # Among competitors within the margin, prefer the lowest frequency.
+        # (qualifying_idx always contains best_idx, so this never fails.)
+        chosen_idx = qualifying_idx[np.argmin(f0_candidates[qualifying_idx])]
+
+        frame_time = i * hop_length / sr
+
+        if debug and chosen_idx != best_idx:
+            _log(
+                f"[SRH low-freq bias] t={frame_time:.3f}s "
+                f"chosen f0={f0_candidates[chosen_idx]:.2f}Hz (score={srh_scores[chosen_idx]:.4f}) "
+                f"rejected higher f0={f0_candidates[best_idx]:.2f}Hz (score={best_score:.4f})"
+            )
+
+        # NOTE: per-frame subharmonic correction (_correct_srh_subharmonic) was
+        # tried here and reverted — 3 rounds of threshold tuning each traded
+        # one false-positive pattern for another rather than eliminating it
+        # (see git history / conversation log). Superseded by the Viterbi
+        # track-level DP (_viterbi_track_pitch), which uses temporal
+        # continuity instead of single-frame heuristics. The function is kept
+        # in this file, unused, in case a future per-frame refinement proves
+        # more selective.
+
         # Parabolic interpolation on SRH score curve for sub-Hz precision
-        if 0 < best_idx < len(srh_scores) - 1:
-            alpha = srh_scores[best_idx - 1]
-            beta  = srh_scores[best_idx]
-            gamma = srh_scores[best_idx + 1]
+        if 0 < chosen_idx < len(srh_scores) - 1:
+            alpha = srh_scores[chosen_idx - 1]
+            beta  = srh_scores[chosen_idx]
+            gamma = srh_scores[chosen_idx + 1]
             denom = (alpha - 2 * beta + gamma)
             if denom != 0:
                 p = 0.5 * (alpha - gamma) / denom
@@ -210,8 +360,9 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
             p = 0.0
 
         # Final F0: candidate frequency + sub-bin offset (0.5 Hz steps)
-        f0[i] = f0_candidates[best_idx] + p * 0.5
-        confidence[i] = best_score
+        f0[i] = f0_candidates[chosen_idx] + p * 0.5
+
+        confidence[i] = srh_scores[chosen_idx]
 
     # Normalize confidence to 0-1
     if confidence.max() > 0:
@@ -247,6 +398,426 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         "f0": f0_clean.tolist(),
         "voiced": voiced.tolist(),
         "confidence": confidence.tolist()
+    }
+
+
+# ---------------------------------------------------------------------------
+# Viterbi track-level pitch correction (evaluation-only, not wired into
+# process_song()). Supersedes the per-frame _correct_srh_subharmonic attempt
+# above, which after 3 rounds of threshold tuning kept trading one
+# false-positive harmonic multiple for another rather than eliminating it.
+# Idea: expose SRH's top few per-frame candidates instead of collapsing to one
+# winner immediately, then let a Viterbi DP pick the sequence that is both
+# individually strong AND temporally smooth, with an extra penalty for jumps
+# that look like the harmonic-multiple confusion SRH is known to make.
+# ---------------------------------------------------------------------------
+
+VITERBI_TOP_K = 5  # candidates kept per frame, matches SRH's own n_harmonics range
+
+# The 0.5 Hz candidate grid means a single real spectral peak often produces
+# several adjacent "local maxima" a few Hz apart (grid jitter, not distinct
+# pitch hypotheses). Without deduping these, top-K can burn most of its slots
+# on near-copies of the same false peak, crowding out the true fundamental
+# entirely (confirmed on Them Bones @ 0:13.01: 4 of 5 slots were duplicates of
+# one ~822Hz peak). Candidates within this many cents of an already-kept,
+# higher-scoring candidate are treated as the same peak and dropped.
+VITERBI_DEDUP_TOLERANCE_CENTS = 50.0
+
+# Transition cost: smooth pitch movement should be near-free; a jump that
+# looks like SRH's own harmonic-confusion pattern (2x/3x/4x, in cents) gets
+# an extra penalty on top of the distance cost, so the DP actively avoids
+# hopping onto a wrong-octave/wrong-harmonic candidate even if that
+# candidate's own per-frame score is locally stronger.
+VITERBI_BASE_COST_PER_CENT = 0.002
+VITERBI_HARMONIC_JUMP_PENALTY = 2.0
+VITERBI_HARMONIC_TOLERANCE_CENTS = 40.0
+VITERBI_HARMONIC_BOUNDARIES_CENTS = (1200.0, 1200.0 * np.log2(3), 2400.0)  # 2x, 3x, 4x
+
+# Silence as a distinct DP state, reusing detect_pitch_srh's own voicing_threshold
+# (0.25) to decide, per frame, whether silence should be cheap (no candidate
+# clears the threshold — this frame doesn't look voiced) or merely a
+# discouraged fallback (a real candidate clears the threshold, so silence has
+# to be justified by neighbouring frames via the transition cost instead).
+VITERBI_SILENCE_TRANSITION_COST = 0.5
+VITERBI_SILENCE_PENALTY_WHEN_VOICED_AVAILABLE = 0.05
+VITERBI_SILENCE_PREFERRED_COST = -1.0  # more attractive than any sub-threshold candidate
+
+
+def _dedupe_local_maxima(
+    idx: np.ndarray, scores: np.ndarray, freqs: np.ndarray, tolerance_cents: float = VITERBI_DEDUP_TOLERANCE_CENTS
+) -> np.ndarray:
+    """
+    Greedy non-max suppression over local maxima, in cents space: visiting
+    candidates highest-score-first, drop any candidate within tolerance_cents
+    of an already-kept (necessarily higher- or equal-scoring) candidate.
+    Returns the surviving indices, still ordered by descending score.
+    """
+    order = idx[np.argsort(-scores[idx])]
+    kept = []
+    kept_freqs = []
+    for i in order:
+        f = freqs[i]
+        if all(abs(1200.0 * np.log2(f / kf)) > tolerance_cents for kf in kept_freqs):
+            kept.append(i)
+            kept_freqs.append(f)
+    return np.array(kept, dtype=int)
+
+
+def _srh_frame_candidates(
+    audio: np.ndarray, sr: int, top_k: int = VITERBI_TOP_K, weighting: str = SRH_HARMONIC_WEIGHTING
+) -> dict:
+    """
+    Per-frame top-K SRH candidates (frequency, raw score), for the Viterbi DP.
+    Same frame_length/hop_length/fft_size/candidate-grid/local-maxima logic as
+    detect_pitch_srh (duplicated rather than shared, to keep this evaluation
+    path fully isolated from the production function while it's unvalidated) —
+    but instead of applying SRH_LOW_FREQ_MARGIN to collapse to one winner, it
+    keeps the top-K local maxima by raw score so the DP can consider
+    candidates the margin rule alone would have discarded (e.g. the true
+    fundamental sitting well below the margin threshold).
+
+    weighting: see SRH_HARMONIC_WEIGHTING — applies identically to the score
+    curve here; doesn't touch local-maxima finding, dedup, or the DP itself.
+
+    Returns {"times": [...], "candidates": [[(f0, score), ...], ...]} — one
+    list per frame, empty for frames below the amplitude_threshold silence gate.
+    """
+    target_sr = 22050
+    if sr != target_sr:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    frame_length = 2756
+    fft_size = 4096
+    hop_length = 512
+    n_harmonics = 5
+    fmin = 65.0
+    fmax = 1400.0
+    amplitude_threshold = 10 ** (-50 / 20)
+
+    audio = np.pad(audio, frame_length // 2, mode='reflect')
+    frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=hop_length)
+    n_frames = frames.shape[1]
+
+    freqs = np.fft.rfftfreq(fft_size, d=1.0 / sr)
+    bin_width = sr / fft_size
+    f0_candidates = np.arange(fmin, fmax, 0.5)
+
+    harmonic_bins = np.array([
+        np.round(f0_candidates * n / bin_width).astype(int)
+        for n in range(1, n_harmonics + 1)
+    ]).T
+    inter_bins = np.array([
+        np.round(f0_candidates * (n + 0.5) / bin_width).astype(int)
+        for n in range(1, n_harmonics + 1)
+    ]).T
+    max_bin = len(freqs) - 1
+    harmonic_bins = np.clip(harmonic_bins, 0, max_bin)
+    inter_bins = np.clip(inter_bins, 0, max_bin)
+
+    harmonic_weights = _srh_weight_vector(n_harmonics, weighting)
+
+    window = chebwin(frame_length, at=100)
+    candidates_per_frame = []
+
+    for i in range(n_frames):
+        raw_frame = frames[:, i]
+        if np.sqrt(np.mean(raw_frame ** 2)) < amplitude_threshold:
+            candidates_per_frame.append([])
+            continue
+
+        frame = raw_frame * window
+        spectrum = np.abs(np.fft.rfft(frame, n=fft_size))
+        spectrum = spectrum / (spectrum.max() + 1e-8)
+
+        harmonic_energy = (spectrum[harmonic_bins] * harmonic_weights).sum(axis=1)
+        inter_energy = (spectrum[inter_bins] * harmonic_weights).sum(axis=1)
+        srh_scores = harmonic_energy - inter_energy
+
+        best_idx = np.argmax(srh_scores)
+        score_diffs = np.diff(srh_scores)
+        local_max_mask = np.zeros(len(srh_scores), dtype=bool)
+        local_max_mask[1:-1] = (score_diffs[:-1] > 0) & (score_diffs[1:] < 0)
+        local_max_mask[best_idx] = True
+
+        local_idx = np.where(local_max_mask)[0]
+        deduped = _dedupe_local_maxima(local_idx, srh_scores, f0_candidates)
+        ranked = deduped[:top_k]
+        candidates_per_frame.append(
+            [(float(f0_candidates[j]), float(srh_scores[j])) for j in ranked]
+        )
+
+    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+    return {"times": times.tolist(), "candidates": candidates_per_frame}
+
+
+def _viterbi_transition_cost(prev: dict, cur: dict) -> float:
+    """
+    Cost of moving from one frame's chosen state to the next. Silence <-> pitch
+    transitions cost a fixed onset/offset penalty; silence -> silence is free.
+    Pitch -> pitch costs a small amount per cent of movement (smooth pitch is
+    cheap), plus VITERBI_HARMONIC_JUMP_PENALTY when the jump size lands within
+    VITERBI_HARMONIC_TOLERANCE_CENTS of an exact 2x/3x/4x ratio (or its
+    downward equivalent — folded together since we compare abs(cents_diff)).
+    """
+    if prev["silence"] and cur["silence"]:
+        return 0.0
+    if prev["silence"] != cur["silence"]:
+        return VITERBI_SILENCE_TRANSITION_COST
+
+    cents_diff = abs(1200.0 * np.log2(cur["freq"] / prev["freq"]))
+    cost = VITERBI_BASE_COST_PER_CENT * cents_diff
+    for boundary in VITERBI_HARMONIC_BOUNDARIES_CENTS:
+        if abs(cents_diff - boundary) <= VITERBI_HARMONIC_TOLERANCE_CENTS:
+            cost += VITERBI_HARMONIC_JUMP_PENALTY
+            break
+    return cost
+
+
+def _viterbi_track_pitch(times: list, candidates_per_frame: list, debug: bool = False) -> dict:
+    """
+    Standard Viterbi DP over the per-frame SRH candidate lists from
+    _srh_frame_candidates: forward pass accumulating min cost per state with
+    backpointers, then backtrack from the lowest-cost final state.
+
+    Each frame's states = its candidates (emission cost = -normalized score,
+    normalized by the track's global max score, mirroring detect_pitch_srh's
+    own confidence normalization) plus one silence state (see module-level
+    VITERBI_SILENCE_* constants for its cost, gated by the 0.25 voicing
+    threshold — same threshold detect_pitch_srh uses).
+
+    Returns {"times", "f0", "voiced", "confidence"} — same shape as
+    detect_pitch_srh's output, so it's a drop-in comparison target.
+    """
+    n_frames = len(candidates_per_frame)
+    all_scores = [s for cands in candidates_per_frame for _, s in cands]
+    global_max = max(all_scores) if all_scores else 1.0
+    if global_max <= 0:
+        global_max = 1.0
+    voicing_threshold = 0.25  # matches detect_pitch_srh's voicing_threshold
+
+    states = []
+    for cands in candidates_per_frame:
+        frame_states = [
+            {"freq": f, "raw_score": s, "cost": -(s / global_max), "silence": False}
+            for f, s in cands
+        ]
+        any_voiced = any((s / global_max) > voicing_threshold for _, s in cands)
+        silence_cost = VITERBI_SILENCE_PREFERRED_COST if not any_voiced else VITERBI_SILENCE_PENALTY_WHEN_VOICED_AVAILABLE
+        frame_states.append({"freq": None, "raw_score": 0.0, "cost": silence_cost, "silence": True})
+        states.append(frame_states)
+
+    dp = [None] * n_frames
+    backptr = [None] * n_frames
+    dp[0] = [st["cost"] for st in states[0]]
+    backptr[0] = [-1] * len(states[0])
+
+    for t in range(1, n_frames):
+        prev_states, cur_states = states[t - 1], states[t]
+        dp[t] = [np.inf] * len(cur_states)
+        backptr[t] = [0] * len(cur_states)
+        for j, cur in enumerate(cur_states):
+            best_cost, best_k = np.inf, 0
+            for k, prev in enumerate(prev_states):
+                cost = dp[t - 1][k] + _viterbi_transition_cost(prev, cur) + cur["cost"]
+                if cost < best_cost:
+                    best_cost, best_k = cost, k
+            dp[t][j] = best_cost
+            backptr[t][j] = best_k
+
+    path = [0] * n_frames
+    path[-1] = int(np.argmin(dp[-1]))
+    for t in range(n_frames - 1, 0, -1):
+        path[t - 1] = backptr[t][path[t]]
+
+    f0_out = np.zeros(n_frames)
+    confidence_out = np.zeros(n_frames)
+    voiced_out = np.zeros(n_frames, dtype=bool)
+
+    for t in range(n_frames):
+        st = states[t][path[t]]
+        if st["silence"]:
+            continue
+        f0_out[t] = st["freq"]
+        confidence_out[t] = st["raw_score"] / global_max
+        voiced_out[t] = True
+
+        if debug and candidates_per_frame[t]:
+            greedy_freq, greedy_score = max(candidates_per_frame[t], key=lambda pair: pair[1])
+            if abs(greedy_freq - st["freq"]) > 1e-6:
+                _log(
+                    f"[Viterbi correction] t={times[t]:.3f}s "
+                    f"greedy f0={greedy_freq:.2f}Hz (score={greedy_score:.4f}) -> "
+                    f"viterbi f0={st['freq']:.2f}Hz (score={st['raw_score']:.4f})"
+                )
+
+    return {
+        "times": times,
+        "f0": f0_out.tolist(),
+        "voiced": voiced_out.tolist(),
+        "confidence": confidence_out.tolist(),
+    }
+
+
+def detect_pitch_srh_viterbi(
+    audio: np.ndarray, sr: int, debug: bool = False, weighting: str = SRH_HARMONIC_WEIGHTING
+) -> dict:
+    """
+    SRH + Viterbi track-level path selection, for offline A/B comparison
+    against plain detect_pitch_srh. Not wired into process_song(). Runs
+    _srh_frame_candidates then _viterbi_track_pitch, then applies the SAME
+    median-filter + Gaussian smoothing detect_pitch_srh uses (the DP and the
+    smoothing solve different problems — the DP is about disambiguating
+    which candidate is right per frame, smoothing is about jitter within an
+    already-correct contour — so both stay in the pipeline).
+
+    weighting: see SRH_HARMONIC_WEIGHTING — passed through to the underlying
+    score computation only; the DP/dedup/margin logic are untouched by it.
+    """
+    frame_data = _srh_frame_candidates(audio, sr, weighting=weighting)
+    result = _viterbi_track_pitch(frame_data["times"], frame_data["candidates"], debug=debug)
+
+    f0 = np.array(result["f0"])
+    voiced = np.array(result["voiced"])
+    f0_smooth = f0.copy()
+    voiced_indices = np.where(voiced)[0]
+
+    if len(voiced_indices) > 3:
+        f0_smooth[voiced_indices] = median_filter(f0[voiced_indices], size=6)
+        f0_smooth[voiced_indices] = gaussian_filter1d(f0_smooth[voiced_indices], sigma=1.5)
+
+    return {
+        "times": result["times"],
+        "f0": f0_smooth.tolist(),
+        "voiced": result["voiced"],
+        "confidence": result["confidence"],
+    }
+
+
+def _autocorrelate_pitch(buf: np.ndarray, sr: int) -> tuple:
+    """
+    Port of PitchDetector._autocorrelate in src/audio/pitchDetector.ts (the
+    live-mic detector), with one correctness fix: peak selection after the
+    first dip now follows the McLeod Pitch Method's actual key-maximum rule
+    (McLeod & Wyvill 2005) instead of the original's plain "take the single
+    highest point from d to the end" — the latter is prone to locking onto a
+    later, larger-lag peak (i.e. a lower false octave) when a strong formant
+    or harmonic gives it a marginally higher score than the true fundamental's
+    peak. Same RMS gate, silent-edge trim, VoceVista-matching clarity gate
+    (0.25), and parabolic sub-sample interpolation as before.
+    Returns (freq_hz, clarity); freq is -1 when the frame is judged unvoiced.
+    """
+    SIZE = len(buf)
+
+    rms = np.sqrt(np.mean(buf ** 2))
+    if rms < 0.01:
+        return -1.0, 0.0
+
+    r1, r2 = 0, SIZE - 1
+    half = SIZE // 2
+    for i in range(half):
+        if abs(buf[i]) < 0.2:
+            r1 = i
+            break
+    for i in range(1, half):
+        if abs(buf[SIZE - i]) < 0.2:
+            r2 = SIZE - i
+            break
+    trimmed = buf[r1:r2]
+    length = len(trimmed)
+    if length < 2:
+        return -1.0, 0.0
+
+    # c[i] = sum_j trimmed[j]*trimmed[j+i] for i = 0..length-1 — same
+    # definition as the JS double loop, computed via FFT correlation.
+    c_full = correlate(trimmed, trimmed, mode='full', method='fft')
+    c = c_full[length - 1:]
+
+    d = 0
+    while d < len(c) - 1 and c[d] > c[d + 1]:
+        d += 1
+
+    # MPM key maxima: every local maximum of c from d to the end of the lag
+    # range (the "key maxima" McLeod's paper defines between consecutive
+    # positively-sloped zero crossings of the NSDF). We approximate that
+    # directly as local maxima of c, and force in c's own max within this
+    # range so it's always a candidate even if it sits on a plateau/edge.
+    seg = c[d:]
+    seg_diffs = np.diff(seg)
+    key_mask = np.zeros(len(seg), dtype=bool)
+    key_mask[1:-1] = (seg_diffs[:-1] > 0) & (seg_diffs[1:] < 0)
+    key_mask[int(np.argmax(seg))] = True
+    key_idx = np.where(key_mask)[0]  # ascending -> ascending lag
+
+    if len(key_idx) == 0 or c[0] <= 0:
+        return -1.0, 0.0
+
+    nmax = seg[key_idx].max()
+    threshold = nmax * MPM_CUTOFF_K
+    qualifying = key_idx[seg[key_idx] >= threshold]
+    # First (lowest-lag) key maximum clearing the cutoff, per MPM — not nmax's
+    # own position, which is what a plain global-max search would pick.
+    max_pos = d + qualifying[0]
+    max_val = c[max_pos]
+
+    clarity = max_val / c[0]
+    if clarity < 0.25:
+        return -1.0, clarity
+
+    x1 = c[max_pos - 1] if max_pos - 1 >= 0 else 0.0
+    x2 = c[max_pos]
+    x3 = c[max_pos + 1] if max_pos + 1 < len(c) else 0.0
+    a = (x1 + x3 - 2 * x2) / 2
+    b = (x3 - x1) / 2
+    shift = -b / (2 * a) if a != 0 else 0.0
+
+    freq = sr / (max_pos + shift)
+    if 65 <= freq <= 1400:
+        return freq, clarity
+    return -1.0, clarity
+
+
+def detect_pitch_autocorr(y: np.ndarray, sr: int) -> PitchData:
+    """
+    Direct port of the live-mic autocorrelation detector (src/audio/pitchDetector.ts)
+    for offline A/B comparison against detect_pitch_srh. Not an "improved" version —
+    no low-pass filtering or other deviation from the frontend implementation.
+
+    Uses the same frame_length/hop_length/target sample rate as detect_pitch_srh so
+    the two outputs are frame-aligned and directly diffable index-for-index.
+    Debug/evaluation only — not wired into process().
+    """
+    target_sr = 22050
+    if sr != target_sr:
+        y = librosa.resample(y, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    frame_length = 2756  # matches detect_pitch_srh, for frame-aligned comparison
+    hop_length = 512     # matches detect_pitch_srh's explicit hop_length
+    _log(f"detect_pitch_autocorr: frame_length={frame_length}, hop_length={hop_length}, sr={sr}")
+
+    y_padded = np.pad(y, frame_length // 2, mode='reflect')
+    frames = librosa.util.frame(y_padded, frame_length=frame_length, hop_length=hop_length)
+    n_frames = frames.shape[1]
+
+    f0 = np.zeros(n_frames)
+    clarity = np.zeros(n_frames)
+    voiced = np.zeros(n_frames, dtype=bool)
+
+    for i in range(n_frames):
+        freq, c = _autocorrelate_pitch(frames[:, i], sr)
+        clarity[i] = c
+        if freq > 0:
+            f0[i] = freq
+            voiced[i] = True
+
+    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+
+    return {
+        "times": times.tolist(),
+        "f0": f0.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": clarity.tolist(),
     }
 
 
