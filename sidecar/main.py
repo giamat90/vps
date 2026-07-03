@@ -6,9 +6,18 @@ Commands execute synchronously on the main thread to avoid GIL/numpy
 deadlocks that occur with background threads on Windows.
 """
 
+import os
 import sys
 import json
 import traceback
+
+# When frozen by PyInstaller (--onefile), any bundled ffmpeg/ffprobe binary
+# is extracted to sys._MEIPASS on launch. Demucs shells out to bare
+# `ffmpeg`/`ffprobe` on PATH to decode audio, so without this the installed
+# app fails on every file unless the end user happens to have both on PATH.
+if getattr(sys, "frozen", False):
+    bundled_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
+    os.environ["PATH"] = bundled_dir + os.pathsep + os.environ.get("PATH", "")
 
 from processor import process
 from analysis import analyze_recording, convert_take_to_wav

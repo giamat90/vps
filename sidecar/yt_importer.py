@@ -51,10 +51,20 @@ def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = 
                 title = info.get("title", "Unknown")
             last_error = None
             break
-        except yt_dlp.utils.DownloadError as exc:
+        except Exception as exc:
             last_error = exc
-            # Only retry on bot-detection; bail immediately for other errors.
-            if "Sign in to confirm" not in str(exc) and "bot" not in str(exc).lower():
+            # Cookie-extraction attempts are best-effort (e.g. a missing
+            # pywin32 install can raise something other than DownloadError
+            # while decrypting a browser's cookie store) — any failure on
+            # those just moves on to the next browser. For the no-cookie
+            # attempt, only retry on bot-detection; bail immediately
+            # otherwise so real errors (e.g. video unavailable) aren't
+            # masked behind a pointless retry loop.
+            is_cookie_attempt = "cookiesfrombrowser" in extra
+            is_bot_detection = isinstance(exc, yt_dlp.utils.DownloadError) and (
+                "Sign in to confirm" in str(exc) or "bot" in str(exc).lower()
+            )
+            if not is_cookie_attempt and not is_bot_detection:
                 raise
             # Clean up any partial file before next attempt.
             for f in os.listdir(output_dir):

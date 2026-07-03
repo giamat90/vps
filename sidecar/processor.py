@@ -9,6 +9,7 @@ import sys
 import gc
 import time
 import traceback
+from pathlib import Path
 import numpy as np
 import soundfile as sf
 import librosa
@@ -18,6 +19,22 @@ from scipy.ndimage import median_filter, gaussian_filter1d
 
 SAMPLE_RATE = 44100
 CONFIDENCE_THRESHOLD = 0.5
+
+# htdemucs weights are vendored into the frozen sidecar (see fetch_models.py
+# + build.py) so the installed app doesn't need internet access on first
+# use. htdemucs_ft (the high_quality option) is not vendored — it's an
+# extra 4x84MB only needed for that opt-in path, and still falls back to
+# demucs's normal network download.
+def _bundled_model_repo() -> Path | None:
+    if getattr(sys, "frozen", False):
+        base = Path(getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)))
+        candidate = base / "demucs-models"
+    else:
+        # Dev mode: use the same vendor/ dir fetch_models.py writes to, if
+        # it's been run locally — otherwise fall back to demucs's network
+        # download as before.
+        candidate = Path(__file__).parent / "vendor" / "demucs-models"
+    return candidate if candidate.is_dir() else None
 
 # Krumhansl-Kessler key profiles
 MAJOR_PROFILE = np.array([6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88])
@@ -352,7 +369,11 @@ def process(input_path: str, output_dir: str, on_progress=None, high_quality: bo
     from demucs.audio import AudioFile
 
     model_name = "htdemucs_ft" if high_quality else "htdemucs"
-    model = get_model(model_name)
+    repo = _bundled_model_repo()
+    if repo is not None and (repo / f"{model_name}.yaml").exists():
+        model = get_model(model_name, repo=repo)
+    else:
+        model = get_model(model_name)
     model.eval()
     on_progress(0.05, "stem-separation")
 

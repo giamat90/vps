@@ -1,9 +1,14 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch
-torchaudio
+# demucs 4.0.1 (last PyPI release, unmaintained since 2023) calls torch.load()
+# without weights_only=False; torch>=2.6 flipped that default to True, which
+# breaks model loading entirely — every audio file fails, not just some.
+# Pin below the behavior change until upstream demucs is fixed/replaced.
+torch<2.6
+torchaudio<2.6
 demucs
 librosa
 soundfile
 numpy
 scipy
 yt-dlp
+pywin32; sys_platform == "win32"

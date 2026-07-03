@@ -21,6 +21,7 @@ env/
 venv/
 .venv/
 sidecar/.venv/
+sidecar/vendor/
 *.egg-info/
 dist/
 build/

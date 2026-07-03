@@ -54,31 +54,80 @@ jobs:
           python-version: '3.10'
 
       # ── 5. Install Python sidecar dependencies ────────────────────────────
+      # Reads sidecar/requirements.txt as the single source of truth (it
+      # pins torch<2.6 — demucs 4.0.1 calls torch.load() without
+      # weights_only=False, which torch>=2.6 broke by flipping that default,
+      # so an unpinned "latest" torch here breaks model loading entirely).
       - name: Install Python dependencies
         working-directory: sidecar
         run: |
           pip install --upgrade pip
-          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-          pip install demucs librosa soundfile numpy yt-dlp pyinstaller
+          pip install -r requirements.txt pyinstaller
+
+      # ── 5b. Vendor a static ffmpeg (Demucs shells out to `ffmpeg`/`ffprobe`
+      #        on PATH to decode every input format; bundling it makes the
+      #        installed app work without the end user having either on
+      #        their system PATH) ────────────────────────────────────────
+      - name: Cache static ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: sidecar/vendor/ffmpeg
+          key: ffmpeg-x86_64-pc-windows-msvc-v1
+
+      - name: Download static ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
+        working-directory: sidecar
+        shell: pwsh
+        run: |
+          $dest = "vendor/ffmpeg/x86_64-pc-windows-msvc"
+          New-Item -ItemType Directory -Force $dest | Out-Null
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/latest/download/ffmpeg-master-latest-win64-lgpl.zip" -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg-extracted
+          $exe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          Copy-Item $exe.FullName "$dest/ffmpeg.exe"
+          $probe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          Copy-Item $probe.FullName "$dest/ffprobe.exe"
+          $license = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter "LICENSE*" | Select-Object -First 1
+          if ($license) { Copy-Item $license.FullName "$dest/ffmpeg-LICENSE.txt" }
+          Remove-Item ffmpeg.zip, ffmpeg-extracted -Recurse -Force
+
+      # ── 5c. Vendor the default-quality Demucs model weights (htdemucs) so
+      #        the installed app doesn't need internet access on first use —
+      #        same self-contained requirement as ffmpeg above. htdemucs_ft
+      #        (high_quality option) is not bundled and still downloads on
+      #        demand for that opt-in path.
+      - name: Cache Demucs model weights
+        id: cache-demucs-models
+        uses: actions/cache@v4
+        with:
+          path: sidecar/vendor/demucs-models
+          key: demucs-models-v1
+
+      - name: Fetch Demucs model weights
+        if: steps.cache-demucs-models.outputs.cache-hit != 'true'
+        working-directory: sidecar
+        run: python fetch_models.py
+
+      # ── 5d. Stage third-party license notices into the app bundle ────────
+      - name: Stage third-party notices
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force src-tauri/resources/third-party-notices | Out-Null
+          $license = "sidecar/vendor/ffmpeg/x86_64-pc-windows-msvc/ffmpeg-LICENSE.txt"
+          if (Test-Path $license) {
+            Copy-Item $license src-tauri/resources/third-party-notices/ffmpeg-LICENSE.txt
+          }
+          Copy-Item THIRD-PARTY-NOTICES.md src-tauri/resources/third-party-notices/
 
       # ── 6. Freeze the Python sidecar with PyInstaller ────────────────────
+      # Delegates to build.py (single source of truth for PyInstaller args)
+      # instead of duplicating the flag list here — a duplicated flag list
+      # in Song Practice Studio's release.yml (this project's sibling/fork)
+      # is exactly how a missing ffprobe binary slipped through a release.
       - name: Build Python sidecar (PyInstaller)
         working-directory: sidecar
-        shell: bash
-        run: |
-          pyinstaller main.py \
-            --onefile \
-            --name vps-sidecar-x86_64-pc-windows-msvc \
-            --hidden-import=demucs \
-            --hidden-import=demucs.api \
-            --hidden-import=demucs.pretrained \
-            --hidden-import=librosa \
-            --hidden-import=soundfile \
-            --hidden-import=numpy \
-            --collect-data=demucs \
-            --collect-all=yt_dlp \
-            --noconfirm \
-            --clean
+        run: python build.py
 
       # ── 7. Stage sidecar binary ───────────────────────────────────────────
       - name: Stage sidecar binary
@@ -86,6 +135,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force src-tauri/binaries | Out-Null
           Copy-Item sidecar/dist/vps-sidecar-x86_64-pc-windows-msvc.exe src-tauri/binaries/
+
+      # ── 7b. Smoke-test the frozen sidecar end-to-end (catches missing
+      #        native libs / DLLs — e.g. ffmpeg, ffprobe, torch — that a
+      #        plain "does it launch" check would miss) ────────────────────
+      - name: Smoke test sidecar binary
+        shell: pwsh
+        run: python sidecar/smoke_test.py src-tauri/binaries/vps-sidecar-x86_64-pc-windows-msvc.exe
 
       # ── 8. Install Node dependencies ──────────────────────────────────────
       - name: Install frontend dependencies
@@ -174,36 +230,87 @@ jobs:
           python-version: '3.10'
 
       # ── 5. Install Python sidecar dependencies ────────────────────────────
+      # Reads sidecar/requirements.txt as the single source of truth (it
+      # pins torch<2.6 — demucs 4.0.1 calls torch.load() without
+      # weights_only=False, which torch>=2.6 broke by flipping that default,
+      # so an unpinned "latest" torch here breaks model loading entirely).
       - name: Install Python dependencies
         working-directory: sidecar
         run: |
           pip install --upgrade pip
-          pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-          pip install demucs librosa soundfile numpy yt-dlp pyinstaller
+          pip install -r requirements.txt pyinstaller
 
-      # ── 6. Freeze the Python sidecar with PyInstaller ────────────────────
-      - name: Build Python sidecar (PyInstaller)
+      # ── 5b. Vendor a static ffmpeg (Demucs shells out to `ffmpeg`/`ffprobe`
+      #        on PATH to decode every input format; bundling it makes the
+      #        installed app work without the end user having either on
+      #        their system PATH) ────────────────────────────────────────
+      - name: Cache static ffmpeg
+        id: cache-ffmpeg
+        uses: actions/cache@v4
+        with:
+          path: sidecar/vendor/ffmpeg
+          key: ffmpeg-aarch64-apple-darwin-v1
+
+      - name: Download static ffmpeg
+        if: steps.cache-ffmpeg.outputs.cache-hit != 'true'
         working-directory: sidecar
         run: |
-          pyinstaller main.py \
-            --onefile \
-            --name vps-sidecar-aarch64-apple-darwin \
-            --hidden-import=demucs \
-            --hidden-import=demucs.api \
-            --hidden-import=demucs.pretrained \
-            --hidden-import=librosa \
-            --hidden-import=soundfile \
-            --hidden-import=numpy \
-            --collect-data=demucs \
-            --collect-all=yt_dlp \
-            --noconfirm \
-            --clean
+          dest="vendor/ffmpeg/aarch64-apple-darwin"
+          mkdir -p "$dest"
+          curl -L "https://evermeet.cx/ffmpeg/getrelease/zip" -o ffmpeg.zip
+          unzip -o ffmpeg.zip -d ffmpeg-extracted
+          cp ffmpeg-extracted/ffmpeg "$dest/ffmpeg"
+          chmod +x "$dest/ffmpeg"
+          rm -rf ffmpeg.zip ffmpeg-extracted
+          curl -L "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o ffprobe.zip
+          unzip -o ffprobe.zip -d ffprobe-extracted
+          cp ffprobe-extracted/ffprobe "$dest/ffprobe"
+          chmod +x "$dest/ffprobe"
+          rm -rf ffprobe.zip ffprobe-extracted
+
+      # ── 5c. Vendor the default-quality Demucs model weights (htdemucs) so
+      #        the installed app doesn't need internet access on first use —
+      #        same self-contained requirement as ffmpeg above. htdemucs_ft
+      #        (high_quality option) is not bundled and still downloads on
+      #        demand for that opt-in path.
+      - name: Cache Demucs model weights
+        id: cache-demucs-models
+        uses: actions/cache@v4
+        with:
+          path: sidecar/vendor/demucs-models
+          key: demucs-models-v1
+
+      - name: Fetch Demucs model weights
+        if: steps.cache-demucs-models.outputs.cache-hit != 'true'
+        working-directory: sidecar
+        run: python3 fetch_models.py
+
+      # ── 5d. Stage third-party license notices into the app bundle ────────
+      - name: Stage third-party notices
+        run: |
+          mkdir -p src-tauri/resources/third-party-notices
+          cp THIRD-PARTY-NOTICES.md src-tauri/resources/third-party-notices/
+
+      # ── 6. Freeze the Python sidecar with PyInstaller ────────────────────
+      # Delegates to build.py (single source of truth for PyInstaller args)
+      # instead of duplicating the flag list here — a duplicated flag list
+      # in Song Practice Studio's release.yml (this project's sibling/fork)
+      # is exactly how a missing ffprobe binary slipped through a release.
+      - name: Build Python sidecar (PyInstaller)
+        working-directory: sidecar
+        run: python3 build.py
 
       # ── 7. Stage sidecar binary ───────────────────────────────────────────
       - name: Stage sidecar binary
         run: |
           mkdir -p src-tauri/binaries
           cp sidecar/dist/vps-sidecar-aarch64-apple-darwin src-tauri/binaries/
+
+      # ── 7b. Smoke-test the frozen sidecar end-to-end (catches missing
+      #        native libs / DLLs — e.g. ffmpeg, ffprobe, torch — that a
+      #        plain "does it launch" check would miss) ────────────────────
+      - name: Smoke test sidecar binary
+        run: python3 sidecar/smoke_test.py src-tauri/binaries/vps-sidecar-aarch64-apple-darwin
 
       # ── 8. Install Node dependencies ──────────────────────────────────────
       - name: Install frontend dependencies

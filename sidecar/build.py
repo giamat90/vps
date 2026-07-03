@@ -4,6 +4,7 @@ Run: python build.py
 Output: dist/vps-sidecar-{platform}
 """
 
+import os
 import PyInstaller.__main__
 import platform
 
@@ -19,23 +20,59 @@ elif system == "windows":
 else:
     suffix = "unknown"
 
-PyInstaller.__main__.run([
+# Demucs shells out to bare `ffmpeg` (audio.py:read) AND `ffprobe`
+# (audio.py:_read_info, used to inspect the file before decoding) on PATH.
+# If static binaries have been staged at vendor/ffmpeg/{suffix}/, bundle
+# them into the onefile exe so the installed app doesn't depend on the end
+# user having either on their system PATH. See main.py for the runtime PATH
+# injection that makes the bundled copies discoverable.
+exe_suffix = ".exe" if system == "windows" else ""
+vendor_ffmpeg_dir = os.path.join("vendor", "ffmpeg", suffix)
+vendored_models = os.path.join("vendor", "demucs-models")
+add_sep = ";" if system == "windows" else ":"
+
+args = [
     "main.py",
     "--onefile",
     f"--name={name}-{suffix}",
     "--hidden-import=demucs",
-    "--hidden-import=demucs.api",
-    "--hidden-import=torchcrepe",
+    "--hidden-import=demucs.pretrained",
     "--hidden-import=librosa",
     "--hidden-import=soundfile",
     "--hidden-import=torch",
     "--hidden-import=torchaudio",
     "--collect-data=demucs",
-    "--collect-data=crepe",
     "--collect-all=yt_dlp",
     "--noconfirm",
     "--clean",
-])
+]
+
+if system == "windows":
+    # yt-dlp's cookiesfrombrowser fallback needs DPAPI access via pywin32 to
+    # decrypt Chrome-family cookie stores; it's a lazy/optional import so
+    # PyInstaller's static analysis won't find it on its own.
+    args.append("--hidden-import=win32crypt")
+
+for tool in ("ffmpeg", "ffprobe"):
+    vendored_tool = os.path.join(vendor_ffmpeg_dir, f"{tool}{exe_suffix}")
+    if os.path.isfile(vendored_tool):
+        args.append(f"--add-binary={vendored_tool}{add_sep}.")
+    else:
+        print(f"WARNING: no vendored {tool} at {vendored_tool} — sidecar will "
+              f"depend on {tool} being present on the end user's PATH.")
+
+# htdemucs weights (see fetch_models.py) so the installed app doesn't need
+# internet access to download ~84MB on first use. htdemucs_ft (the
+# high_quality option) is intentionally not bundled — an extra 4x84MB only
+# needed for that opt-in path, still falls back to demucs's network download.
+if os.path.isdir(vendored_models):
+    args.append(f"--add-data={vendored_models}{add_sep}demucs-models")
+else:
+    print(f"WARNING: no vendored Demucs models at {vendored_models} — run "
+          f"fetch_models.py first, or the sidecar will depend on internet "
+          f"access on first use.")
+
+PyInstaller.__main__.run(args)
 
 print(f"\nSidecar built: dist/{name}-{suffix}")
 print("Copy this to src-tauri/binaries/ for Tauri to bundle it.")
