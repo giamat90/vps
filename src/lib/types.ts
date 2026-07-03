@@ -51,6 +51,13 @@ export interface Take {
   onsets?: number[];
   dynamics?: DynamicsPoint[];
   vibrato?: VibratoMetrics;
+  /** Log-Hz spectral envelope over time — see ShortTermSpectrumComparisonPanel. */
+  stSpectrumTimes?: number[];
+  stSpectrumB64?: string;
+  stSpectrumFrames?: number;
+  stSpectrumBins?: number;
+  stSpectrumMinDb?: number;
+  stSpectrumMaxDb?: number;
 }
 
 /** Dynamics data point */

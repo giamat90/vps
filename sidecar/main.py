@@ -19,7 +19,7 @@ if getattr(sys, "frozen", False):
     bundled_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     os.environ["PATH"] = bundled_dir + os.pathsep + os.environ.get("PATH", "")
 
-from processor import process
+from processor import process, compute_st_spectrum_from_file
 from analysis import analyze_recording, convert_take_to_wav
 
 
@@ -66,6 +66,13 @@ def main():
                     audio_offset_s=float(cmd.get("audioOffset", 0.0)),
                 )
                 send({"type": "result", "cmd": "analyze", "data": result})
+
+            elif cmd.get("cmd") == "compute_st_spectrum":
+                result = compute_st_spectrum_from_file(
+                    cmd["audioPath"],
+                    offset_s=float(cmd.get("audioOffset", 0.0)),
+                )
+                send({"type": "result", "cmd": "compute_st_spectrum", "data": result})
 
             elif cmd.get("cmd") == "convert_take":
                 result = convert_take_to_wav(cmd["recordingPath"], cmd["outputPath"])

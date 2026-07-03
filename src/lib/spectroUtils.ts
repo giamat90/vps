@@ -101,3 +101,33 @@ export function quantizeFftToRows(fftData: Uint8Array, sampleRate: number): Uint
   return result;
 }
 
+// ─── log-Hz x-axis mapping (shared by ShortTermSpectrumPanel and
+// ShortTermSpectrumComparisonPanel) ────────────────────────────────────────
+//
+// Mirrors SpectrogramPanel.tsx's freqToY (fMax→0 / fMin→size, high freq at
+// top) onto the X axis so high freq lands on the right: x = w - freqToY-shaped.
+// fMin/fMax are passed in rather than imported from SpectrogramPanel.tsx to
+// avoid a circular module dependency (SpectrogramPanel already imports from
+// this file).
+
+export function freqToX(f: number, w: number, fMin: number, fMax: number): number {
+  const logFMin = Math.log(fMin);
+  const logFMax = Math.log(fMax);
+  return w - ((logFMax - Math.log(f)) / (logFMax - logFMin)) * w;
+}
+
+export function xToFreq(x: number, w: number, fMin: number, fMax: number): number {
+  const logFMin = Math.log(fMin);
+  const logFMax = Math.log(fMax);
+  const t = (w - x) / w;
+  return Math.exp(logFMax - t * (logFMax - logFMin));
+}
+
+/**
+ * Decode a base64-encoded Short-Term Spectrum blob (n_frames x n_bins uint8)
+ * produced by compute_short_term_spectrum in the sidecar.
+ */
+export function decodeSTSpectrumFrames(b64: string): Uint8Array {
+  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+}
+

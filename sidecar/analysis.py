@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import librosa
 import soundfile as sf
-from processor import detect_pitch_srh
+from processor import detect_pitch_srh, compute_short_term_spectrum
 
 SAMPLE_RATE = 44100
 CONFIDENCE_THRESHOLD = 0.5
@@ -130,7 +130,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None, au
     ]
     on_progress(0.85, "dynamics")
 
-    # --- Stage 4: Vibrato detection (0.85 – 1.0) ---
+    # --- Stage 4: Vibrato detection (0.85 – 0.90) ---
     on_progress(0.90, "vibrato-detection")
     print("Analyzing vibrato...", file=sys.stderr)
 
@@ -139,6 +139,17 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None, au
         np.array(pitch_result["confidence"]),
         STEP_MS,
     )
+
+    # --- Stage 5: Short-Term Spectrum (0.90 – 1.0) ---
+    on_progress(0.92, "short-term-spectrum")
+    print("Computing short-term spectrum...", file=sys.stderr)
+
+    st_spectrum_result = {"stSpectrumTimes": [], "stSpectrumB64": "", "stSpectrumFrames": 0, "stSpectrumBins": 0}
+    try:
+        st_spectrum_result = compute_short_term_spectrum(audio_lr, sr_lr)
+    except Exception as e:
+        print(f"Short-term spectrum error: {e}", file=sys.stderr)
+
     on_progress(1.0, "complete")
 
     return {
@@ -146,4 +157,5 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None, au
         "onsets": onsets,
         "dynamics": dynamics,
         "vibrato": vibrato,
+        **st_spectrum_result,
     }

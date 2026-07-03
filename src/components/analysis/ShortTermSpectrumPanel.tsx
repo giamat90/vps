@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { getMicAnalyser, usePlayerStore } from "../../stores/player";
-import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
-import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB, freqToY } from "./SpectrogramPanel";
+import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared } from "../../lib/spectroUtils";
+import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB } from "./SpectrogramPanel";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -11,20 +11,12 @@ const FREQ_DECADES    = [100, 1000, 10000];
 
 // ─── frequency axis (shared log math, inverted for horizontal placement) ─────
 
-// freqToY(f, size, fMax) maps fMax→0 / F_MIN→size (spectrogram's vertical
-// convention, high freq at top). Mirroring that onto the X axis puts high
-// freq on the right: x = rollW - freqToY(f, rollW, fMax).
 function freqToX(f: number, rollW: number, fMax: number): number {
-  return rollW - freqToY(f, rollW, fMax);
+  return freqToXShared(f, rollW, F_MIN, fMax);
 }
 
-// Inverse of freqToX, derived algebraically from the same freqToY log
-// mapping (not a separately-tuned curve) so the two stay in lockstep.
 function xToFreq(x: number, rollW: number, fMax: number): number {
-  const logFMin = Math.log(F_MIN);
-  const logFMax = Math.log(fMax);
-  const t = (rollW - x) / rollW; // matches freqToY's (logFMax - log f) / span term
-  return Math.exp(logFMax - t * (logFMax - logFMin));
+  return xToFreqShared(x, rollW, F_MIN, fMax);
 }
 
 function formatHz(f: number): string {
