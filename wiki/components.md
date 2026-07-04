@@ -244,7 +244,9 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 6. Note label — current note name(s) shown right-aligned at top-right of the roll (e.g. "A4 G#4")
 7. Piano key strip — drawn last so it sits on top of any ribbon that bleeds into the left column; key color priority: live (orange) > take (red) > song (blue)
 
-**Constants:** MIDI 45–84 (A2–C6, 40 semitones), 8-second window, `15rem` canvas height.
+**Constants:** 40-semitone visible window, 8-second time window, `15rem` canvas height.
+
+**Sliding vertical window:** the visible pitch range no longer sits at a fixed MIDI span. `PIANO_WINDOW_SIZE = 40` (unchanged) semitones are always shown, but the window's lower bound (`midiMin`, a float held in a `windowMinRef`) slides to follow whichever pitch is currently active (`liveMidi ?? takeMidi ?? songMidi`), letting the same visual resolution as the old fixed A2–C6 range support the full `PIANO_ABS_MIN`–`PIANO_ABS_MAX` (C0–C7) keyboard — needed for wide-range instrument practice tracks. See [constants.ts](../src/lib/constants.ts): `computePianoWindowTarget()` only moves the window once the active note gets within `PIANO_FOLLOW_MARGIN` (6 semitones) of an edge (a "dead zone" so normal melodic movement doesn't cause drift), and `stepPianoWindow()` eases toward that target by a fixed fraction (`PIANO_FOLLOW_LERP = 0.06`) every animation frame, so the window glides rather than snaps. `midiToY`/`drawLanes`/`drawRibbon`/`drawPianoStrip` all take the float `midiMin` directly — no rounding — so the ribbon and lane backgrounds scroll continuously pixel-by-pixel rather than jumping a whole semitone at a time. When no pitch is active, the window holds its last position.
 
 **No spectrogram:** frequency spectrogram was moved to the dedicated `SpectrogramPanel` component (Free Exercise page only).
 
@@ -297,6 +299,8 @@ Opening a second `getUserMedia` to the same device caused silent failures on Win
 ### PianoKeyboard
 
 Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). All white keys show a full note label with octave number at the bottom of each key: `C3`, `D3`, `E3`, `F3`, `G3`, `A3`, `B3`, `C4`, `D4` … The octave is derived as `Math.floor(midi / 12) - 1` (MIDI convention).
+
+**Sliding window:** shares the same `PIANO_WINDOW_SIZE`/`computePianoWindowTarget`/`stepPianoWindow` helpers as `PianoRoll` (see that section and [constants.ts](../src/lib/constants.ts)) to follow the active pitch across the full C0–C7 range, via its own `windowMinRef` — the two components' windows aren't shared state and can drift slightly out of sync, which isn't visually noticeable. Unlike `PianoRoll`'s continuous pixel-level scroll, `buildLayout()` here rounds the smoothed `midiMin` to the nearest semitone before laying out keys, so the keyboard image shifts key-by-key rather than scrolling fractionally — a discrete white/black key strip reads more naturally snapping to whole keys than sliding continuously.
 
 ### PracticeRoom
 
