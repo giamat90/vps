@@ -11,8 +11,10 @@ function TempoControl({ detectedBpm }: Props) {
   const playbackRate    = usePlayerStore((s) => s.playbackRate);
   const setPlaybackRate = usePlayerStore((s) => s.setPlaybackRate);
 
-  const [bpmMode, setBpmMode]     = useState(false);
-  const [bpmInput, setBpmInput]   = useState("");
+  const [bpmMode, setBpmMode]     = useState(() => Boolean(detectedBpm));
+  const [bpmInput, setBpmInput]   = useState(() =>
+    detectedBpm ? String(Math.round(detectedBpm * playbackRate)) : ""
+  );
 
   const handleModeSwitch = (toBpm: boolean) => {
     if (toBpm && detectedBpm) {
@@ -57,7 +59,7 @@ function TempoControl({ detectedBpm }: Props) {
         )}
       </div>
 
-      {!bpmMode ? (
+      {!(bpmMode && detectedBpm) ? (
         <>
           <div className="tempo-control__row">
             <input

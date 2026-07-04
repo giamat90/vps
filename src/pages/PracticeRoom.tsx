@@ -87,23 +87,24 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
         </div>
       </header>
 
+      <div className="practice-room__topbar">
+        <TransportControls />
+        <TempoControl detectedBpm={song.detectedBpm} />
+        <div className="practice-room__topbar-devices">
+          <div className="practice-room__io-group">
+            <MicSelector />
+            <OutputSelector />
+          </div>
+          <KeyTranspose />
+          <MonitorButton />
+          <RecordButton />
+        </div>
+      </div>
+
       <div className="practice-room__body">
         <div className="practice-room__main">
           <div className="practice-room__waveforms">
             <Waveform song={song} />
-          </div>
-
-          <div className="practice-room__controls">
-            <TempoControl detectedBpm={song.detectedBpm} />
-            <KeyTranspose />
-            <OutputSelector />
-          </div>
-
-          <div className="practice-room__transport">
-            <TransportControls />
-            <MicSelector />
-            <MonitorButton />
-            <RecordButton />
           </div>
 
           {isAnalysisLoaded && (

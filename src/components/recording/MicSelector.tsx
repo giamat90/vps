@@ -14,7 +14,7 @@ function MicSelector() {
 
   return (
     <div className="mic-selector">
-      <label className="mic-selector__label" htmlFor="mic-select">Mic</label>
+      <label className="mic-selector__label" htmlFor="mic-select">Input</label>
       <select
         id="mic-select"
         className="mic-selector__select"
