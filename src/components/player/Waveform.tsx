@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { usePlayerStore, getEngine } from "../../stores/player";
+import { usePlayerStore, getEngine, type TrackKey } from "../../stores/player";
 import TimeRuler from "./TimeRuler";
 import type { Song } from "../../lib/types";
 
@@ -23,6 +23,47 @@ function PunchOverlay() {
   );
 }
 
+interface TrackControlsProps {
+  track: TrackKey;
+  volume: number;
+  onVolumeChange: (v: number) => void;
+}
+
+function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
+  const muted       = usePlayerStore((s) => s.mutedTracks[track]);
+  const soloed      = usePlayerStore((s) => s.soloedTrack === track);
+  const toggleMute  = usePlayerStore((s) => s.toggleMute);
+  const toggleSolo  = usePlayerStore((s) => s.toggleSolo);
+
+  return (
+    <div className="waveform__track-controls">
+      <button
+        className={`waveform__mute${muted ? " waveform__mute--on" : ""}`}
+        onClick={() => toggleMute(track)}
+        title={muted ? "Unmute" : "Mute"}
+      >
+        M
+      </button>
+      <button
+        className={`waveform__solo${soloed ? " waveform__solo--on" : ""}`}
+        onClick={() => toggleSolo(track)}
+        title={soloed ? "Unsolo" : "Solo this track"}
+      >
+        S
+      </button>
+      <input
+        type="range"
+        min={0}
+        max={1}
+        step={0.05}
+        value={volume}
+        onChange={(e) => onVolumeChange(Number(e.target.value))}
+        className="waveform__volume"
+      />
+    </div>
+  );
+}
+
 function Waveform({ song }: WaveformProps) {
   const vocalsRef        = useRef<HTMLDivElement>(null);
   const instrumentalRef  = useRef<HTMLDivElement>(null);
@@ -30,6 +71,13 @@ function Waveform({ song }: WaveformProps) {
   const loadSong         = usePlayerStore((s) => s.loadSong);
   const activeTakeId     = usePlayerStore((s) => s.activeTakeId);
   const takes            = usePlayerStore((s) => s.takes);
+  const vocalsVolume       = usePlayerStore((s) => s.vocalsVolume);
+  const instrumentalVolume = usePlayerStore((s) => s.instrumentalVolume);
+  const takeVolume         = usePlayerStore((s) => s.takeVolume);
+  const setVocalsVolume       = usePlayerStore((s) => s.setVocalsVolume);
+  const setInstrumentalVolume = usePlayerStore((s) => s.setInstrumentalVolume);
+  const setTakeVolume         = usePlayerStore((s) => s.setTakeVolume);
+  const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
   const isLoading        = useRef(false);
   const loadedTakeId     = useRef<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -63,6 +111,7 @@ function Waveform({ song }: WaveformProps) {
     if (!take || !takeRef.current) return;
     loadedTakeId.current = activeTakeId;
     eng.loadTakeTrack(take.filepath, takeRef.current, take.startPosition, take.audioOffset ?? 0)
+      .then(() => syncTrackVolumes())
       .catch((e: unknown) => console.error("[Waveform] loadTakeTrack failed:", e));
   }, [activeTakeId, takes]);
 
@@ -73,7 +122,10 @@ function Waveform({ song }: WaveformProps) {
       <TimeRuler />
 
       <div className="waveform__track">
-        <span className="waveform__label">Vocals</span>
+        <div className="waveform__track-header">
+          <span className="waveform__label">Vocals</span>
+          <TrackControls track="vocals" volume={vocalsVolume} onVolumeChange={setVocalsVolume} />
+        </div>
         <div className="waveform__track-body">
           <div className="waveform__container" ref={vocalsRef} />
           <PunchOverlay />
@@ -81,7 +133,10 @@ function Waveform({ song }: WaveformProps) {
       </div>
 
       <div className="waveform__track">
-        <span className="waveform__label">Instrumental</span>
+        <div className="waveform__track-header">
+          <span className="waveform__label">Instrumental</span>
+          <TrackControls track="instrumental" volume={instrumentalVolume} onVolumeChange={setInstrumentalVolume} />
+        </div>
         <div className="waveform__track-body">
           <div className="waveform__container" ref={instrumentalRef} />
           <PunchOverlay />
@@ -90,7 +145,10 @@ function Waveform({ song }: WaveformProps) {
 
       {activeTakeId && (
         <div className="waveform__track">
-          <span className="waveform__label waveform__label--take">Take</span>
+          <div className="waveform__track-header">
+            <span className="waveform__label waveform__label--take">Take</span>
+            <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
+          </div>
           <div className="waveform__track-body">
             <div className="waveform__take-rail">
               <div ref={takeRef} />
