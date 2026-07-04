@@ -74,6 +74,36 @@ function getRecorder(): VocalRecorder {
   return recorder;
 }
 
+// Soloing a track silences every other track; muting silences only that
+// track. Neither ever overwrites the stored slider value — they only change
+// what gets pushed to the engine, so unmuting/unsoloing restores the slider
+// position exactly.
+function effectiveVolume(
+  track: TrackKey,
+  rawVolume: number,
+  mutedTracks: Record<TrackKey, boolean>,
+  soloedTrack: TrackKey | null,
+): number {
+  if (soloedTrack !== null) return track === soloedTrack ? rawVolume : 0;
+  if (mutedTracks[track]) return 0;
+  return rawVolume;
+}
+
+function applyEffectiveVolumes(state: {
+  vocalsVolume: number;
+  instrumentalVolume: number;
+  takeVolume: number;
+  mutedTracks: Record<TrackKey, boolean>;
+  soloedTrack: TrackKey | null;
+}): void {
+  const eng = getEngine();
+  eng.setVocalsVolume(effectiveVolume("vocals", state.vocalsVolume, state.mutedTracks, state.soloedTrack));
+  eng.setInstrumentalVolume(effectiveVolume("instrumental", state.instrumentalVolume, state.mutedTracks, state.soloedTrack));
+  eng.setTakeVolume(effectiveVolume("take", state.takeVolume, state.mutedTracks, state.soloedTrack));
+}
+
+export type TrackKey = "vocals" | "instrumental" | "take";
+
 interface PlayerState {
   song: Song | null;
   isPlaying: boolean;
@@ -82,6 +112,8 @@ interface PlayerState {
   playbackRate: number;
   vocalsVolume: number;
   instrumentalVolume: number;
+  mutedTracks: Record<TrackKey, boolean>;
+  soloedTrack: TrackKey | null;
   loopStart: number | null;
   loopEnd: number | null;
   isLooping: boolean;
@@ -124,6 +156,9 @@ interface PlayerActions {
   setPlaybackRate: (rate: number) => void;
   setVocalsVolume: (v: number) => void;
   setInstrumentalVolume: (v: number) => void;
+  toggleMute: (track: TrackKey) => void;
+  toggleSolo: (track: TrackKey) => void;
+  syncTrackVolumes: () => void;
   setLoopPoints: (start: number, end: number) => void;
   toggleLoop: () => void;
   clearLoop: () => void;
@@ -176,6 +211,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   playbackRate: 1.0,
   vocalsVolume: 1.0,
   instrumentalVolume: 1.0,
+  mutedTracks: { vocals: false, instrumental: false, take: false },
+  soloedTrack: null,
   loopStart: null,
   loopEnd: null,
   isLooping: false,
@@ -246,6 +283,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isRecording: false,
       activeTakeId: null,
     });
+    applyEffectiveVolumes(get());
   },
 
   play: () => {
@@ -289,13 +327,27 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   setVocalsVolume: (v) => {
-    getEngine().setVocalsVolume(v);
     set({ vocalsVolume: v });
+    applyEffectiveVolumes(get());
   },
 
   setInstrumentalVolume: (v) => {
-    getEngine().setInstrumentalVolume(v);
     set({ instrumentalVolume: v });
+    applyEffectiveVolumes(get());
+  },
+
+  toggleMute: (track) => {
+    set((s) => ({ mutedTracks: { ...s.mutedTracks, [track]: !s.mutedTracks[track] } }));
+    applyEffectiveVolumes(get());
+  },
+
+  toggleSolo: (track) => {
+    set((s) => ({ soloedTrack: s.soloedTrack === track ? null : track }));
+    applyEffectiveVolumes(get());
+  },
+
+  syncTrackVolumes: () => {
+    applyEffectiveVolumes(get());
   },
 
   setLoopPoints: (start, end) => {
@@ -660,8 +712,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   setTakeVolume: (v) => {
-    getEngine().setTakeVolume(v);
     set({ takeVolume: v });
+    applyEffectiveVolumes(get());
   },
 
   setPunchIn:   (t) => set({ punchIn: t }),

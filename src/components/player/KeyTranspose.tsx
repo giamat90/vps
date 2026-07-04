@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { usePlayerStore } from "../../stores/player";
 
 function KeyTranspose() {
@@ -5,17 +6,20 @@ function KeyTranspose() {
   const isTransposing = usePlayerStore((s) => s.isTransposing);
   const song = usePlayerStore((s) => s.song);
   const setTranspose = usePlayerStore((s) => s.setTranspose);
+  const [pendingTranspose, setPendingTranspose] = useState<number | null>(null);
 
   const disabled = isTransposing || !song;
+  const displayValue = isTransposing && pendingTranspose !== null ? pendingTranspose : transpose;
 
-  const shift = (delta: number) => {
-    const next = Math.max(-6, Math.min(6, transpose + delta));
-    if (next !== transpose) {
-      setTranspose(next).catch((e: unknown) =>
-        console.error("[KeyTranspose] setTranspose failed:", e)
-      );
-    }
+  const applyTranspose = (next: number) => {
+    if (next === transpose) return;
+    setPendingTranspose(next);
+    setTranspose(next)
+      .catch((e: unknown) => console.error("[KeyTranspose] setTranspose failed:", e))
+      .finally(() => setPendingTranspose(null));
   };
+
+  const shift = (delta: number) => applyTranspose(Math.max(-6, Math.min(6, transpose + delta)));
 
   return (
     <div className="key-transpose">
@@ -28,8 +32,8 @@ function KeyTranspose() {
         >
           -
         </button>
-        <span className="key-transpose__value">
-          {isTransposing ? "…" : transpose > 0 ? `+${transpose}` : transpose} st
+        <span className={`key-transpose__value${isTransposing ? " key-transpose__value--pending" : ""}`}>
+          {displayValue > 0 ? `+${displayValue}` : displayValue} st
         </span>
         <button
           className="key-transpose__btn"
@@ -41,11 +45,7 @@ function KeyTranspose() {
         {transpose !== 0 && !isTransposing && (
           <button
             className="key-transpose__btn key-transpose__reset"
-            onClick={() =>
-              setTranspose(0).catch((e: unknown) =>
-                console.error("[KeyTranspose] reset failed:", e)
-              )
-            }
+            onClick={() => applyTranspose(0)}
             disabled={disabled}
           >
             Reset
