@@ -14,16 +14,16 @@ App
 │   ├── DropZone           — drag-and-drop audio file import
 │   └── YouTubeImport      — paste-and-import YouTube URL
 ├── player/
-│   ├── Waveform           — 3-track waveform display (vocals + instrumental + take)
+│   ├── Waveform           — 3-track waveform display (vocals + instrumental + take), each row with mute/solo/volume controls
 │   ├── TimeRuler          — canvas time ruler with drag-to-select punch region
-│   ├── TransportControls  — play/pause/stop + volume sliders
-│   ├── TempoControl       — playback rate/BPM control
+│   ├── TransportControls  — play/pause/stop + elapsed/total time (no volume controls — those live per-track in Waveform)
+│   ├── TempoControl       — BPM-first speed control (editable BPM value + editable x-rate)
 │   ├── KeyTranspose       — semitone transpose UI
 │   └── OutputSelector     — audio output device picker
 ├── recording/
 │   ├── RecordButton       — start/stop recording (song practice)
 │   ├── MonitorButton      — toggle live mic monitoring (no save)
-│   ├── MicSelector        — microphone input source picker
+│   ├── MicSelector        — input device picker (labelled "Input")
 │   ├── TakeList           — list of song takes with delete
 │   └── ExerciseTakeList   — list of exercise takes; click to expand audio player
 ├── analysis/
@@ -74,6 +74,8 @@ const togglePlay = usePlayerStore((s) => s.togglePlay);
 
 Components subscribe to individual slices to avoid unnecessary re-renders. The store owns the `AudioEngine` and `VocalRecorder` singletons (accessed via module-level `getEngine()` / `getRecorder()` helpers, not stored in Zustand state).
 
+**Mute/solo:** `effectiveVolume()` / `applyEffectiveVolumes()` (module-level helpers, not store actions) compute what actually gets pushed to `AudioEngine.set*Volume()` — soloing a track (`toggleSolo`) silences every other track, muting (`toggleMute`) silences only that one — but the raw `vocalsVolume` / `instrumentalVolume` / `takeVolume` slider values are never modified by either, so unmuting/unsoloing restores the exact prior slider position. `setVocalsVolume` / `setInstrumentalVolume` / `setTakeVolume` all funnel through `applyEffectiveVolumes` after updating their slice. `syncTrackVolumes` re-applies the current effective volumes and is called after `loadSong` and after a new take's WaveSurfer instance is created (`Waveform.tsx`), since a fresh WaveSurfer instance resets to `volume: 1` regardless of stored state.
+
 ## Key State Fields
 
 | Field | Type | Description |
@@ -83,8 +85,10 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `currentTime` | `number` | Playback position (seconds) |
 | `duration` | `number` | Song length (seconds) |
 | `playbackRate` | `number` | Speed multiplier (0.25–2.5) |
-| `vocalsVolume` | `number` | 0–1 |
-| `instrumentalVolume` | `number` | 0–1 |
+| `vocalsVolume` | `number` | 0–1 (raw slider value; never overwritten by mute/solo) |
+| `instrumentalVolume` | `number` | 0–1 (raw slider value; never overwritten by mute/solo) |
+| `mutedTracks` | `Record<TrackKey, boolean>` | Per-track mute state (`TrackKey = "vocals" \| "instrumental" \| "take"`) |
+| `soloedTrack` | `TrackKey \| null` | At most one soloed track; solo overrides mute |
 | `isLooping` | `boolean` | Loop mode active |
 | `loopStart / loopEnd` | `number \| null` | Loop region (seconds) |
 | `transpose` | `number` | Active semitone shift |
@@ -94,7 +98,7 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `isMonitoring` | `boolean` | Live mic monitor active (no recording) |
 | `takes` | `Take[]` | All takes for current song |
 | `activeTakeId` | `string \| null` | Selected take (loads it as the take track) |
-| `takeVolume` | `number` | 0–1 volume for the take track |
+| `takeVolume` | `number` | 0–1 volume for the take track (raw slider value; never overwritten by mute/solo) |
 | `punchIn` | `number \| null` | Region start (seconds); play always seeks here when set |
 | `punchOut` | `number \| null` | Region end (seconds); playback stops or loops here |
 | `punchLoop` | `boolean` | Loop the region during playback (cleared with the region) |
@@ -139,7 +143,7 @@ Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
 <button onClick={isRecording ? () => void stopRecording() : stop}>
 ```
 
-An orange **Take** volume slider appears when `activeTakeId` is set.
+Slimmed down to play/pause/stop + elapsed/total time — volume sliders were moved onto each waveform track's own row (see `Waveform` below). Sits inside the sticky `practice-room__topbar` (see `PracticeRoom` layout).
 
 ### RecordButton
 
@@ -157,11 +161,12 @@ When monitoring is active:
 
 ### TempoControl
 
-Speed control for playback. Has two modes selectable via a tab toggle:
+BPM-first speed control for playback — no mode toggle, no preset buttons. Two stacked, editable rows in `tempo-control__bpm-group` (same column-alignment pattern as the Input/Output stack — see below):
 
-**Speed mode (default):** Slider from 0.25× to 2.5×, displays current multiplier, five preset buttons (0.5×, 0.75×, 1×, 1.25×, 1.5×).
+1. **BPM row** — shown only when the song has a detected BPM: `{Math.round(detectedBpm)} BPM` badge in the header (right of the "Speed" label) plus a number input for the target BPM; the playback rate is computed as `targetBpm / songBpm`.
+2. **Rate row** — a number input for the raw `×` multiplier (0.25–2.5), always shown. Both inputs share the same width (`tempo-control__bpm-input`, `3.75rem`) so they align.
 
-**BPM mode** (only shown when the song has a detected BPM): number input for a target BPM; the playback rate is computed as `targetBpm / songBpm`. Seven preset buttons at 50/60/75/90/100/110/125% of the song BPM. The resulting multiplier is shown as feedback. Enter or blur commits the value.
+Editing either input recomputes and commits the other (`commitBpm` / `commitRate`) — both ultimately call `setPlaybackRate`. Enter or blur commits; invalid input reverts to the last good value. If a song has no detected BPM, only the rate row is usable.
 
 ### TimeRuler
 
@@ -177,19 +182,27 @@ The region is drawn as a red band on the canvas with I-beam caps at the handles.
 
 ### Waveform
 
-Renders `TimeRuler` at the top, then up to three stacked WaveSurfer tracks each wrapped in `.waveform__track-body` (position: relative) so `PunchOverlay` can be absolutely positioned over them:
+Renders `TimeRuler` at the top, then up to three stacked tracks, each with a `.waveform__track-header` (label + `TrackControls`) above a `.waveform__track-body` (position: relative, wraps the WaveSurfer container so `PunchOverlay` can be absolutely positioned over it):
 
 1. **Vocals** — always visible; original vocals track
 2. **Instrumental** — always visible; backing track and time reference
 3. **Take** — conditionally rendered when `activeTakeId` is set; orange waveform positioned at the correct time offset and proportional width using `eng.loadTakeTrack()`
 
+**`TrackControls`** (local sub-component, one instance per row): mute button (`M`, amber `--on` state), solo button (`S`, green `--on` state), and a volume slider — wired to the player store's `toggleMute`, `toggleSolo`, and the relevant `set*Volume` action for that track. After a new take's WaveSurfer instance loads, the effect calls `syncTrackVolumes()` so the fresh instance picks up the stored effective volume instead of defaulting to full volume.
+
+**Instrument practice tracks** (`song.kind === "instrument"`): the vocals row is relabeled "Melody" (its `vocals.wav` file is the actual practice-track audio for these songs — see [Data Model](data-model.md#song)). The instrumental row — an identical duplicate of the same audio — stays mounted (WaveSurfer needs a real container to measure) but is visually collapsed via `waveform__track--hidden` (absolute position + `height: 0`, not `display: none`, so it keeps a layout box to measure against). `loadSong` sets `mutedTracks.instrumental = true` by default for these songs so the duplicate isn't audible; the mute button still works normally if the user wants to double-check.
+
 ### MicSelector / OutputSelector
 
 Call `fetchAudioDevices()` / `fetchOutputDevices()` on mount to populate device lists. Before the first `getUserMedia` call, `enumerateDevices()` returns devices with empty labels and indistinguishable `deviceId`s. As soon as `getUserMedia` grants permission — whether from clicking **Monitor** or **Record** — the store re-enumerates and pushes the labelled list so named devices (e.g. "Focusrite USB Audio") appear immediately.
 
+`MicSelector`'s label reads **"Input"** (not "Mic"). In `PracticeRoom`'s topbar the two are stacked — `MicSelector` above `OutputSelector` — inside `practice-room__io-group`, with both labels given a shared `min-width` so the two `<select>` elements align at the same x position.
+
 ### KeyTranspose
 
 Displays the current `transpose` value in semitones with ±12 range. Triggers `setTranspose(n)` which pauses playback, calls the Python sidecar to generate shifted WAVs, then reloads the engine with the new files.
+
+While `isTransposing` is true, the displayed value is **not** replaced with a placeholder like `"…"`. Instead a local `pendingTranspose` state holds the target semitone value the instant a button is clicked, displayed immediately with a `key-transpose__value--pending` class that pulses (`opacity` 0.35 ↔ 0.9, 0.9s loop) until the pitch-shift resolves — so the user sees where the control is headed rather than a blank/frozen indicator. Sits in `practice-room__topbar-devices`, to the right of the Input/Output stack.
 
 ### PianoRoll
 
@@ -293,11 +306,14 @@ Song practice page. Requires a processed song.
 ```
 ┌─ practice-room__header ───────────────────────────────┐
 │  ← Back   Song Title   BPM / Key                      │
+├─ practice-room__topbar (sticky, top: 0) ──────────────┤
+│  TransportControls · TempoControl ·                   │
+│  [Input / Output (stacked)] · KeyTranspose ·           │
+│  MonitorButton · RecordButton                          │
 ├─ practice-room__body (flex row) ──────────────────────┤
 │ ┌─ practice-room__main (flex: 1) ──────────────────┐  │
-│ │  Waveform (vocals + instrumental + take)          │  │
-│ │  Controls row: TempoControl · KeyTranspose · …    │  │
-│ │  Transport row: Play/Pause · MicSelector · Rec    │  │
+│ │  Waveform (vocals + instrumental + take,          │  │
+│ │            mute/solo/volume per track row)        │  │
 │ │  Analysis panel (when isAnalysisLoaded):          │  │
 │ │    PianoKeyboard · PianoRoll · DynamicsCurve      │  │
 │ └────────────────────────────────────────────────── ┘  │
@@ -309,6 +325,8 @@ Song practice page. Requires a processed song.
 │ └───────────────────────────────────────────────────┘  │
 └───────────────────────────────────────────────────────┘
 ```
+
+**Topbar:** `practice-room__topbar` sits between the header and the body — above both `practice-room__main` and `practice-room__sidebar` — and consolidates every transport/recording control that used to be split across a controls row and a transport row inside the scrollable main column: `TransportControls` (play/stop/time), `TempoControl`, the Input/Output device pair (stacked in `practice-room__io-group`), `KeyTranspose`, `MonitorButton`, and `RecordButton`. It's `position: sticky; top: 0` so it stays visible regardless of which side (main or sidebar) is scrolled — though in practice `.practice-room` itself doesn't scroll (only `practice-room__main` and the sidebar zones do), so the sticky rule is a safety net rather than load-bearing.
 
 **Sidebar layout:** The sidebar splits 50/50 between `practice-room__takes-wrap` (TakeList) and `practice-room__sidebar-bottom` (VibratoCard, TimingChart, CoachPanel), each independently scrollable (`overflow-y: auto`) so neither zone can crowd out the other. The full `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__sidebar`) for the `overflow-y: auto` zones to engage.
 
@@ -382,11 +400,13 @@ Input + button for pasting a YouTube URL. Validates the URL client-side with a r
 
 ### DropZone
 
-Click-to-browse file picker (native `open()` dialog filtered to audio extensions) that calls `uploadSong(filePath, highQuality)` on the library store. Shows a progress bar driven by `processing.progress` while a job is active; disabled during processing. `highQuality` is passed down as a prop from `LibraryPage`, which owns the checkbox state shared between this and `YouTubeImport`.
+Click-to-browse file picker (native `open()` dialog filtered to audio extensions) that calls `uploadSong(filePath, highQuality, trackKind)` on the library store. Shows a progress bar driven by `processing.progress` while a job is active; disabled during processing. `highQuality` and `trackKind` are passed down as props from `LibraryPage`. When `trackKind === "instrument"` the idle label reads "Upload a practice track" instead of "Upload a song".
+
+**Instrument practice track import:** `LibraryPage` renders a `library-page__track-kind-toggle` radio group above `DropZone` — "Song (separate vocals & instrumental)" vs. "Instrument practice track (piano/guitar melody)" — backed by local `trackKind` state (`"vocal" | "instrument"`, default `"vocal"`). Selecting "instrument" also disables the high-quality checkbox (Demucs quality is irrelevant when separation is skipped) and threads `trackKind` through `uploadSong` → `processSong(filePath, highQuality, trackKind)` → Tauri `process_song(track_kind: Option<String>)` → sidecar `skipSeparation`. See [Data Model: Song.kind](data-model.md#song) and [Python Sidecar: process](python-sidecar.md#process) for the rest of the pipeline.
 
 ### SongCard (inline in `LibraryPage`)
 
 Each song in the library list is rendered by a `SongCard` component with local state:
 
 - **Pitch control** — ±6 semitone offset (−/+ buttons + value display + × reset). At 0 the export is direct; at any other value `pitchShiftSong(song.directory, n)` is called first and the shifted WAV paths are passed to `exportStem`. The suggested filename includes the offset, e.g. `Song - Vocals (+3st).wav`.
-- **Export buttons** — "↓ Vocals" and "↓ Instr." trigger `exportStem` via a native Save-As dialog. Both are disabled and show `…` while pitch-shifting is in progress.
+- **Export buttons** — for `kind: "vocal"` songs (default), "↓ Vocals" and "↓ Instr." trigger `exportStem` via a native Save-As dialog, both disabled and showing `…` while pitch-shifting is in progress. For `kind: "instrument"` songs, a single "↓ Download" button exports the practice track (still via `handleExport("vocals")`, since `vocals.wav` holds the actual audio for instrument-kind songs). Instrument-kind cards also show an "Instrument" badge (`song-card__badge`) next to the title.
