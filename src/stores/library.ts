@@ -15,7 +15,7 @@ interface LibraryState {
   error: string | null;
 
   fetchSongs: () => Promise<void>;
-  uploadSong: (filePath: string, highQuality?: boolean) => Promise<void>;
+  uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument") => Promise<void>;
   importYoutube: (url: string, highQuality?: boolean) => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
   clearError: () => void;
@@ -78,10 +78,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }
   },
 
-  uploadSong: async (filePath: string, highQuality?: boolean) => {
+  uploadSong: async (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument") => {
     set({ error: null, processing: { songId: "", stage: "Preparing…", progress: 0, isComplete: false } });
     try {
-      const song = await processSong(filePath, highQuality);
+      const song = await processSong(filePath, highQuality, trackKind);
       set((state) => ({
         songs: [...state.songs, song],
         processing: null,

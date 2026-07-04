@@ -48,10 +48,17 @@ function SongCard({ song, onSelect, onDelete }: SongCardProps) {
     }
   };
 
+  const isInstrument = song.kind === "instrument";
+
   return (
     <div className="song-card" onClick={onSelect}>
       <div className="song-card__info">
-        <div className="song-card__title">{song.title}</div>
+        <div className="song-card__title">
+          {song.title}
+          {isInstrument && (
+            <span className="song-card__badge">Instrument</span>
+          )}
+        </div>
         <div className="song-card__meta">
           {song.detectedBpm && (
             <span>{Math.round(song.detectedBpm)} BPM</span>
@@ -95,22 +102,35 @@ function SongCard({ song, onSelect, onDelete }: SongCardProps) {
             </button>
           )}
         </div>
-        <button
-          className="song-card__export-btn"
-          title="Download vocals stem"
-          disabled={isShifting}
-          onClick={() => handleExport("vocals")}
-        >
-          {isShifting ? "…" : "↓ Vocals"}
-        </button>
-        <button
-          className="song-card__export-btn"
-          title="Download instrumental stem"
-          disabled={isShifting}
-          onClick={() => handleExport("instrumental")}
-        >
-          {isShifting ? "…" : "↓ Instr."}
-        </button>
+        {isInstrument ? (
+          <button
+            className="song-card__export-btn"
+            title="Download practice track"
+            disabled={isShifting}
+            onClick={() => handleExport("vocals")}
+          >
+            {isShifting ? "…" : "↓ Download"}
+          </button>
+        ) : (
+          <>
+            <button
+              className="song-card__export-btn"
+              title="Download vocals stem"
+              disabled={isShifting}
+              onClick={() => handleExport("vocals")}
+            >
+              {isShifting ? "…" : "↓ Vocals"}
+            </button>
+            <button
+              className="song-card__export-btn"
+              title="Download instrumental stem"
+              disabled={isShifting}
+              onClick={() => handleExport("instrumental")}
+            >
+              {isShifting ? "…" : "↓ Instr."}
+            </button>
+          </>
+        )}
         <button
           className="song-card__delete"
           onClick={onDelete}
@@ -136,6 +156,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const [showSettings, setShowSettings] = useState(false);
   const [appVersion, setAppVersion] = useState("");
   const [highQuality, setHighQuality] = useState(false);
+  const [trackKind, setTrackKind] = useState<"vocal" | "instrument">("vocal");
 
   useEffect(() => {
     fetchSongs();
@@ -191,12 +212,40 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
 
 
       <div className="library-page__import">
-        <DropZone highQuality={highQuality} />
+        <div className="library-page__track-kind-toggle" role="radiogroup">
+          <label>
+            <input
+              type="radio"
+              name="track-kind"
+              checked={trackKind === "vocal"}
+              onChange={() => setTrackKind("vocal")}
+            />
+            Song (separate vocals &amp; instrumental)
+          </label>
+          <label>
+            <input
+              type="radio"
+              name="track-kind"
+              checked={trackKind === "instrument"}
+              onChange={() => setTrackKind("instrument")}
+            />
+            Instrument practice track (piano/guitar melody)
+          </label>
+        </div>
+        <DropZone highQuality={highQuality} trackKind={trackKind} />
         <YouTubeImport highQuality={highQuality} />
-        <label className="library-page__quality-toggle">
+        <label
+          className="library-page__quality-toggle"
+          title={
+            trackKind === "instrument"
+              ? "Not applicable — instrument practice tracks skip stem separation"
+              : undefined
+          }
+        >
           <input
             type="checkbox"
             checked={highQuality}
+            disabled={trackKind === "instrument"}
             onChange={(e) => setHighQuality(e.target.checked)}
           />
           {highQuality

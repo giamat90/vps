@@ -14,6 +14,12 @@ pub struct Song {
     pub detected_bpm: Option<f64>,
     pub processed_at: String,
     pub directory: String,
+    #[serde(default = "default_song_kind")]
+    pub kind: String, // "vocal" | "instrument"
+}
+
+fn default_song_kind() -> String {
+    "vocal".to_string()
 }
 
 fn library_path() -> std::path::PathBuf {

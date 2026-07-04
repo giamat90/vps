@@ -81,6 +81,7 @@ function Waveform({ song }: WaveformProps) {
   const isLoading        = useRef(false);
   const loadedTakeId     = useRef<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const isInstrument = song.kind === "instrument";
 
   useEffect(() => {
     if (!vocalsRef.current || !instrumentalRef.current || isLoading.current) return;
@@ -123,7 +124,7 @@ function Waveform({ song }: WaveformProps) {
 
       <div className="waveform__track">
         <div className="waveform__track-header">
-          <span className="waveform__label">Vocals</span>
+          <span className="waveform__label">{isInstrument ? "Melody" : "Vocals"}</span>
           <TrackControls track="vocals" volume={vocalsVolume} onVolumeChange={setVocalsVolume} />
         </div>
         <div className="waveform__track-body">
@@ -132,7 +133,11 @@ function Waveform({ song }: WaveformProps) {
         </div>
       </div>
 
-      <div className="waveform__track">
+      {/* Instrumental track is a required mount for AudioEngine.load() even
+          for instrument-kind songs (where it's a silent duplicate of the
+          melody track, muted in player.ts) - keep it in the DOM but hide
+          its chrome so the user isn't shown a redundant waveform. */}
+      <div className={`waveform__track${isInstrument ? " waveform__track--hidden" : ""}`}>
         <div className="waveform__track-header">
           <span className="waveform__label">Instrumental</span>
           <TrackControls track="instrumental" volume={instrumentalVolume} onVolumeChange={setInstrumentalVolume} />

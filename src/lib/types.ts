@@ -8,6 +8,7 @@ export interface Song {
   detectedBpm?: number;
   processedAt: string;
   directory: string;
+  kind?: "vocal" | "instrument";
 }
 
 /** Processing status */

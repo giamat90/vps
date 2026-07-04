@@ -67,7 +67,10 @@ pub async fn process_song(
     state: State<'_, SidecarState>,
     file_path: String,
     high_quality: Option<bool>,
+    track_kind: Option<String>,
 ) -> Result<Song, String> {
+    let track_kind = track_kind.unwrap_or_else(|| "vocal".to_string());
+    let skip_separation = track_kind == "instrument";
     let song_id = uuid::Uuid::new_v4().to_string();
     let output_dir = storage::song_dir(&song_id);
 
@@ -96,6 +99,7 @@ pub async fn process_song(
         "filePath": dest_str,
         "outputDir": output_dir_str,
         "highQuality": high_quality.unwrap_or(false),
+        "skipSeparation": skip_separation,
     });
 
     // Hold the lock for the duration of the processing to prevent concurrent jobs
@@ -158,6 +162,7 @@ pub async fn process_song(
                     detected_bpm,
                     processed_at: now,
                     directory: output_dir_str,
+                    kind: track_kind.clone(),
                 };
 
                 // Save analysis data to analysis.json
@@ -735,6 +740,7 @@ pub async fn import_youtube(
                     detected_bpm,
                     processed_at: chrono::Utc::now().to_rfc3339(),
                     directory: output_dir_str,
+                    kind: "vocal".to_string(),
                 };
 
                 let analysis = serde_json::json!({

@@ -5,9 +5,10 @@ const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
 
 interface DropZoneProps {
   highQuality?: boolean;
+  trackKind?: "vocal" | "instrument";
 }
 
-function DropZone({ highQuality }: DropZoneProps) {
+function DropZone({ highQuality, trackKind }: DropZoneProps) {
   const uploadSong = useLibraryStore((s) => s.uploadSong);
   const processing = useLibraryStore((s) => s.processing);
   const isProcessing = processing !== null;
@@ -26,7 +27,7 @@ function DropZone({ highQuality }: DropZoneProps) {
     });
 
     if (selected) {
-      uploadSong(selected, highQuality);
+      uploadSong(selected, highQuality, trackKind);
     }
   };
 
@@ -52,7 +53,9 @@ function DropZone({ highQuality }: DropZoneProps) {
       ) : (
         <div className="dropzone__idle">
           <div className="dropzone__icon">+</div>
-          <div className="dropzone__label">Upload a song</div>
+          <div className="dropzone__label">
+            {trackKind === "instrument" ? "Upload a practice track" : "Upload a song"}
+          </div>
           <div className="dropzone__hint">
             MP3, WAV, FLAC, OGG, M4A
           </div>
