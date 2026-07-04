@@ -111,6 +111,22 @@ body,
   cursor: pointer;
 }
 
+.library-page__track-kind-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.library-page__track-kind-toggle label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
 /* DropZone */
 .dropzone {
   display: flex;
@@ -217,6 +233,20 @@ body,
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.song-card__badge {
+  display: inline-block;
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 0.75rem;
+  vertical-align: middle;
 }
 
 .song-card__meta {
@@ -465,6 +495,17 @@ body,
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+/* Instrumental track stays mounted (WaveSurfer needs a real, non-zero-width
+   container to measure) but collapsed out of the visible layout: absolute
+   positioning + height:0 removes its flow footprint without zeroing width. */
+.waveform__track--hidden {
+  position: absolute;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .waveform__track-header {

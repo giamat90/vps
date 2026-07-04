@@ -55,6 +55,7 @@ def main():
                     cmd["outputDir"],
                     on_progress=make_progress_callback("process"),
                     high_quality=cmd.get("highQuality", False),
+                    skip_separation=cmd.get("skipSeparation", False),
                 )
                 send({"type": "result", "cmd": "process", "data": result})
 

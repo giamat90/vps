@@ -3,8 +3,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ProcessingStatus, Song, Take, ExerciseTake } from "./types";
 
 /** Process a song file through the Python sidecar */
-export async function processSong(filePath: string, highQuality?: boolean): Promise<Song> {
-  return invoke<Song>("process_song", { filePath, highQuality });
+export async function processSong(
+  filePath: string,
+  highQuality?: boolean,
+  trackKind?: "vocal" | "instrument"
+): Promise<Song> {
+  return invoke<Song>("process_song", { filePath, highQuality, trackKind });
 }
 
 /** List all songs in the library */

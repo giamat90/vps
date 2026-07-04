@@ -282,6 +282,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isTransposing: false,
       isRecording: false,
       activeTakeId: null,
+      // instrument-kind songs write identical audio to vocals.wav and
+      // instrumental.wav; mute the instrumental track so only the
+      // relabeled "Melody" track is audible (avoids doubled playback).
+      mutedTracks: { vocals: false, instrumental: song.kind === "instrument", take: false },
+      soloedTrack: null,
     });
     applyEffectiveVolumes(get());
   },

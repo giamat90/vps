@@ -5,6 +5,7 @@ Demucs stem separation → pyin pitch → librosa onsets/dynamics/BPM → key de
 
 import base64
 import os
+import shutil
 import sys
 import gc
 import time
@@ -418,70 +419,94 @@ def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
     }
 
 
-def process(input_path: str, output_dir: str, on_progress=None, high_quality: bool = False) -> dict:
+def process(
+    input_path: str,
+    output_dir: str,
+    on_progress=None,
+    high_quality: bool = False,
+    skip_separation: bool = False,
+) -> dict:
     """Full processing pipeline for an uploaded song.
 
     high_quality: use htdemucs_ft (fine-tuned, ~2-3x slower, better isolation)
-      instead of htdemucs (fast, standard quality).
+      instead of htdemucs (fast, standard quality). Ignored when
+      skip_separation is set.
+    skip_separation: the input is already an isolated monophonic instrument
+      recording (e.g. a piano/guitar practice track) - skip Demucs entirely
+      and analyze the file directly. vocals.wav and instrumental.wav are
+      written as identical copies of the input so the rest of the pipeline
+      (AudioEngine, pitch_shift_song, Waveform) needs no special-casing.
     """
     if on_progress is None:
         on_progress = lambda v, s: None
 
     os.makedirs(output_dir, exist_ok=True)
 
-    # ===================================================================
-    # Stage 1: Demucs stem separation (0.00 – 0.50)
-    # ===================================================================
-    on_progress(0.0, "stem-separation")
-    _log("Loading Demucs model...")
-
-    import torch
-    from demucs.pretrained import get_model
-    from demucs.apply import apply_model
-    from demucs.audio import AudioFile
-
-    model_name = "htdemucs_ft" if high_quality else "htdemucs"
-    repo = _bundled_model_repo()
-    if repo is not None and (repo / f"{model_name}.yaml").exists():
-        model = get_model(model_name, repo=repo)
-    else:
-        model = get_model(model_name)
-    model.eval()
-    on_progress(0.05, "stem-separation")
-
-    wav = AudioFile(input_path).read(
-        streams=0, samplerate=model.samplerate, channels=model.audio_channels
-    )
-    ref = wav.mean(0)
-    wav = (wav - ref.mean()) / ref.std()
-    on_progress(0.10, "stem-separation")
-
-    _log("Running Demucs separation...")
-    with torch.no_grad():
-        sources = apply_model(model, wav[None], progress=False)[0]
-    on_progress(0.45, "stem-separation")
-
-    source_names = model.sources
-    vocals_idx = source_names.index("vocals")
-    vocals_tensor = sources[vocals_idx]
-    instrumental_tensor = sum(
-        sources[i] for i in range(len(source_names)) if i != vocals_idx
-    )
-
-    vocals_tensor = vocals_tensor * ref.std() + ref.mean()
-    instrumental_tensor = instrumental_tensor * ref.std() + ref.mean()
-
     vocals_path = os.path.join(output_dir, "vocals.wav")
     instrumental_path = os.path.join(output_dir, "instrumental.wav")
-    sf.write(vocals_path, vocals_tensor.numpy().T, model.samplerate)
-    sf.write(instrumental_path, instrumental_tensor.numpy().T, model.samplerate)
-    on_progress(0.50, "stem-separation")
 
-    _log("Freeing Demucs from memory...")
-    del model, sources, wav, ref, vocals_tensor, instrumental_tensor
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    if skip_separation:
+        # ===================================================================
+        # Stage 1 (skipped): load the practice track directly (0.00 – 0.50)
+        # ===================================================================
+        on_progress(0.0, "loading-track")
+        _log("Loading instrument practice track (skipping Demucs)...")
+        audio, sr = librosa.load(input_path, sr=None, mono=False)
+        sf.write(vocals_path, audio.T if audio.ndim > 1 else audio, sr)
+        shutil.copyfile(vocals_path, instrumental_path)
+        on_progress(0.50, "loading-track")
+    else:
+        # ===================================================================
+        # Stage 1: Demucs stem separation (0.00 – 0.50)
+        # ===================================================================
+        on_progress(0.0, "stem-separation")
+        _log("Loading Demucs model...")
+
+        import torch
+        from demucs.pretrained import get_model
+        from demucs.apply import apply_model
+        from demucs.audio import AudioFile
+
+        model_name = "htdemucs_ft" if high_quality else "htdemucs"
+        repo = _bundled_model_repo()
+        if repo is not None and (repo / f"{model_name}.yaml").exists():
+            model = get_model(model_name, repo=repo)
+        else:
+            model = get_model(model_name)
+        model.eval()
+        on_progress(0.05, "stem-separation")
+
+        wav = AudioFile(input_path).read(
+            streams=0, samplerate=model.samplerate, channels=model.audio_channels
+        )
+        ref = wav.mean(0)
+        wav = (wav - ref.mean()) / ref.std()
+        on_progress(0.10, "stem-separation")
+
+        _log("Running Demucs separation...")
+        with torch.no_grad():
+            sources = apply_model(model, wav[None], progress=False)[0]
+        on_progress(0.45, "stem-separation")
+
+        source_names = model.sources
+        vocals_idx = source_names.index("vocals")
+        vocals_tensor = sources[vocals_idx]
+        instrumental_tensor = sum(
+            sources[i] for i in range(len(source_names)) if i != vocals_idx
+        )
+
+        vocals_tensor = vocals_tensor * ref.std() + ref.mean()
+        instrumental_tensor = instrumental_tensor * ref.std() + ref.mean()
+
+        sf.write(vocals_path, vocals_tensor.numpy().T, model.samplerate)
+        sf.write(instrumental_path, instrumental_tensor.numpy().T, model.samplerate)
+        on_progress(0.50, "stem-separation")
+
+        _log("Freeing Demucs from memory...")
+        del model, sources, wav, ref, vocals_tensor, instrumental_tensor
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     # ===================================================================
     # Stage 2: pyin pitch extraction (0.50 – 0.70)
