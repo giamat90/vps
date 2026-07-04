@@ -2,11 +2,16 @@ import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { getEngine, usePlayerStore } from "../../stores/player";
 import DualTuner from "./DualTuner";
-import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
+import {
+  frequencyToMidi,
+  NOTE_NAMES,
+  PIANO_WINDOW_SIZE,
+  PIANO_WINDOW_DEFAULT_MIN,
+  computePianoWindowTarget,
+  stepPianoWindow,
+} from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 
-const MIDI_MIN  = 45;
-const MIDI_MAX  = 84;
 const CONF_MIN  = 0.3;
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);
 
@@ -21,21 +26,27 @@ function isBlack(midi: number): boolean {
 type KeyEntry = { x: number; w: number; isBlack: boolean };
 type KeyLayout = Map<number, KeyEntry>;
 
-function buildLayout(W: number): KeyLayout {
+// midiMin is rounded to the nearest semitone before layout — the visible
+// window's position still slides smoothly (see windowMinRef below), but the
+// on-screen keyboard shifts key-by-key like a real keyboard rather than
+// scrolling pixel-by-pixel, which is simpler and reads more naturally for a
+// discrete white/black key strip than for the continuous PianoRoll ribbon.
+function buildLayout(W: number, midiMin: number): KeyLayout {
+  const midiMax = midiMin + PIANO_WINDOW_SIZE - 1;
   const layout: KeyLayout = new Map();
   let totalWhite = 0;
-  for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
+  for (let m = midiMin; m <= midiMax; m++) {
     if (!isBlack(m)) totalWhite++;
   }
   const wkW = W / totalWhite;
   let wi = 0;
-  for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
+  for (let m = midiMin; m <= midiMax; m++) {
     if (!isBlack(m)) {
       layout.set(m, { x: wi * wkW, w: wkW, isBlack: false });
       wi++;
     }
   }
-  for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
+  for (let m = midiMin; m <= midiMax; m++) {
     if (isBlack(m)) {
       const below = layout.get(m - 1);
       if (below) {
@@ -107,6 +118,7 @@ export default function PianoKeyboard() {
   const isLoaded    = useAnalysisStore((s) => s.isLoaded);
   const isRecording = usePlayerStore((s) => s.isRecording);
   const drawRef     = useRef<() => void>(() => {});
+  const windowMinRef = useRef<number>(PIANO_WINDOW_DEFAULT_MIN);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -125,11 +137,18 @@ export default function PianoKeyboard() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      const layout   = buildLayout(W);
       const t        = getEngine().getCurrentTime();
       const songMidi = getCurrentMidi(songPitch, t);
       const takeMidi = getCurrentMidi(takePitch, t);
       const liveMidi = getCurrentMidi(livePitch, t);
+
+      // Slide the visible window to follow whichever pitch is active
+      // (live > take > song), same behavior as PianoRoll.
+      const activeMidi = liveMidi ?? takeMidi ?? songMidi;
+      const target = computePianoWindowTarget(activeMidi, windowMinRef.current);
+      windowMinRef.current = stepPianoWindow(windowMinRef.current, target);
+
+      const layout = buildLayout(W, Math.round(windowMinRef.current));
       drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi);
     };
 

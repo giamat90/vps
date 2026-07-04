@@ -1,7 +1,14 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { getEngine, usePlayerStore } from "../../stores/player";
-import { frequencyToMidi, NOTE_NAMES } from "../../lib/constants";
+import {
+  frequencyToMidi,
+  NOTE_NAMES,
+  PIANO_WINDOW_SIZE,
+  PIANO_WINDOW_DEFAULT_MIN,
+  computePianoWindowTarget,
+  stepPianoWindow,
+} from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 
@@ -9,9 +16,7 @@ import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeybo
 
 const PIANO_W   = 36;       // canvas px width of the piano key strip
 const WINDOW_S  = 8;        // seconds visible at once
-const MIDI_MIN  = 45;       // A2  — bottom of visible range
-const MIDI_MAX  = 84;       // C6  — top of visible range
-const N_NOTES   = MIDI_MAX - MIDI_MIN + 1;
+const N_NOTES   = PIANO_WINDOW_SIZE; // fixed 40-semitone visible span; slides via midiMin
 const CONF_MIN  = 0.3;
 const GAP_S     = 0.08;     // gap threshold: breaks the ribbon
 const HANDLE_HIT = 12;
@@ -19,13 +24,16 @@ const HANDLE_HIT = 12;
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);   // pitch classes that are black keys
 
 // ─── geometry helpers ────────────────────────────────────────────────────────
+// midiMin is the (float, smoothly-animated) lower bound of the currently
+// visible window — see computePianoWindowTarget/stepPianoWindow in constants.ts.
 
 function noteH(H: number): number {
   return H / N_NOTES;
 }
 
-function midiToY(midi: number, H: number): number {
-  return ((MIDI_MAX - midi) / N_NOTES) * H + noteH(H) / 2;
+function midiToY(midi: number, H: number, midiMin: number): number {
+  const midiMax = midiMin + N_NOTES - 1;
+  return ((midiMax - midi) / N_NOTES) * H + noteH(H) / 2;
 }
 
 function isBlack(midi: number): boolean {
@@ -34,10 +42,11 @@ function isBlack(midi: number): boolean {
 
 // ─── draw passes ─────────────────────────────────────────────────────────────
 
-function drawLanes(ctx: CanvasRenderingContext2D, W: number, H: number): void {
+function drawLanes(ctx: CanvasRenderingContext2D, W: number, H: number, midiMin: number): void {
   const nh = noteH(H);
-  for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
-    const y  = midiToY(m, H);
+  const midiMax = midiMin + N_NOTES - 1;
+  for (let m = Math.floor(midiMin) - 1; m <= Math.ceil(midiMax) + 1; m++) {
+    const y  = midiToY(m, H, midiMin);
     const top = y - nh / 2;
     ctx.fillStyle = isBlack(m) ? "#0c0c1e" : "#141428";
     ctx.fillRect(PIANO_W, top, W - PIANO_W, nh);
@@ -74,9 +83,11 @@ function drawRibbon(
   t0: number,
   t1: number,
   H: number,
+  midiMin: number,
   timeToX: (t: number) => number,
 ): void {
   const nh = noteH(H);
+  const midiMax = midiMin + N_NOTES - 1;
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth   = Math.max(2.5, nh * 0.72);
@@ -92,7 +103,7 @@ function drawRibbon(
     const outOfConf  = p.confidence < CONF_MIN || p.frequency <= 0;
     const outOfTime  = p.time < t0 - 0.1 || p.time > t1 + 0.1;
     const midi       = frequencyToMidi(p.frequency);
-    const outOfRange = midi < MIDI_MIN || midi > MIDI_MAX;
+    const outOfRange = midi < midiMin || midi > midiMax;
 
     if (outOfConf || outOfTime || outOfRange) {
       penDown = false;
@@ -105,7 +116,7 @@ function drawRibbon(
     }
 
     const x = timeToX(p.time);
-    const y = midiToY(midi, H);
+    const y = midiToY(midi, H, midiMin);
 
     if (!penDown) {
       ctx.moveTo(x, y);
@@ -122,17 +133,19 @@ function drawRibbon(
 function drawPianoStrip(
   ctx: CanvasRenderingContext2D,
   H: number,
+  midiMin: number,
   songMidi: number | null,
   takeMidi: number | null,
   liveMidi: number | null,
 ): void {
   const nh = noteH(H);
+  const midiMax = midiMin + N_NOTES - 1;
 
   ctx.fillStyle = "#090914";
   ctx.fillRect(0, 0, PIANO_W, H);
 
-  for (let m = MIDI_MIN; m <= MIDI_MAX; m++) {
-    const y      = midiToY(m, H);
+  for (let m = Math.floor(midiMin) - 1; m <= Math.ceil(midiMax) + 1; m++) {
+    const y      = midiToY(m, H, midiMin);
     const top    = y - nh / 2;
     const blk    = isBlack(m);
     const isSong = m === songMidi;
@@ -314,6 +327,7 @@ export default function PianoRoll() {
   const seek             = usePlayerStore((s) => s.seek);
 
   const drawRef = useRef<() => void>(() => {});
+  const windowMinRef = useRef<number>(PIANO_WINDOW_DEFAULT_MIN);
 
   const rulerDrag = useRef<{
     mode: "create" | "drag-in" | "drag-out" | null;
@@ -376,7 +390,7 @@ export default function PianoRoll() {
         ctx.textAlign    = "center";
         ctx.textBaseline = "middle";
         ctx.fillText("No pitch data", (PIANO_W + W) / 2, H / 2);
-        drawPianoStrip(ctx, H, null, null, null);
+        drawPianoStrip(ctx, H, windowMinRef.current, null, null, null);
         return;
       }
 
@@ -391,17 +405,24 @@ export default function PianoRoll() {
       const takeMidi = getCurrentMidi(takePitch, currentTime);
       const liveMidi = getCurrentMidi(livePitch, currentTime);
 
-      drawLanes(ctx, W, H);
-      drawRibbon(ctx, songPitch, COLOR_SONG, t0, t1, H, timeToX);
+      // Slide the visible window to follow whichever pitch is active
+      // (live > take > song), staying put when nothing is currently sounding.
+      const activeMidi = liveMidi ?? takeMidi ?? songMidi;
+      const target = computePianoWindowTarget(activeMidi, windowMinRef.current);
+      windowMinRef.current = stepPianoWindow(windowMinRef.current, target);
+      const midiMin = windowMinRef.current;
+
+      drawLanes(ctx, W, H, midiMin);
+      drawRibbon(ctx, songPitch, COLOR_SONG, t0, t1, H, midiMin, timeToX);
       if (takePitch.length > 0) {
-        drawRibbon(ctx, takePitch, COLOR_TAKE, t0, t1, H, timeToX);
+        drawRibbon(ctx, takePitch, COLOR_TAKE, t0, t1, H, midiMin, timeToX);
       }
       if (livePitch.length > 0) {
-        drawRibbon(ctx, livePitch, COLOR_LIVE, t0, t1, H, timeToX);
+        drawRibbon(ctx, livePitch, COLOR_LIVE, t0, t1, H, midiMin, timeToX);
       }
       drawPlayhead(ctx, W, H);
       drawNoteLabel(ctx, W, songPitch, takePitch, livePitch, currentTime);
-      drawPianoStrip(ctx, H, songMidi, takeMidi, liveMidi);
+      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi);
     };
 
     drawRef.current();
