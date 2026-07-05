@@ -65,6 +65,7 @@ def main():
                     cmd["outputDir"],
                     on_progress=make_progress_callback("analyze"),
                     audio_offset_s=float(cmd.get("audioOffset", 0.0)),
+                    reference_path=cmd.get("referencePath"),
                 )
                 send({"type": "result", "cmd": "analyze", "data": result})
 

@@ -3,6 +3,7 @@ Analyze a user's vocal recording (take).
 Uses SRH pitch detection — spectral, avoids locking onto the second formant.
 """
 
+import os
 import sys
 import numpy as np
 import librosa
@@ -14,6 +15,18 @@ CONFIDENCE_THRESHOLD = 0.5
 SRH_SR = 22050
 SRH_HOP = 512
 STEP_MS = SRH_HOP / SRH_SR * 1000   # ≈ 23.2 ms per frame
+
+# Raw mic takes have far more dynamic range than a mastered/limited commercial
+# mix, so matching peak level alone still leaves takes sounding quiet next to
+# vocals.wav/instrumental.wav. Match RMS (average loudness) to the reference
+# track instead, capped so we never push peaks past PEAK_CEILING_DBFS.
+TARGET_RMS_DBFS_FALLBACK = -18.0  # used when no reference track is available (exercise mode)
+PEAK_CEILING_DBFS = -1.0
+
+
+def _rms_dbfs(samples: np.ndarray) -> float:
+    rms = np.sqrt(np.mean(samples.astype(np.float64) ** 2))
+    return 20 * np.log10(rms) if rms > 0 else -120.0
 
 
 def _detect_vibrato(frequency: np.ndarray, confidence: np.ndarray, step_ms: float) -> dict:
@@ -214,12 +227,19 @@ def mix_export(sources: list, start_sec: float, end_sec: float, output_path: str
     return {"path": output_path}
 
 
-def analyze_recording(recording_path: str, output_dir=None, on_progress=None, audio_offset_s: float = 0.0) -> dict:
+def analyze_recording(
+    recording_path: str,
+    output_dir=None,
+    on_progress=None,
+    audio_offset_s: float = 0.0,
+    reference_path: str | None = None,
+) -> dict:
     """
     Analyze a vocal recording (user take).
 
     audio_offset_s: seconds to skip at the start of the file (latency compensation).
-    Returns dict with pitchData (parallel arrays), onsets, dynamics, vibrato.
+    reference_path: optional loudness reference (e.g. vocals.wav) to RMS-match the take against.
+    Returns dict with pitchData (parallel arrays), onsets, dynamics, vibrato, normalizedPath.
     """
     if on_progress is None:
         on_progress = lambda v, s: None
@@ -275,6 +295,27 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None, au
     except Exception as e:
         print(f"Short-term spectrum error: {e}", file=sys.stderr)
 
+    # --- Stage 6: Loudness normalization (1.0) ---
+    print("Normalizing take loudness...", file=sys.stderr)
+
+    take_audio, take_sr = librosa.load(recording_path, sr=None, mono=True, offset=audio_offset_s)
+    take_rms_db = _rms_dbfs(take_audio)
+    take_peak = float(np.max(np.abs(take_audio))) if take_audio.size else 0.0
+
+    if reference_path and os.path.exists(reference_path):
+        ref_audio, _ = librosa.load(reference_path, sr=take_sr, mono=True)
+        target_rms_db = _rms_dbfs(ref_audio)
+    else:
+        target_rms_db = TARGET_RMS_DBFS_FALLBACK
+
+    gain_linear = 10 ** ((target_rms_db - take_rms_db) / 20)
+    if take_peak > 0:
+        max_safe_gain = 10 ** (PEAK_CEILING_DBFS / 20) / take_peak
+        gain_linear = min(gain_linear, max_safe_gain)
+
+    normalized_path = os.path.splitext(recording_path)[0] + ".wav"
+    sf.write(normalized_path, take_audio * gain_linear, take_sr)
+
     on_progress(1.0, "complete")
 
     return {
@@ -282,5 +323,7 @@ def analyze_recording(recording_path: str, output_dir=None, on_progress=None, au
         "onsets": onsets,
         "dynamics": dynamics,
         "vibrato": vibrato,
+        "normalizedPath": normalized_path,
+        "appliedGainDb": round(20 * np.log10(gain_linear), 2) if gain_linear > 0 else 0.0,
         **st_spectrum_result,
     }

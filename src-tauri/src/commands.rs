@@ -346,21 +346,26 @@ pub async fn save_take(
 
     let file_path_str = file_path.to_string_lossy().to_string();
     let output_dir_str = takes_dir.to_string_lossy().to_string();
+    let vocals_path = storage::song_dir(&song_id).join("vocals.wav");
+    let reference_path_str = vocals_path.exists().then(|| vocals_path.to_string_lossy().to_string());
 
-    // Analyze the recording via sidecar
-    let (pitch_data, onsets, dynamics, vibrato, st_spectrum_times, st_spectrum_b64, st_spectrum_frames, st_spectrum_bins, st_spectrum_min_db, st_spectrum_max_db) = {
+    // Analyze the recording via sidecar (also RMS-normalizes loudness against vocals.wav)
+    let (pitch_data, onsets, dynamics, vibrato, st_spectrum_times, st_spectrum_b64, st_spectrum_frames, st_spectrum_bins, st_spectrum_min_db, st_spectrum_max_db, normalized_path) = {
         let guard = ensure_sidecar(&state);
         if let Ok(guard) = guard {
             if let Some(sidecar) = guard.as_ref() {
-                let cmd = serde_json::json!({
+                let mut cmd_obj = serde_json::json!({
                     "cmd": "analyze",
                     "recordingPath": file_path_str,
                     "outputDir": output_dir_str,
                     "audioOffset": audio_offset,
                 });
-                let _ = sidecar.send_command(&cmd);
+                if let Some(ref_path) = &reference_path_str {
+                    cmd_obj["referencePath"] = serde_json::json!(ref_path);
+                }
+                let _ = sidecar.send_command(&cmd_obj);
                 let timeout = std::time::Duration::from_secs(300);
-                let mut result = (None, None, None, None, None, None, None, None, None, None);
+                let mut result = (None, None, None, None, None, None, None, None, None, None, None);
                 loop {
                     match sidecar.recv_timeout(timeout) {
                         Ok(SidecarMessage::Result { data, .. }) => {
@@ -375,6 +380,7 @@ pub async fn save_take(
                                 data.get("stSpectrumBins").cloned(),
                                 data.get("stSpectrumMinDb").cloned(),
                                 data.get("stSpectrumMaxDb").cloned(),
+                                data.get("normalizedPath").and_then(|v| v.as_str().map(|s| s.to_string())),
                             );
                             break;
                         }
@@ -388,18 +394,29 @@ pub async fn save_take(
                 }
                 result
             } else {
-                (None, None, None, None, None, None, None, None, None, None)
+                (None, None, None, None, None, None, None, None, None, None, None)
             }
         } else {
-            (None, None, None, None, None, None, None, None, None, None)
+            (None, None, None, None, None, None, None, None, None, None, None)
         }
+    };
+
+    // Prefer the loudness-normalized WAV; fall back to the raw webm if normalization failed.
+    let final_file_path_str = match &normalized_path {
+        Some(p) => {
+            if let Err(e) = std::fs::remove_file(&file_path) {
+                log::warn!("Could not remove raw take recording {file_path_str}: {e}");
+            }
+            p.clone()
+        }
+        None => file_path_str,
     };
 
     let take = Take {
         id: take_id,
         song_id: song_id.clone(),
         recorded_at: chrono::Utc::now().to_rfc3339(),
-        filepath: file_path_str,
+        filepath: final_file_path_str,
         name: None,
         start_position,
         audio_offset,
@@ -585,7 +602,7 @@ pub async fn save_exercise_take(
     let file_path_str = file_path.to_string_lossy().to_string();
     let output_dir_str = takes_dir.to_string_lossy().to_string();
 
-    let (pitch_data, dynamics, vibrato) = {
+    let (pitch_data, dynamics, vibrato, normalized_path) = {
         let guard = ensure_sidecar(&state);
         if let Ok(guard) = guard {
             if let Some(sidecar) = guard.as_ref() {
@@ -596,7 +613,7 @@ pub async fn save_exercise_take(
                 });
                 let _ = sidecar.send_command(&cmd);
                 let timeout = std::time::Duration::from_secs(300);
-                let mut result = (None, None, None);
+                let mut result = (None, None, None, None);
                 loop {
                     match sidecar.recv_timeout(timeout) {
                         Ok(SidecarMessage::Result { data, .. }) => {
@@ -604,6 +621,7 @@ pub async fn save_exercise_take(
                                 data.get("pitchData").cloned(),
                                 data.get("dynamics").cloned(),
                                 data.get("vibrato").cloned(),
+                                data.get("normalizedPath").and_then(|v| v.as_str().map(|s| s.to_string())),
                             );
                             break;
                         }
@@ -617,17 +635,28 @@ pub async fn save_exercise_take(
                 }
                 result
             } else {
-                (None, None, None)
+                (None, None, None, None)
             }
         } else {
-            (None, None, None)
+            (None, None, None, None)
         }
+    };
+
+    // Prefer the loudness-normalized WAV; fall back to the raw webm if normalization failed.
+    let final_file_path_str = match &normalized_path {
+        Some(p) => {
+            if let Err(e) = std::fs::remove_file(&file_path) {
+                log::warn!("Could not remove raw exercise take recording {file_path_str}: {e}");
+            }
+            p.clone()
+        }
+        None => file_path_str,
     };
 
     let take = ExerciseTake {
         id: take_id,
         recorded_at: chrono::Utc::now().to_rfc3339(),
-        filepath: file_path_str,
+        filepath: final_file_path_str,
         duration,
         pitch_data,
         dynamics,
