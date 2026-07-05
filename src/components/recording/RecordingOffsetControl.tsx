@@ -21,9 +21,31 @@ function scheduleClick(ctx: AudioContext, atTime: number, isCountIn: boolean): v
   osc.stop(atTime + 0.09);
 }
 
+// Some interfaces (e.g. 2-in USB devices) only route the input to one physical
+// channel — same issue buildChannelFixGraph() works around in recorder.ts, but
+// this calibration flow records its own raw stream, so pick the loudest channel
+// here instead of assuming channel 0.
+function pickLoudestChannel(buffer: AudioBuffer): Float32Array {
+  let best = buffer.getChannelData(0);
+  let bestPeak = 0;
+  for (let c = 0; c < buffer.numberOfChannels; c++) {
+    const data = buffer.getChannelData(c);
+    let peak = 0;
+    for (let i = 0; i < data.length; i++) {
+      const v = Math.abs(data[i]);
+      if (v > peak) peak = v;
+    }
+    if (peak > bestPeak) {
+      bestPeak = peak;
+      best = data;
+    }
+  }
+  return best;
+}
+
 // Returns measured round-trip latency in ms, or null if detection failed.
 function detectLatencyMs(buffer: AudioBuffer): number | null {
-  const samples = buffer.getChannelData(0);
+  const samples = pickLoudestChannel(buffer);
   const sr = buffer.sampleRate;
   // 1 ms hop, 5 ms RMS frame
   const hop = Math.round(sr / 1000);
@@ -44,15 +66,20 @@ function detectLatencyMs(buffer: AudioBuffer): number | null {
   if (maxVal < 0.005) return null;
   const threshold = maxVal * 0.15;
 
-  // Peak detection — minimum 300 ms between peaks (1 frame = 1 ms)
+  // Onset (rising-edge) detection — first frame crossing above threshold,
+  // minimum 300 ms between onsets (1 frame = 1 ms). A strict local-maximum test
+  // misses low-frequency/slow-attack sources (e.g. bass) whose RMS envelope
+  // plateaus near its peak instead of spiking like a clap.
   const peaks: number[] = [];
-  for (let i = 1; i < env.length - 1; i++) {
-    if (env[i] > env[i - 1] && env[i] > env[i + 1] && env[i] > threshold) {
-      if (peaks.length === 0 || i - peaks[peaks.length - 1] > 300) {
+  let above = false;
+  for (let i = 0; i < env.length; i++) {
+    if (env[i] > threshold) {
+      if (!above && (peaks.length === 0 || i - peaks[peaks.length - 1] > 300)) {
         peaks.push(i);
-      } else if (env[i] > env[peaks[peaks.length - 1]]) {
-        peaks[peaks.length - 1] = i;
       }
+      above = true;
+    } else {
+      above = false;
     }
   }
 
