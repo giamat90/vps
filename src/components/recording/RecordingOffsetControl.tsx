@@ -6,7 +6,29 @@ const N_MEASURED = 8;
 const INTERVAL_S = 1.0;
 const FIRST_CLICK_S = 0.5; // gap before first click once recording starts
 
+// Confidence classification of the clap-spread MAD (median absolute deviation).
+const MAD_HIGH_CONFIDENCE_MS = 5;
+const MAD_MEDIUM_CONFIDENCE_MS = 15;
+// Sanity bounds — a measurement outside these is a detection failure, not a latency.
+const MIN_DETECTED_CLAPS = 5;
+const MAX_OFFSET_MS = 500; // matches the manual input's range
+
 type CalibPhase = "idle" | "counting" | "measuring" | "analyzing" | "done" | "error";
+
+type Confidence = "high" | "medium" | "low";
+
+function confidenceOf(madMs: number): Confidence {
+  if (madMs <= MAD_HIGH_CONFIDENCE_MS) return "high";
+  if (madMs <= MAD_MEDIUM_CONFIDENCE_MS) return "medium";
+  return "low";
+}
+
+interface ClapDetection {
+  medianMs: number;
+  madMs: number;
+  detectedCount: number;
+  offsets: number[]; // raw per-clap offsets, kept for rejection diagnostics
+}
 
 function scheduleClick(ctx: AudioContext, atTime: number, isCountIn: boolean): void {
   const osc = ctx.createOscillator();
@@ -43,8 +65,10 @@ function pickLoudestChannel(buffer: AudioBuffer): Float32Array {
   return best;
 }
 
-// Returns measured round-trip latency in ms, or null if detection failed.
-function detectLatencyMs(buffer: AudioBuffer): number | null {
+// Returns the measured round-trip latency plus its spread and detection count,
+// or null when the recording contains no usable signal. Range/count validation
+// happens at the caller so rejections can surface diagnostics.
+function detectLatencyMs(buffer: AudioBuffer): ClapDetection | null {
   const samples = pickLoudestChannel(buffer);
   const sr = buffer.sampleRate;
   // 1 ms hop, 5 ms RMS frame
@@ -97,9 +121,12 @@ function detectLatencyMs(buffer: AudioBuffer): number | null {
     offsets.push(closest - expectedMs);
   }
 
-  if (offsets.length < 3) return null;
-  offsets.sort((a, b) => a - b);
-  return offsets[Math.floor(offsets.length / 2)];
+  if (offsets.length === 0) return null;
+  const sorted = [...offsets].sort((a, b) => a - b);
+  const medianMs = sorted[Math.floor(sorted.length / 2)];
+  const deviations = sorted.map((o) => Math.abs(o - medianMs)).sort((a, b) => a - b);
+  const madMs = deviations[Math.floor(deviations.length / 2)];
+  return { medianMs, madMs, detectedCount: offsets.length, offsets };
 }
 
 function RecordingOffsetControl() {
@@ -108,13 +135,14 @@ function RecordingOffsetControl() {
   const selectedOutputDeviceId = usePlayerStore((s) => s.selectedOutputDeviceId);
   const recordingOffsets = usePlayerStore((s) => s.recordingOffsets);
   const setRecordingOffset = usePlayerStore((s) => s.setRecordingOffset);
+  const applyCalibration = usePlayerStore((s) => s.applyCalibration);
   const fetchAudioDevices = usePlayerStore((s) => s.fetchAudioDevices);
 
   const [phase, setPhase] = useState<CalibPhase>("idle");
   const [calibTargetId, setCalibTargetId] = useState<string>("");
   const [countdown, setCountdown] = useState(0);
   const [measuredCount, setMeasuredCount] = useState(0);
-  const [result, setResult] = useState<number | null>(null);
+  const [result, setResult] = useState<ClapDetection | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
 
   const recorderRef = useRef<MediaRecorder | null>(null);
@@ -224,12 +252,27 @@ function RecordingOffsetControl() {
 
         if (cancelledRef.current) return;
 
-        const measured = detectLatencyMs(audioBuf);
-        if (measured === null || measured < 0) {
+        const detection = detectLatencyMs(audioBuf);
+        if (detection === null) {
           setErrorMsg("Could not detect claps — clap clearly on each click and try again.");
           setPhase("error");
+        } else if (
+          detection.medianMs < 0 ||
+          detection.medianMs > MAX_OFFSET_MS ||
+          detection.detectedCount < MIN_DETECTED_CLAPS
+        ) {
+          console.debug("[calibration] rejected:", {
+            medianMs: detection.medianMs,
+            madMs: detection.madMs,
+            detectedCount: detection.detectedCount,
+            offsets: detection.offsets,
+          });
+          setErrorMsg(
+            "Calibration failed — measured value out of range / too few claps detected. Try again in a quieter room.",
+          );
+          setPhase("error");
         } else {
-          setResult(measured);
+          setResult(detection);
           setPhase("done");
         }
       } catch (e) {
@@ -254,7 +297,13 @@ function RecordingOffsetControl() {
   };
 
   const applyResult = () => {
-    if (result !== null) setRecordingOffset(calibTargetId, result);
+    if (result !== null) {
+      applyCalibration(calibTargetId, {
+        offset: result.medianMs,
+        madMs: result.madMs,
+        ...(selectedOutputDeviceId ? { outputDeviceId: selectedOutputDeviceId } : {}),
+      });
+    }
     setPhase("idle");
   };
 
@@ -276,40 +325,83 @@ function RecordingOffsetControl() {
             Use <strong>Calibrate</strong> to measure automatically.
           </p>
           <div className="rec-offset__list">
-            {devices.map((d) => (
-              <div
-                key={d.deviceId}
-                className={`rec-offset__row${d.deviceId === micDeviceId ? " rec-offset__row--active" : ""}`}
-              >
-                <span className="rec-offset__name">
-                  {d.label || `Mic ${d.deviceId.slice(0, 8)}`}
-                </span>
-                <input
-                  type="number"
-                  className="rec-offset__input"
-                  value={recordingOffsets[d.deviceId] ?? 0}
-                  min={0}
-                  max={500}
-                  step={1}
-                  onChange={(e) =>
-                    setRecordingOffset(d.deviceId, parseInt(e.target.value) || 0)
-                  }
-                />
-                <span className="rec-offset__unit">ms</span>
-                <button
-                  className="rec-offset__row-calib-btn"
-                  onClick={() => startCalibration(d.deviceId)}
-                  title={`Calibrate latency for ${d.label || "this device"}`}
+            {devices.map((d) => {
+              const entry = recordingOffsets[d.deviceId];
+              return (
+                <div
+                  key={d.deviceId}
+                  className={`rec-offset__row${d.deviceId === micDeviceId ? " rec-offset__row--active" : ""}`}
                 >
-                  Cal
+                  <span className="rec-offset__name">
+                    {d.label || `Mic ${d.deviceId.slice(0, 8)}`}
+                  </span>
+                  {entry?.stale ? (
+                    <span className="rec-offset__chip rec-offset__chip--stale" title="A device this calibration was measured with is no longer connected">
+                      stale
+                    </span>
+                  ) : entry?.madMs !== undefined ? (
+                    <span
+                      className={`rec-offset__chip rec-offset__chip--${confidenceOf(entry.madMs)}`}
+                      title={`Clap spread (MAD): ${entry.madMs} ms`}
+                    >
+                      {confidenceOf(entry.madMs)}
+                    </span>
+                  ) : null}
+                  <input
+                    type="number"
+                    className="rec-offset__input"
+                    value={entry?.offset ?? 0}
+                    min={0}
+                    max={MAX_OFFSET_MS}
+                    step={1}
+                    onChange={(e) =>
+                      setRecordingOffset(d.deviceId, parseInt(e.target.value) || 0)
+                    }
+                  />
+                  <span className="rec-offset__unit">ms</span>
+                  <button
+                    className="rec-offset__row-calib-btn"
+                    onClick={() => startCalibration(d.deviceId)}
+                    title={`Calibrate latency for ${d.label || "this device"}`}
+                  >
+                    Cal
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {phase === "idle" && (recordingOffsets[micDeviceId] === undefined || recordingOffsets[micDeviceId]?.stale) && (
+            <div className="rec-offset__banner rec-offset__banner--warn">
+              <span>
+                {recordingOffsets[micDeviceId]?.stale
+                  ? "Your audio setup changed — recalibrate?"
+                  : "This microphone hasn't been calibrated — measure its latency?"}
+              </span>
+              <div className="rec-offset__banner-actions">
+                <button className="rec-offset__banner-btn" onClick={() => startCalibration(micDeviceId)}>
+                  Calibrate
                 </button>
               </div>
-            ))}
-          </div>
+            </div>
+          )}
 
           {phase === "done" && result !== null && (
             <div className="rec-offset__banner rec-offset__banner--ok">
-              <span>Measured: <strong>{result} ms</strong></span>
+              <span>
+                Measured: <strong>{result.medianMs} ms</strong>{" "}
+                <span
+                  className={`rec-offset__chip rec-offset__chip--${confidenceOf(result.madMs)}`}
+                  title={`Clap spread (MAD): ${result.madMs} ms over ${result.detectedCount}/${N_MEASURED} claps`}
+                >
+                  {confidenceOf(result.madMs)} confidence
+                </span>
+              </span>
+              {confidenceOf(result.madMs) === "low" && (
+                <span className="rec-offset__hint">
+                  Measurements varied a lot — consider re-running in a quieter room with short, crisp claps.
+                </span>
+              )}
               <div className="rec-offset__banner-actions">
                 <button className="rec-offset__banner-btn" onClick={applyResult}>
                   Apply to {devices.find((d) => d.deviceId === calibTargetId)?.label?.split("(")[0].trim() ?? "device"}
