@@ -31,6 +31,8 @@ App
 │   ├── PianoKeyboard      — horizontal piano key strip with live/song/take highlight
 │   ├── PianoRoll          — scrolling pitch ribbon display (song + take + live)
 │   ├── SpectrogramPanel   — scrolling live mic spectrogram (Free Exercise only)
+│   ├── ShortTermSpectrumPanel — real-time spectral snapshot of the live mic (Free Exercise)
+│   ├── ShortTermSpectrumComparisonPanel — song vs. take vs. live spectral envelope overlay (PracticeRoom)
 │   ├── VibratoCard        — vibrato rate / depth / regularity summary
 │   ├── TimingChart        — timing deviation chart (user vs. reference onsets)
 │   └── DynamicsCurve      — RMS dynamics over time
@@ -190,6 +192,8 @@ Renders `TimeRuler` at the top, then up to three stacked tracks, each with a `.w
 
 **`TrackControls`** (local sub-component, one instance per row): mute button (`M`, amber `--on` state), solo button (`S`, green `--on` state), and a volume slider — wired to the player store's `toggleMute`, `toggleSolo`, and the relevant `set*Volume` action for that track. After a new take's WaveSurfer instance loads, the effect calls `syncTrackVolumes()` so the fresh instance picks up the stored effective volume instead of defaulting to full volume.
 
+**Export Mix button:** renders the current audible mix to a WAV via the `export_mix` Tauri command (sidecar `mix_export`). `buildMixSources(state)` in the player store resolves one final linear gain per track from mute/solo/volume, includes the active take (with its `startPosition`/`audioOffset` alignment), and clamps the render window to the punch region when one is set. The button subscribes to every input `buildMixSources` reads so its enabled/disabled state stays correct; it shows "Exporting…" while the sidecar renders, then opens a native Save As dialog.
+
 **Instrument practice tracks** (`song.kind === "instrument"`): the vocals row is relabeled "Melody" (its `vocals.wav` file is the actual practice-track audio for these songs — see [Data Model](data-model.md#song)). The instrumental row — an identical duplicate of the same audio — stays mounted (WaveSurfer needs a real container to measure) but is visually collapsed via `waveform__track--hidden` (absolute position + `height: 0`, not `display: none`, so it keeps a layout box to measure against). `loadSong` sets `mutedTracks.instrumental = true` by default for these songs so the duplicate isn't audible; the mute button still works normally if the user wants to double-check.
 
 ### MicSelector / OutputSelector
@@ -256,25 +260,38 @@ Scrolling live spectrogram rendered exclusively in the Free Exercise page. Shows
 
 **Frequency axis:** 30 Hz (bottom) → 20 kHz / Nyquist (top) on a **log-frequency scale**. The 30 Hz floor (not 20 Hz) keeps the 50–100 Hz region fully visible within canvas bounds. Tick marks and Hz labels at 30 · 50 · 100 · 200 · 500 · 1k · 2k · 5k · 10k · 20k Hz (20k pinned at top edge). Faint horizontal grid lines at 100 · 500 · 1k · 5k · 10k Hz are drawn on the main canvas after the offscreen composite so they remain crisp. Axis strip: `AXIS_W = 56` physical pixels.
 
-**Resolution:** 8192-point FFT (`fftSize = 8192`, `frequencyBinCount = 4096`). `getFloatFrequencyData()` into a `Float32Array` gives full dB precision (no quantisation). Each canvas pixel row maps to an FFT bin via a pre-computed `Float32Array` LUT built by `buildFreqBinLut(H, fftSize, sampleRate)` — bilinear interpolation between adjacent bins. LUT is cached and rebuilt only on canvas resize or sample-rate change.
+**Resolution:** 8192-point FFT (`fftSize = 8192`, `frequencyBinCount = 4096`). `getFloatFrequencyData()` into a `Float32Array` gives full dB precision (no quantisation). Each canvas pixel row maps to an FFT **bin range** via a pre-computed per-row `[low, high]` LUT; the row's value is the **max dB across its bin range** (max-in-range mapping — fills the gaps a nearest-neighbor lookup leaves on a log-frequency axis). LUT is cached and rebuilt only on canvas resize or sample-rate change.
 
 **Scroll rendering (left-shift pattern):**
 1. Every ~33 ms tick, call `getFloatFrequencyData` into `fftScratch`.
-2. Compute normalised magnitude for each row → `colNorms[]`.
-3. Apply 3-tap vertical Gaussian bloom per row: `blurred[i] = 0.25·prev + 0.50·curr + 0.25·next`.
-4. Shift offscreen canvas left by `shift` pixels: `getImageData(shift, 0, rollW-shift, H)` → `putImageData(…, 0, 0)`.
-5. Write `shift` new columns at `rollW - shift` from blurred norms via colormap lookup.
-6. Composite offscreen onto main canvas at `globalAlpha = 0.72` for temporal smoothing (main canvas is **not** cleared between frames during active capture — old frames decay naturally).
+2. Compute normalised magnitude for each row → `colNorms[]` (no vertical blur — relies on temporal blending only).
+3. Shift offscreen canvas left by `shift` pixels: `getImageData(shift, 0, rollW-shift, H)` → `putImageData(…, 0, 0)`.
+4. Write `shift` new columns at `rollW - shift` from norms via colormap lookup.
+5. Composite offscreen onto main canvas at `globalAlpha = 0.72` for temporal smoothing (main canvas is **not** cleared between frames during active capture — old frames decay naturally).
 
 `shift` is computed from a fractional accumulator: `shiftAccum += rollW * 33 / (WINDOW_S * 1000)`, so the full canvas width always represents exactly `WINDOW_S = 10` seconds regardless of physical canvas width or DPR.
 
-**dB mapping:** `MIN_DB = -65`, `MAX_DB = -10`. Noise gate: `db < -80 → norm = 0`. Gamma correction: `Math.pow(norm, 0.55)`. `smoothingTimeConstant = 0.15` (set on every capture tick — single authoritative location).
+**dB mapping:** `MIN_DB = -85`, `MAX_DB = -20` (VoceVista-matched dynamic range; exported and reused by the Short-Term Spectrum panels). Hard noise gate: `db < -80 → norm = 0`. Soft gate below `norm = 0.15` (`norm·(norm/0.15)·0.3`) pushes the noise floor to black. Gamma correction: `Math.pow(gated, 0.38)`. `smoothingTimeConstant = 0.15` (set on every capture tick — single authoritative location). A vertical dB legend bar (`LEGEND_WIDTH = 52` px, ticks −20 … −85) is drawn on the right using the same constants so it always matches the display mapping.
 
 **Colormap:** Thermal — black → dark navy (index 64) → medium blue → teal (index 148) → yellow → orange → bright red-orange (index 230) → salmon (index 245) → pure white (index 255). Built by `buildColormap()` in `src/lib/spectroUtils.ts` using index-based linear interpolation so the noise floor is dark navy/black and only peak harmonics flash white.
 
 **Mic analyser:** Reads from `getMicAnalyser()` (player store singleton, `fftSize = 8192`). No second `getUserMedia` is opened. Idle state (neither recording nor monitoring) freezes the canvas; the roll area is cleared to `#0f0f1e` only on true idle.
 
 **Layout in ExercisePage:** Inside `exercise-page__spectro`, below the `exercise-page__keyboard` strip and `exercise-page__roll`, inside the `exercise-page__analysis` scrollable wrapper. Canvas height: `clamp(15rem, 45vh, 35rem)`.
+
+### ShortTermSpectrumPanel
+
+Real-time spectral **snapshot** (not a waterfall) of the live microphone — a single spectrum curve redrawn each frame, on the Free Exercise page below the SpectrogramPanel. Horizontal **log-frequency axis** (reuses `freqToX`/`xToFreq` from `src/lib/spectroUtils.ts` and `F_MIN`/`F_MAX`/`MIN_DB`/`MAX_DB`/`AXIS_W`/`LEGEND_WIDTH` exported by `SpectrogramPanel`), vertical dB axis with 10 dB ticks. Draws the raw spectrum plus a **smoothed spectral envelope overlay** — a moving average whose window widens with frequency, since formants are proportionally wider at high frequencies on a log axis. Reads `getMicAnalyser()`; opens no second `getUserMedia`.
+
+### ShortTermSpectrumComparisonPanel
+
+Song-vs-take spectral envelope comparison in `PracticeRoom`. Overlays up to three curves at the current playhead position, using the shared song/take/live colors from `PianoKeyboard` (`COLOR_SONG`/`COLOR_TAKE`/`COLOR_LIVE`):
+
+- **Song** — precomputed spectral envelope over time (`STSpectrum` in the analysis store, produced by the sidecar `compute_st_spectrum` command on the vocals stem).
+- **Take** — per-take envelope computed during `save_take` analysis and persisted on the `Take` (`stSpectrumTimes`/`stSpectrumB64`/`stSpectrumFrames`/`stSpectrumBins`/`stSpectrumMinDb`/`stSpectrumMaxDb` — base64-packed byte matrix). The analysis store aligns take frames to **song time** (shifting by `startPosition`/`audioOffset`) so the two curves compare like-for-like at the playhead.
+- **Live** — current mic spectrum while recording/monitoring.
+
+Spectrum frames are coarse (~20 fps) relative to rAF, so the draw loop does a nearest-frame binary search per tick. Uses its **own** dB span of −100…0 dBFS — deliberately decoupled from SpectrogramPanel's −85…−20 display window — to cover the full vocal dynamic range, matching the mic `AnalyserNode`'s widened `minDecibels`/`maxDecibels` (see `stores/player.ts`).
 
 ### DualTuner
 

@@ -97,6 +97,8 @@ The singer hears **both** original vocals and instrumental during recording — 
 7. set state: isRecording=false, activeTakeId=take.id
 ```
 
+During `save_take`, the sidecar `analyze` step also **RMS-normalizes the take's loudness against `vocals.wav`** (peak-capped) and the normalized `{takeId}.wav` replaces the raw `.webm` on disk — see [Python Sidecar](python-sidecar.md#analyze). This is why takes match the mastered Demucs stems' loudness without touching the take volume slider.
+
 Setting `activeTakeId` triggers the `Waveform` component to call `eng.loadTakeTrack()`, which loads the take as a third, separate waveform track alongside vocals and instrumental.
 
 ## Windows WASAPI: Default Communications Device

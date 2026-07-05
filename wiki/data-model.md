@@ -29,19 +29,26 @@ interface Take {
   id: string;
   songId: string;
   recordedAt: string;     // ISO timestamp
-  filepath: string;       // absolute path to the recording file
+  filepath: string;       // absolute path to the recording file (normalized .wav; raw .webm only if normalization failed)
+  name?: string;          // user-assigned; UI falls back to "Take N"
   startPosition: number;  // song time (seconds) where recording began; 0 for full-song takes
   audioOffset?: number;   // seconds to skip into the audio file on playback (see Latency Compensation)
-  pitchData?: PitchData;  // raw pYIN output (parallel arrays)
+  pitchData?: PitchData;  // raw SRH output (parallel arrays)
   onsets?: number[];
   dynamics?: DynamicsPoint[];
   vibrato?: VibratoMetrics;
+  stSpectrumTimes?: number[];  // short-term spectrum envelope (comparison panel):
+  stSpectrumB64?: string;      // base64-packed byte matrix of frames × bins,
+  stSpectrumFrames?: number;   // plus its dB display range
+  stSpectrumBins?: number;
+  stSpectrumMinDb?: number;
+  stSpectrumMaxDb?: number;
 }
 ```
 
 ### PitchData
 
-Raw pitch output from the Python sidecar (SRH for songs, pYIN for takes). Parallel arrays — index `i` represents one analysis frame.
+Raw pitch output from the Python sidecar (SRH for both songs and takes — see [Python Sidecar](python-sidecar.md#recording-takes--srh)). Parallel arrays — index `i` represents one analysis frame.
 
 ```ts
 interface PitchData {
@@ -136,7 +143,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 │       ├── takes.json         Take[] metadata
 │       ├── pitched/{n}/       pitch-shifted WAV cache (n = semitone steps)
 │       └── takes/
-│           └── {takeId}.webm  recorded take audio files
+│           └── {takeId}.wav   RMS-normalized take audio (raw {takeId}.webm kept only when normalization failed)
 └── exercises/
     ├── exercises.json         ExerciseTake[] metadata
     └── takes/
@@ -147,18 +154,22 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 
 | Command | Arguments | Returns |
 |---------|-----------|---------|
-| `process_song` | `filePath: string, highQuality?: boolean` | `Song` |
+| `process_song` | `filePath: string, highQuality?: boolean, trackKind?: "vocal"\|"instrument"` | `Song` |
 | `import_youtube` | `url: string, highQuality?: boolean` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
 | `save_take` | `songId, audioData: number[], startPosition: f64, audioOffset: f64` | `Take` |
-| `list_takes` | `songId: string` | `Take[]` |
+| `list_takes` | `songId: string` | `Take[]` (backfills missing `stSpectrum*` via sidecar) |
 | `delete_take` | `songId, takeId: string` | `void` |
-| `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics }` |
+| `rename_take` | `songId, takeId, name: string` | `Take` (empty/whitespace name resets to default) |
+| `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics, stSpectrum… }` (backfills the song spectrum via sidecar) |
 | `pitch_shift_song` | `songDir: string, nSteps: number` | `{ vocalsPath, instrumentalPath }` |
 | `save_exercise_take` | `audioData: number[], duration: f64` | `ExerciseTake` |
 | `list_exercise_takes` | — | `ExerciseTake[]` |
 | `delete_exercise_take` | `takeId: string` | `void` |
+| `export_stem` | `stemPath, suggestedName: string` | `void` (native Save As dialog) |
+| `export_take` | `takePath, suggestedName: string` | `void` (always WAV; sidecar `convert_take` first) |
+| `export_mix` | `sources: MixSource[], startSec, endSec: f64, suggestedName: string` | `void` (sidecar `mix_export`, then Save As) |
 
 All commands are async and return a `Promise`. Errors are thrown as strings.
 

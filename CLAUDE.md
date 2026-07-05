@@ -31,7 +31,7 @@ Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log wi
 | State management | Zustand | latest |
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
-| Stem separation | Demucs | `htdemucs` model |
+| Stem separation | Demucs | `htdemucs` (default) / `htdemucs_ft` (high-quality opt-in) |
 | Song pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
 | Take pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
 | Pitch shifting | librosa phase vocoder | — |
@@ -91,39 +91,49 @@ VPS/
 │   │   └── recorder.ts        VocalRecorder (MediaRecorder wrapper)
 │   ├── components/
 │   │   ├── upload/
-│   │   │   ├── DropZone.tsx       file drag-and-drop → processSong
+│   │   │   ├── DropZone.tsx       file drag-and-drop → processSong (song or instrument track)
 │   │   │   └── YouTubeImport.tsx  URL paste → importYoutube
 │   │   ├── player/
-│   │   │   ├── Waveform.tsx        3-track waveform display + take loading
+│   │   │   ├── Waveform.tsx        3-track waveform display + take loading + Export Mix button
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
 │   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
-│   │   │   ├── TempoControl.tsx    playback rate slider
+│   │   │   ├── TempoControl.tsx    BPM-first speed control
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
 │   │   │   └── OutputSelector.tsx  audio output device picker
 │   │   ├── recording/
 │   │   │   ├── RecordButton.tsx    start/stop recording
 │   │   │   ├── MicSelector.tsx     microphone input picker
-│   │   │   └── TakeList.tsx        take list with select/delete
+│   │   │   ├── MonitorButton.tsx   live mic monitoring toggle
+│   │   │   ├── RecordingOffsetControl.tsx  latency calibration wizard (click-clap)
+│   │   │   ├── TakeList.tsx        take list with select/rename/delete
+│   │   │   └── ExerciseTakeList.tsx  Free Exercise take list
 │   │   ├── analysis/
 │   │   │   ├── PianoRoll.tsx       VoceVista-style pitch ribbon (song+take+live)
 │   │   │   ├── PianoKeyboard.tsx   horizontal piano with live pitch highlight
 │   │   │   ├── DualTuner.tsx       real-time pitch tuner (song vs singer)
 │   │   │   ├── DynamicsCurve.tsx   RMS dynamics over time
 │   │   │   ├── VibratoCard.tsx     vibrato rate/depth/regularity
-│   │   │   └── TimingChart.tsx     timing deviation chart
-│   │   └── coaching/
-│   │       └── CoachPanel.tsx      AI coaching tips
+│   │   │   ├── TimingChart.tsx     timing deviation chart
+│   │   │   ├── SpectrogramPanel.tsx  scrolling live mic spectrogram (Free Exercise only)
+│   │   │   ├── ShortTermSpectrumPanel.tsx  real-time spectral snapshot (live mic)
+│   │   │   └── ShortTermSpectrumComparisonPanel.tsx  song-vs-take spectral envelope comparison
+│   │   ├── coaching/
+│   │   │   └── CoachPanel.tsx      AI coaching tips
+│   │   └── updater/               auto-update UI (tauri-plugin-updater)
 │   ├── lib/
-│   │   ├── types.ts           Song, Take, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
+│   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
 │   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
-│   │   └── constants.ts       NOTE_NAMES, MIDI helpers, frequencyToMidi
+│   │   └── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
 │   ├── stores/
-│   │   ├── player.ts          player + recording + punch state (Zustand)
+│   │   ├── player.ts          player + recording + punch + latency-calibration state (Zustand)
 │   │   ├── library.ts         song list + import flow (Zustand)
-│   │   └── analysis.ts        pitch/onset/dynamics/live data (Zustand)
+│   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
+│   │   ├── exercise.ts        Free Exercise mode state (Zustand)
+│   │   └── updater.ts         auto-update state (Zustand)
 │   ├── pages/
 │   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)
-│   │   └── PracticeRoom.tsx   main practice UI (waveforms + analysis + recording)
+│   │   ├── PracticeRoom.tsx   main practice UI (waveforms + analysis + recording)
+│   │   └── ExercisePage.tsx   Free Exercise: record/monitor without a song (live pitch + spectrogram)
 │   └── styles/global.css
 ├── src-tauri/src/
 │   ├── commands.rs    Tauri command handlers
@@ -132,10 +142,11 @@ VPS/
 │   ├── sidecar.rs     Python sidecar process manager
 │   └── lib.rs         Tauri builder + invoke_handler registration
 ├── sidecar/
-│   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, ping, quit)
+│   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, ping, quit)
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
-│   ├── analysis.py    Take analysis: pYIN + onsets + dynamics + vibrato
+│   ├── analysis.py    Take analysis (SRH + onsets + dynamics + vibrato + spectrum), RMS loudness normalization, mixdown rendering
 │   ├── yt_importer.py yt-dlp + processor pipeline
+│   ├── pitch_lab/     algorithm validation workspace (see its README.md)
 │   └── build.py       PyInstaller sidecar build
 └── wiki/              Authoritative documentation (read at session start)
 ```
@@ -165,13 +176,33 @@ interface Take {
   filepath: string;
   name?: string;          // user-assigned; falls back to "Take N" in the UI
   startPosition: number;  // song time (s) where recording began; 0 = full-song
+  audioOffset?: number;   // seconds of file audio to skip (latency compensation overflow)
   pitchData?: PitchData;
   onsets?: number[];
   dynamics?: DynamicsPoint[];
   vibrato?: VibratoMetrics;
+  stSpectrumTimes?: number[];  // + stSpectrumB64/Frames/Bins/MinDb/MaxDb —
+                               // log-Hz spectral envelope for the comparison panel
 }
 
-interface PitchData {        // raw SRH / pYIN output — parallel arrays
+interface ExerciseTake {     // Free Exercise recordings (no song context)
+  id: string;
+  recordedAt: string;
+  filepath: string;
+  duration: number;
+  pitchData?: PitchData;
+  dynamics?: DynamicsPoint[];
+  vibrato?: VibratoMetrics;
+}
+
+interface CalibrationEntry { // per-device recording latency, persisted in localStorage
+  offset: number;            // ms
+  stale?: boolean;           // set by devicechange watcher; skipped at recording time, never deleted
+  madMs?: number;            // clap-spread MAD → confidence chip; absent for manual/legacy entries
+  outputDeviceId?: string;   // output active during calibration; mismatch at record time skips entry
+}
+
+interface PitchData {        // raw SRH output — parallel arrays
   times: number[];
   f0: number[];              // Hz; 0.0 for unvoiced frames
   voiced: boolean[];
@@ -188,30 +219,35 @@ interface PitchPoint {       // frontend-internal representation
 ### Storage layout
 
 ```
-~/.vps/library/
-└── {songId}/
-    ├── {original}.mp3       source file copy
-    ├── vocals.wav            Demucs vocals
-    ├── instrumental.wav      Demucs instrumental
-    ├── analysis.json         pitchData + onsets + dynamics
-    ├── takes.json            Take[] metadata
-    ├── pitched/{n}/          pitch-shifted WAV cache (n = semitone steps)
-    └── takes/
-        └── {takeId}.webm     recorded take audio
+~/.vps/
+├── library/
+│   └── {songId}/
+│       ├── {original}.mp3       source file copy
+│       ├── vocals.wav            Demucs vocals (or the imported file itself for kind:"instrument")
+│       ├── instrumental.wav      Demucs instrumental
+│       ├── analysis.json         pitchData + onsets + dynamics
+│       ├── takes.json            Take[] metadata
+│       ├── pitched/{n}/          pitch-shifted WAV cache (n = semitone steps)
+│       └── takes/
+│           └── {takeId}.wav      RMS-normalized take (raw .webm kept only if normalization failed)
+└── exercises/
+    ├── exercises.json            ExerciseTake[] metadata
+    └── takes/{takeId}.webm       Free Exercise recordings
 ```
 
 ### Tauri commands
 
 | Command | Returns | Notes |
 |---|---|---|
-| `process_song(filePath)` | `Song` | Demucs + SRH; 10-min timeout |
+| `process_song(filePath, kind?, highQuality?)` | `Song` | Demucs + SRH; 10-min timeout; `kind: "instrument"` skips separation |
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
-| `save_take(songId, audioData, startPosition)` | `Take` | triggers pYIN analyze |
+| `save_take(songId, audioData, startPosition, audioOffset)` | `Take` | sidecar `analyze` (SRH + spectrum) + RMS-normalizes loudness against vocals.wav |
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
 | `rename_take(songId, takeId, name)` | `Take` | empty/whitespace name clears back to default |
-| `load_analysis(songId)` | `{pitchData, onsets, dynamics}` | reads analysis.json |
+| `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
+| `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
 | `import_youtube(url)` | `Song` | yt-dlp + Demucs; 15-min timeout |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
@@ -260,6 +296,8 @@ Three WaveSurfer instances in lockstep:
 
 **getUserMedia must be called before eng.play().** On Windows WASAPI, opening the mic reconfigures the audio session; active playback can cause `NotReadableError`.
 
+**Latency compensation:** per-device `CalibrationEntry` offsets (calibrated via `RecordingOffsetControl`'s click-clap wizard) shift the take's `startPosition`/`audioOffset` at save time. Stale (device-change) or output-mismatched entries are skipped and `usedLatencyFallback` is set. Details in `wiki/recording-flow.md`.
+
 ### Windows WASAPI output routing
 When `getUserMedia` opens a mic, Windows switches `""` sinkId to the **Communications Device** (different port than headphones). Auto-detection after `getUserMedia`:
 1. Filter out `"Default -"` and `"Communications -"` aliases and virtual devices (Steam)
@@ -300,7 +338,7 @@ VoceVista-inspired canvas ribbon. Draws at native frame rate via rAF reading `ge
 └────────────────────────────────────────────────────────┘
 ```
 
-**Key constants:** MIDI 45–84 (A2–C6, 40 rows), `WINDOW_S = 8` (8-second visible window centred on currentTime), canvas height `15rem`.
+**Key constants:** 40-semitone visible window sliding over MIDI 12–96 (C0–C7) with note-following (starts at 45–84 / A2–C6, follows the active note with a 6-semitone edge margin and lerp smoothing — see `computePianoWindowTarget` in `constants.ts`), `WINDOW_S = 8` (8-second visible window centred on currentTime), canvas height `15rem`.
 
 **Time ruler interactions:**
 - Drag empty area → create punch region
@@ -315,7 +353,7 @@ VoceVista-inspired canvas ribbon. Draws at native frame rate via rAF reading `ge
 
 ### PianoKeyboard (`src/components/analysis/PianoKeyboard.tsx`)
 
-Horizontal key strip. MIDI 45–84. Highlights current note in song=blue / take=red / live=orange priority. All white keys show labels: C notes include octave (`C3`, `C4`…), others show just the letter (`D`, `E`…).
+Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll. Highlights current note in song=blue / take=red / live=orange priority. All white keys show labels: C notes include octave (`C3`, `C4`…), others show just the letter (`D`, `E`…).
 
 ### Analysis store (`src/stores/analysis.ts`)
 
@@ -339,8 +377,9 @@ Horizontal key strip. MIDI 45–84. Highlights current note in song=blue / take=
 
 | Command | Description | Timeout |
 |---|---|---|
-| `process` | Demucs htdemucs → SRH pitch → onsets → dynamics → BPM → key | 600 s |
-| `analyze` | pYIN pitch → onsets → dynamics → vibrato (for recorded takes) | 300 s |
+| `process` | Demucs htdemucs (or `htdemucs_ft` when `highQuality`) → SRH pitch → onsets → dynamics → BPM → key; `kind: "instrument"` skips separation | 600 s |
+| `analyze` | SRH pitch → onsets → dynamics → vibrato → short-term spectrum for recorded takes; with `referencePath` also RMS-normalizes take loudness against that stem and returns `normalizedPath` | 300 s |
+| `compute_st_spectrum` | log-Hz spectral envelope over time for an audio file (comparison panel) | 120 s |
 | `pitch_shift` | phase-vocoder shift vocals + instrumental; cached in `pitched/{n}/` | 300 s |
 | `import_yt` | yt-dlp download → `process` pipeline; bot-detection browser cookie fallback | 900 s |
 | `convert_take` | decode a take (webm/opus) via `librosa.load` + write WAV via `soundfile`; used for take export | 120 s |
@@ -372,6 +411,7 @@ isLooping: boolean        // legacy A/B loop (loopStart/loopEnd)
 transpose: number         // active semitone shift
 isTransposing: boolean
 isRecording: boolean
+isSavingTake: boolean
 takes: Take[]
 activeTakeId: string | null
 punchIn: number | null
@@ -381,6 +421,8 @@ audioDevices: MediaDeviceInfo[]
 selectedDeviceId: string | null
 outputDevices: MediaDeviceInfo[]
 selectedOutputDeviceId: string | null
+recordingOffsets: Record<string, CalibrationEntry>  // per-mic latency calibration (localStorage-backed)
+usedLatencyFallback: boolean   // true when recording started with no usable calibration
 ```
 
 `getEngine()` and `getRecorder()` are module-level singletons, not stored in Zustand.
@@ -389,23 +431,10 @@ selectedOutputDeviceId: string | null
 
 ## Current git state
 
-- **Branch:** `master` (up to date with `origin/master`)
-- **Current version:** `0.1.8` (tag `v0.1.8`)
-- **Phase 1 (full feature set):** Complete as of April 2026. Tagged `v0.1.0` on 2026-06-27.
-
-### Recent work (June 2026)
-- Added all-white-key note labels to PianoKeyboard
-- Piano roll: note label moved to top-right, time ruler with punch region, drag-to-seek
-- Song Practice Studio fork created at `C:\Workspace\GiaMat90\SongAnalyzer` (separate project, GitHub: `giamat90/SongPracticeStudio`)
-- **CI pipeline** (`v0.1.1`–`v0.1.6`): GitHub Actions for macOS DMG and Windows NSIS with smoke tests
-  - Smoke tests launch binary directly (`target/release/app.exe` on Windows, binary inside `.app` on macOS)
-  - `scripts/bump-version.ps1` for atomic version bumps (UTF-8 no-BOM)
-  - Fixed: GlobPattern panic from backslash glob in asset scope; bundle identifier must not end in `.app`
-- **v0.1.7**: bugfix — sidecar now prefers venv Python over system Python so built app uses latest yt-dlp
-- **v0.1.8**: bugfix — sidecar binary properly bundled in NSIS (`externalBin` + `--collect-all=yt_dlp`); `CREATE_NO_WINDOW` suppresses console flash; `build.rs` creates placeholder so local dev builds work without pre-building the sidecar
-
-### Pending
-- `feature/algorithm-improvements` branch: `preferHarmonicFundamental` evaluation remains (all other VoceVista-aligned SRH changes committed)
+- **Branch:** `master`
+- **Current version:** `0.1.25` (as of 2026-07-05)
+- For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording with live pitch + spectrogram), Short-Term Spectrum panels, key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, auto-update, self-contained installer.
 
 ---
 

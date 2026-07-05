@@ -7,7 +7,7 @@
 | Page | Description |
 |------|-------------|
 | [Architecture](architecture.md) | 3-tier system overview: React → Tauri → Python sidecar |
-| [Audio Engine](audio-engine.md) | Dual WaveSurfer playback, sync, looping, device routing |
+| [Audio Engine](audio-engine.md) | Three-instance WaveSurfer playback (vocals/instrumental/take), sync, looping, device routing |
 | [Recording Flow](recording-flow.md) | Recording lifecycle and Windows WASAPI audio routing quirks |
 | [Data Model](data-model.md) | TypeScript interfaces, Rust structs, and library storage layout |
 | [Python Sidecar](python-sidecar.md) | JSON-lines IPC, stem separation, pitch detection, pitch shifting |

@@ -9,6 +9,8 @@ The Python sidecar handles all computationally heavy audio processing that would
 - **Stem separation** — split a mixed audio file into vocals + instrumental
 - **Pitch detection** — extract pitch curves from a recording
 - **Pitch shifting** — transpose tracks by N semitones
+- **Take post-processing** — WAV conversion, RMS loudness normalization, short-term spectrum
+- **Mixdown rendering** — sum tracks with per-source gain over a time window (`mix_export`)
 
 ## IPC Protocol
 
@@ -79,18 +81,22 @@ Returns Song metadata as `data`.
 Analyzes a recorded take (after the singer finishes recording).
 
 ```json
-{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/", "audioOffset": 0.256}
+{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/takes/", "audioOffset": 0.256, "referencePath": "/path/to/song/vocals.wav"}
 ```
 
 `audioOffset` (optional, default `0.0`) — seconds to skip at the start of the audio file before processing. Non-zero when latency compensation shifted the take's `startPosition` below 0 and the engine skips a silent prefix on playback. Both `librosa.load()` calls in `analysis.py` pass `offset=audio_offset_s`, so all output times (pitch, onsets, dynamics) are 0-based from the audible content start and correctly align with the song.
+
+`referencePath` (optional) — loudness reference stem, in practice always `vocals.wav`. When present, the take is **RMS-normalized** against it: gain = reference RMS / take RMS, peak-capped so nothing clips, written as a `{takeId}.wav` next to the raw recording and returned as `normalizedPath`. Rust's `save_take` then keeps the normalized WAV and deletes the raw `.webm` (falling back to the `.webm` if normalization failed). This is why recorded takes no longer sound quiet next to mastered Demucs stems.
 
 Steps (in `analysis.py`):
 1. SRH pitch detection (same `detect_pitch_srh` as song processing) — resampled to 22050 Hz
 2. Onset detection
 3. RMS dynamics
 4. Vibrato rate/depth computation
+5. Short-term spectrum envelope (for the comparison panel)
+6. RMS loudness normalization against `referencePath` (when given)
 
-Returns analysis payload (pitchData, onsets, dynamics, vibrato) as `data`.
+Returns analysis payload (pitchData, onsets, dynamics, vibrato, `stSpectrum*` fields, `normalizedPath`) as `data`.
 
 ### `pitch_shift`
 
@@ -123,6 +129,32 @@ Returns the same dict as `process`, with `"title"` added (extracted from yt-dlp 
 
 **Bot-detection fallback:** first attempt uses no cookies. If YouTube returns a "Sign in to confirm you're not a bot" error, retries with `cookiesfrombrowser` cycling through Chrome → Firefox → Edge → Brave → Opera. Any other error (private video, bad URL, network failure) raises immediately without retrying. Partial output files are cleaned up between attempts.
 
+### `compute_st_spectrum`
+
+Computes the log-Hz short-term spectral envelope of an audio file over time (used for the song side of the `ShortTermSpectrumComparisonPanel`). Implemented as `compute_st_spectrum_from_file` in `processor.py`; accepts an optional `audioOffset` in seconds. Returns the same base64-packed byte-matrix shape as the `stSpectrum*` fields of `analyze` (`times`, `b64`, `frames`, `bins`, `minDb`, `maxDb`).
+
+```json
+{"cmd": "compute_st_spectrum", "audioPath": "/path/to/vocals.wav"}
+```
+
+### `convert_take`
+
+Decodes a take (webm/opus) via `librosa.load` and writes a WAV via `soundfile` — used by `export_take` so exported takes are always WAV regardless of the recorded container.
+
+```json
+{"cmd": "convert_take", "recordingPath": "/path/to/take.webm", "outputPath": "/path/to/out.wav"}
+```
+
+### `mix_export`
+
+Renders a single mixdown WAV from a list of sources, honoring the frontend's live mute/solo/volume state and the punch/loop region (implemented in `analysis.py`).
+
+```json
+{"cmd": "mix_export", "sources": [{"path": "...", "gain": 0.8, "isTake": false}, {"path": "...", "gain": 1.0, "isTake": true, "startPosition": 12.5, "audioOffset": 0.25}], "startSec": 10.0, "endSec": 42.0, "outputPath": "/path/to/mix.wav"}
+```
+
+Each source is loaded only over the `[startSec, endSec)` window; takes are aligned via `fileTime = projectTime - startPosition + audioOffset`. Sources are resampled/upmixed to a common rate and channel count, summed with per-source gain, then peak-safe scaled before writing.
+
 ### `ping` / `quit`
 
 ```json
@@ -142,7 +174,7 @@ CREPE and pYIN were tried first and both failed on singers with strong upper har
 
 | Parameter | Value | Rationale |
 |---|---|---|
-| `frame_length` | 2048 | 92.9 ms window at 22050 Hz — matches VoceVista max pitch window |
+| `frame_length` | 2756 | 125 ms window at 22050 Hz — per Babacan et al. 2019, optimal analysis window for singing (this table previously said 2048/92.9ms, matching the VoceVista window instead of the actual code value — fixed 2026-07-04) |
 | `hop_length` | 512 | 23.2 ms step (~43 frames/s) |
 | `fmin` | 65.0 Hz | C2 — lowest practical singing fundamental |
 | `fmax` | 1400.0 Hz | Above F#6 — VoceVista upper limit; no singer exceeds this; cuts candidate grid ~34% |
@@ -152,7 +184,7 @@ CREPE and pYIN were tried first and both failed on singers with strong upper har
 | Window function | Dolph-Chebyshev (`chebwin`, at=100 dB) | Lower inter-harmonic leakage than Hanning; VoceVista uses same |
 
 Additional details:
-- Vocals resampled to 22050 Hz before detection for consistent bin resolution (10.77 Hz/bin at `frame_length=2048`; parabolic interpolation on SRH score curve gives sub-Hz precision)
+- Vocals resampled to 22050 Hz before detection for consistent bin resolution (5.4 Hz/bin from zero-padding to `fft_size=4096`; parabolic interpolation on SRH score curve gives sub-Hz precision)
 - Candidate F0 grid: 0.5 Hz steps from 65 → 1400 Hz — ~2670 candidates per frame
 - Per-frame RMS amplitude gate (−50 dBFS) applied before windowing — silent frames leave `f0[i]=0, confidence[i]=0`
 - LP residual extraction was tested and reverted: Demucs-separated vocals are already clean and Demucs distorts the spectral envelope, making LPC vocal tract modeling unreliable. The SRH noise-robustness advantage of LP residual (Drugman & Alwan 2011) only applies to raw noisy speech.
