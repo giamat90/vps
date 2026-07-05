@@ -181,6 +181,49 @@ When `audioOffset > 0` the engine seeks 0.256 s into the audio file when the pla
 
 The calibrated value represents the full round-trip (output + input) latency measured through the actual signal chain. Focusrite Scarlett / Behringer UM2 typically measure 200–300 ms in WASAPI shared mode.
 
+### Calibration entry schema
+
+Each `recordingOffsets` entry is a `CalibrationEntry` (`player.ts`), still keyed by input `deviceId` and persisted to `localStorage`:
+
+```ts
+interface CalibrationEntry {
+  offset: number;           // ms
+  stale?: boolean;          // set by device-change invalidation
+  madMs?: number;           // clap-spread MAD; absent for manual entries
+  outputDeviceId?: string;  // output device active at calibration time
+}
+```
+
+Legacy plain-number entries are migrated on load (`n → { offset: n }`). Manually typed offsets are stored bare (no `madMs`/`outputDeviceId`), which also clears a stale flag.
+
+### Staleness and invalidation
+
+A stored calibration measures one specific input+output hardware path, so it is invalidated — marked `stale: true`, never deleted — when that path changes:
+
+- A `devicechange` listener (registered from `fetchAudioDevices`) re-enumerates devices and, only if the device set actually changed, marks stale any entry whose input device or recorded `outputDeviceId` is no longer present.
+- At `startRecording`, an entry is only used if it is not stale **and** its `outputDeviceId` matches the output actually in use (entries without `outputDeviceId` — manual or legacy — are exempt from the output check). Otherwise the AudioContext fallback runs and `usedLatencyFallback` is set; recording is never blocked.
+- When the active mic's calibration is stale or missing, `RecordingOffsetControl` shows a non-blocking "recalibrate?" banner that triggers the normal Cal flow.
+
+### Measurement confidence
+
+The wizard computes the MAD (median absolute deviation) of the detected clap offsets alongside the median and stores it as `madMs`. Classification (constants at the top of `RecordingOffsetControl.tsx`):
+
+| MAD | Confidence |
+|---|---|
+| ≤ 5 ms | high |
+| 5–15 ms | medium |
+| > 15 ms | low |
+
+A confidence chip is shown next to the calibrated value and in the result banner; low confidence adds a hint to re-run in a quieter room. Low-confidence values are never auto-discarded — applying them is the user's call.
+
+### Sanity bounds
+
+A measurement is rejected (error state, nothing persisted, any previous offset untouched) when the median is negative, exceeds 500 ms (`MAX_OFFSET_MS`, the manual input's range), or fewer than 5 of the 8 measurement claps produced a detected onset (`MIN_DETECTED_CLAPS`). Rejected raw values are logged via `console.debug("[calibration] rejected: …")`.
+
+### Drift-check instrumentation
+
+On stop, takes longer than 90 s log `[drift-check] takeDuration=…s input=… output=…` via `console.info`. This is diagnostics only — no drift is measured or corrected — so future misalignment reports can be correlated with take length before deciding whether within-take clock drift correction is warranted.
+
 ## startPosition Field
 
 When recording begins at a non-zero position, `recordingStartPos` is saved. After latency compensation it is passed to `saveTake` as `startPosition`. The audio engine uses this offset when playing back the take to align it with the instrumental — see `_takeOffset` and `_takeAudioOffset` in [Audio Engine](audio-engine.md).
