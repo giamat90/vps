@@ -20,7 +20,7 @@ if getattr(sys, "frozen", False):
     os.environ["PATH"] = bundled_dir + os.pathsep + os.environ.get("PATH", "")
 
 from processor import process, compute_st_spectrum_from_file
-from analysis import analyze_recording, convert_take_to_wav
+from analysis import analyze_recording, convert_take_to_wav, mix_export
 
 
 def send(msg: dict):
@@ -78,6 +78,15 @@ def main():
             elif cmd.get("cmd") == "convert_take":
                 result = convert_take_to_wav(cmd["recordingPath"], cmd["outputPath"])
                 send({"type": "result", "cmd": "convert_take", "data": result})
+
+            elif cmd.get("cmd") == "mix_export":
+                result = mix_export(
+                    cmd["sources"],
+                    float(cmd["startSec"]),
+                    float(cmd["endSec"]),
+                    cmd["outputPath"],
+                )
+                send({"type": "result", "cmd": "mix_export", "data": result})
 
             elif cmd.get("cmd") == "pitch_shift":
                 from processor import pitch_shift_song

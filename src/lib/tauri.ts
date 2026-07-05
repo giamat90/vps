@@ -98,6 +98,28 @@ export async function exportTake(
   return invoke("export_take", { takePath, suggestedName });
 }
 
+export interface MixSource {
+  path: string;
+  gain: number;
+  isTake: boolean;
+  startPosition?: number;
+  audioOffset?: number;
+}
+
+/**
+ * Render a mixdown WAV from `sources` (each already resolved to a final
+ * linear gain by the caller) trimmed to [startSec, endSec) of the project
+ * timeline, then open a native Save As dialog for the result.
+ */
+export async function exportMix(
+  sources: MixSource[],
+  startSec: number,
+  endSec: number,
+  suggestedName: string,
+): Promise<void> {
+  return invoke("export_mix", { sources, startSec, endSec, suggestedName });
+}
+
 /** Save a free-exercise recorded take */
 export async function saveExerciseTake(audioData: number[], duration: number): Promise<ExerciseTake> {
   return invoke<ExerciseTake>("save_exercise_take", { audioData, duration });

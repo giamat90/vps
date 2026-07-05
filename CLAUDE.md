@@ -33,7 +33,7 @@ Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log wi
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | `htdemucs` model |
 | Song pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
-| Take pitch detection | pYIN (librosa) | — |
+| Take pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
 | Pitch shifting | librosa phase vocoder | — |
 
 **Platform:** Windows 11, x86_64. WebView2 is pre-installed.
@@ -216,6 +216,7 @@ interface PitchPoint {       // frontend-internal representation
 | `import_youtube(url)` | `Song` | yt-dlp + Demucs; 15-min timeout |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |
+| `export_mix(sources, startSec, endSec, suggestedName)` | `void` | renders a mixdown WAV via sidecar `mix_export` honoring live mute/solo/volume + punch region, then native Save As dialog |
 
 ---
 
@@ -343,12 +344,14 @@ Horizontal key strip. MIDI 45–84. Highlights current note in song=blue / take=
 | `pitch_shift` | phase-vocoder shift vocals + instrumental; cached in `pitched/{n}/` | 300 s |
 | `import_yt` | yt-dlp download → `process` pipeline; bot-detection browser cookie fallback | 900 s |
 | `convert_take` | decode a take (webm/opus) via `librosa.load` + write WAV via `soundfile`; used for take export | 120 s |
+| `mix_export` | render a single mixdown WAV from a list of `{path, gain, isTake, startPosition?, audioOffset?}` sources, trimmed to a `[startSec, endSec)` window; sums per-source gain, resamples/upmixes as needed, peak-safe scales | 120 s |
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices
 - **Song vocals → SRH** (Summation of Residual Harmonics, Drugman & Dutoit 2011). Chosen because pYIN and CREPE both tracked upper harmonics instead of the fundamental on strong chest-voice singers. SRH sums harmonic energy and subtracts inter-harmonic energy — structurally immune to dominant upper harmonics. Validated on Chris Cornell vocals vs VoceVista.
-  - Resamples to 22050 Hz, `frame_length=4096`, 0.5 Hz candidate grid, `n_harmonics=5`, parabolic interpolation, median + Gaussian smoothing on voiced frames.
-- **Recorded takes → pYIN** (librosa). Clean close-mic signal, no octave-dominance issue. Faster than SRH.
+  - Resamples to 22050 Hz, `frame_length=2756` (125 ms, per Babacan et al. 2019), 0.5 Hz candidate grid, `n_harmonics=5`, parabolic interpolation, median + Gaussian smoothing on voiced frames.
+- **Recorded takes → SRH** (`analysis.py` calls `detect_pitch_srh`, same as song vocals — this table previously said pYIN, which is stale; pYIN (`detect_pitch` in `processor.py`) is unused dead code, kept only as a comparison baseline in `sidecar/pitch_lab/`).
+- **Algorithm validation workspace:** `sidecar/pitch_lab/` — reuses the production SRH/pYIN functions to visualize, sonify, and cross-compare pitch detection on real Demucs-split tracks. See `sidecar/pitch_lab/README.md`.
 
 ---
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { usePlayerStore, getEngine, type TrackKey } from "../../stores/player";
+import { usePlayerStore, getEngine, buildMixSources, type TrackKey } from "../../stores/player";
+import { exportMix } from "../../lib/tauri";
 import TimeRuler from "./TimeRuler";
 import type { Song } from "../../lib/types";
 
@@ -64,6 +65,46 @@ function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
   );
 }
 
+function ExportMixButton() {
+  // Subscribe to every input buildMixSources reads, so the button's
+  // disabled state stays in sync with mute/solo/volume/take changes.
+  usePlayerStore((s) => s.song);
+  usePlayerStore((s) => s.mutedTracks);
+  usePlayerStore((s) => s.soloedTrack);
+  usePlayerStore((s) => s.vocalsVolume);
+  usePlayerStore((s) => s.instrumentalVolume);
+  usePlayerStore((s) => s.takeVolume);
+  usePlayerStore((s) => s.activeTakeId);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const mix = buildMixSources(usePlayerStore.getState());
+
+  const handleExport = async () => {
+    const state = usePlayerStore.getState();
+    const built = buildMixSources(state);
+    if (!built || !state.song) return;
+    setIsExporting(true);
+    try {
+      await exportMix(built.sources, built.startSec, built.endSec, `${state.song.title} - Mixdown.wav`);
+    } catch (e) {
+      console.error("[Waveform] exportMix failed:", e);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  return (
+    <button
+      className="waveform__export-mix"
+      onClick={() => void handleExport()}
+      disabled={!mix || isExporting}
+      title={mix ? "Export the currently audible mix as a WAV file" : "No audible tracks to export"}
+    >
+      {isExporting ? "Exporting…" : "Export Mix"}
+    </button>
+  );
+}
+
 function Waveform({ song }: WaveformProps) {
   const vocalsRef        = useRef<HTMLDivElement>(null);
   const instrumentalRef  = useRef<HTMLDivElement>(null);
@@ -121,6 +162,10 @@ function Waveform({ song }: WaveformProps) {
       {loadError && <div className="waveform__error">{loadError}</div>}
 
       <TimeRuler />
+
+      <div className="waveform__toolbar">
+        <ExportMixButton />
+      </div>
 
       <div className="waveform__track">
         <div className="waveform__track-header">

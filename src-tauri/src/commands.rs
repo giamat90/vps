@@ -1,7 +1,7 @@
 use crate::library::{self, Song};
 use crate::sidecar::{SidecarManager, SidecarMessage};
 use crate::storage;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, State};
 
@@ -843,6 +843,82 @@ pub async fn export_take(
         "cmd": "convert_take",
         "recordingPath": take_path,
         "outputPath": temp_path.to_string_lossy(),
+    });
+    {
+        let guard = ensure_sidecar(&state)?;
+        let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
+        sidecar.send_command(&cmd)?;
+
+        let timeout = Duration::from_secs(120);
+        loop {
+            match sidecar.recv_timeout(timeout)? {
+                SidecarMessage::Result { .. } => break,
+                SidecarMessage::Error { message, .. } => return Err(message),
+                _ => {}
+            }
+        }
+    }
+    let _temp_guard = TempFile(temp_path.clone());
+
+    let dest = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        let suggested_name = suggested_name.clone();
+        move || {
+            app.dialog()
+                .file()
+                .set_file_name(&suggested_name)
+                .add_filter("Audio", &["wav"])
+                .blocking_save_file()
+        }
+    })
+    .await
+    .map_err(|e| format!("Dialog task: {e}"))?;
+
+    if let Some(path) = dest {
+        std::fs::copy(&temp_path, path.as_path().ok_or("Invalid path")?)
+            .map_err(|e| format!("Copy failed: {e}"))?;
+    }
+    Ok(())
+}
+
+/// One track to include in an `export_mix` render. `gain` is the final
+/// linear volume already resolved from mute/solo/volume by the frontend —
+/// this command has no concept of mute/solo, only gains. `start_position`/
+/// `audio_offset` are only meaningful for `is_take` sources (see the
+/// `fileTime = projectTime - startPosition + audioOffset` mapping in
+/// `player.ts`); omitted for plain stem/instrumental sources.
+#[derive(Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MixSource {
+    pub path: String,
+    pub gain: f64,
+    pub is_take: bool,
+    pub start_position: Option<f64>,
+    pub audio_offset: Option<f64>,
+}
+
+#[tauri::command]
+pub async fn export_mix(
+    app: AppHandle,
+    state: State<'_, SidecarState>,
+    sources: Vec<MixSource>,
+    start_sec: f64,
+    end_sec: f64,
+    suggested_name: String,
+) -> Result<(), String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    if sources.is_empty() {
+        return Err("No audible tracks to export".to_string());
+    }
+
+    let temp_path = std::env::temp_dir().join(format!("{}.wav", uuid::Uuid::new_v4()));
+    let cmd = serde_json::json!({
+        "cmd": "mix_export",
+        "outputPath": temp_path.to_string_lossy(),
+        "startSec": start_sec,
+        "endSec": end_sec,
+        "sources": sources,
     });
     {
         let guard = ensure_sidecar(&state)?;

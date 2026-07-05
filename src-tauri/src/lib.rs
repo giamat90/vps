@@ -16,6 +16,7 @@ pub fn run() {
             commands::import_youtube,
             commands::export_stem,
             commands::export_take,
+            commands::export_mix,
             commands::pitch_shift_song,
             commands::list_songs,
             commands::delete_song,

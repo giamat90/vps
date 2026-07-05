@@ -47,7 +47,7 @@ function _destroyMicAnalyser(): void {
 }
 
 export function getMicAnalyser(): AnalyserNode | null {
-  const stream = monitorStream ?? recorder?.getStream() ?? null;
+  const stream = monitorStream ?? recorder?.getProcessedStream() ?? recorder?.getStream() ?? null;
   if (!stream) return null;
   return _ensureMicAnalyser(stream);
 }
@@ -57,7 +57,7 @@ export function getMonitorStream(): MediaStream | null {
 }
 
 export function getRecorderStream(): MediaStream | null {
-  return recorder?.getStream() ?? null;
+  return recorder?.getProcessedStream() ?? recorder?.getStream() ?? null;
 }
 
 export function getEngine(): AudioEngine {
@@ -78,7 +78,7 @@ function getRecorder(): VocalRecorder {
 // track. Neither ever overwrites the stored slider value — they only change
 // what gets pushed to the engine, so unmuting/unsoloing restores the slider
 // position exactly.
-function effectiveVolume(
+export function effectiveVolume(
   track: TrackKey,
   rawVolume: number,
   mutedTracks: Record<TrackKey, boolean>,
@@ -87,6 +87,55 @@ function effectiveVolume(
   if (soloedTrack !== null) return track === soloedTrack ? rawVolume : 0;
   if (mutedTracks[track]) return 0;
   return rawVolume;
+}
+
+/**
+ * Build the source list for an "export mix" render from the current store
+ * state: one entry per track with nonzero effective volume, resolved to
+ * the underlying file path (and take alignment fields, if applicable).
+ * Returns null if no track is currently audible.
+ */
+export function buildMixSources(state: PlayerState): {
+  sources: import("../lib/tauri").MixSource[];
+  startSec: number;
+  endSec: number;
+} | null {
+  const { song, mutedTracks, soloedTrack, vocalsVolume, instrumentalVolume, takeVolume } = state;
+  if (!song) return null;
+
+  const sources: import("../lib/tauri").MixSource[] = [];
+
+  const vocalsGain = effectiveVolume("vocals", vocalsVolume, mutedTracks, soloedTrack);
+  if (vocalsGain > 0) {
+    sources.push({ path: `${song.directory}/vocals.wav`, gain: vocalsGain, isTake: false });
+  }
+
+  const instrumentalGain = effectiveVolume("instrumental", instrumentalVolume, mutedTracks, soloedTrack);
+  if (instrumentalGain > 0) {
+    sources.push({ path: `${song.directory}/instrumental.wav`, gain: instrumentalGain, isTake: false });
+  }
+
+  const takeGain = effectiveVolume("take", takeVolume, mutedTracks, soloedTrack);
+  if (takeGain > 0 && state.activeTakeId) {
+    const take = state.takes.find((t) => t.id === state.activeTakeId);
+    if (take) {
+      sources.push({
+        path: take.filepath,
+        gain: takeGain,
+        isTake: true,
+        startPosition: take.startPosition,
+        audioOffset: take.audioOffset ?? 0,
+      });
+    }
+  }
+
+  if (sources.length === 0) return null;
+
+  return {
+    sources,
+    startSec: state.punchIn ?? 0,
+    endSec: state.punchOut ?? state.duration,
+  };
 }
 
 function applyEffectiveVolumes(state: {
