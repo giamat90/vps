@@ -46,11 +46,16 @@ function decodeSTSpectrum(
   }
 }
 
-function pitchDataToPoints(pd: PitchData): PitchPoint[] {
+// pd.times / onsets / spectrum times are all local to the take's audible content
+// (0 = first analyzed sample, i.e. right after the sidecar's audioOffset skip — see
+// wiki/python-sidecar.md). The rest of the app (PianoRoll, DynamicsCurve, timing
+// charts, ShortTermSpectrum panels) compares them against getEngine().getCurrentTime(),
+// which is song time. Convert local time -> song time via songTime = localTime + startPosition.
+function pitchDataToPoints(pd: PitchData, toSongTime: (t: number) => number): PitchPoint[] {
   const out: PitchPoint[] = [];
   for (let i = 0; i < pd.times.length; i++) {
     if (pd.voiced[i] && pd.f0[i] > 0) {
-      out.push({ time: pd.times[i], frequency: pd.f0[i], confidence: pd.confidence[i] });
+      out.push({ time: toSongTime(pd.times[i]), frequency: pd.f0[i], confidence: pd.confidence[i] });
     }
   }
   return out;
@@ -124,7 +129,7 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
         );
 
         set({
-          songPitch: data.pitchData ? pitchDataToPoints(data.pitchData) : [],
+          songPitch: data.pitchData ? pitchDataToPoints(data.pitchData, (t) => t) : [],
           songOnsets: (data.onsets as number[]) ?? [],
           songDynamics: (data.dynamics as DynamicsPoint[]) ?? [],
           songSpectrogram,
@@ -138,13 +143,19 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
 
     loadTakeAnalysis: (take) => {
       const { songOnsets } = get();
-      const takePitch = take.pitchData ? pitchDataToPoints(take.pitchData) : [];
-      const takeOnsets = take.onsets ?? [];
-      const takeDynamics = take.dynamics ?? [];
+      // Python's analyze skips `audioOffset` seconds of the raw file before running
+      // librosa (see sidecar analysis.py / wiki/python-sidecar.md), so pd.times is
+      // already 0-based from the audible-content start — which is exactly song time
+      // `startPosition`. audioOffset must NOT be subtracted again here.
+      const toSongTime = (t: number) => t + take.startPosition;
+
+      const takePitch = take.pitchData ? pitchDataToPoints(take.pitchData, toSongTime) : [];
+      const takeOnsets = (take.onsets ?? []).map(toSongTime);
+      const takeDynamics = (take.dynamics ?? []).map((d) => ({ ...d, time: toSongTime(d.time) }));
       const takeVibrato = take.vibrato ?? null;
       const timingDeviations = computeTimingDeviations(songOnsets, takeOnsets);
       const takeSTSpectrum = decodeSTSpectrum(
-        take.stSpectrumTimes, take.stSpectrumB64, take.stSpectrumFrames, take.stSpectrumBins,
+        take.stSpectrumTimes?.map(toSongTime), take.stSpectrumB64, take.stSpectrumFrames, take.stSpectrumBins,
         take.stSpectrumMinDb, take.stSpectrumMaxDb,
       );
 
