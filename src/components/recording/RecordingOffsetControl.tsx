@@ -398,7 +398,7 @@ function RecordingOffsetControl() {
                 </span>
               </span>
               {confidenceOf(result.madMs) === "low" && (
-                <span className="rec-offset__hint">
+                <span className="rec-offset__banner-hint">
                   Measurements varied a lot — consider re-running in a quieter room with short, crisp claps.
                 </span>
               )}

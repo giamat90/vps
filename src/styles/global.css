@@ -1823,7 +1823,7 @@ body,
   color: #ff8a8a;
 }
 
-.rec-offset__hint {
+.rec-offset__banner-hint {
   font-size: 0.7rem;
   color: var(--text-secondary);
 }
