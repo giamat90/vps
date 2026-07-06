@@ -11,5 +11,10 @@ librosa
 soundfile
 numpy
 scipy
-yt-dlp
+# YouTube periodically breaks compatibility with older yt-dlp clients
+# (nsig extraction / bot-detection changes). The installed app runs a
+# PyInstaller-frozen sidecar with whatever version was resolved at build
+# time — it never self-updates. Bump this floor whenever YouTube import
+# starts failing in production, then rebuild the sidecar and cut a release.
+yt-dlp>=2026.7.4
 pywin32; sys_platform == "win32"
