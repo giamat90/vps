@@ -6,6 +6,7 @@ import type {
   TimingDeviation,
   VibratoMetrics,
   Take,
+  ExerciseTake,
 } from "../lib/types";
 import { loadAnalysis } from "../lib/tauri";
 import { computeTimingDeviations } from "../audio/analysisUtils";
@@ -80,6 +81,7 @@ interface AnalysisState {
 interface AnalysisActions {
   loadSongAnalysis: (songId: string) => Promise<void>;
   loadTakeAnalysis: (take: Take) => void;
+  loadExerciseTakeAnalysis: (take: ExerciseTake) => void;
   appendLivePitch: (point: PitchPoint) => void;
   clearLivePitch: () => void;
   clear: () => void;
@@ -160,6 +162,21 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
       );
 
       set({ takePitch, takeOnsets, takeDynamics, takeVibrato, takeSTSpectrum, timingDeviations, livePitch: [] });
+    },
+
+    loadExerciseTakeAnalysis: (take) => {
+      // ExerciseTake has no song/startPosition context — times are already
+      // exercise-local (0-based), unlike loadTakeAnalysis's toSongTime shift.
+      const takePitch = take.pitchData ? pitchDataToPoints(take.pitchData, (t) => t) : [];
+      set({
+        takePitch,
+        takeOnsets: [],
+        takeDynamics: take.dynamics ?? [],
+        takeVibrato: take.vibrato ?? null,
+        takeSTSpectrum: null,
+        timingDeviations: [],
+        livePitch: [],
+      });
     },
 
     appendLivePitch: (point) =>

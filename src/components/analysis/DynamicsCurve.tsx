@@ -1,6 +1,6 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine } from "../../stores/player";
+import { getEngine, usePlayerStore } from "../../stores/player";
 
 const WINDOW_S = 10;
 
@@ -9,6 +9,7 @@ export default function DynamicsCurve() {
   const songDynamics = useAnalysisStore((s) => s.songDynamics);
   const takeDynamics = useAnalysisStore((s) => s.takeDynamics);
   const isLoaded = useAnalysisStore((s) => s.isLoaded);
+  const exerciseMode = usePlayerStore((s) => s.exerciseMode);
 
   // Stable ref to the latest draw function — updated when data changes,
   // called every rAF tick without React re-renders.
@@ -33,7 +34,8 @@ export default function DynamicsCurve() {
 
       ctx.clearRect(0, 0, W, H);
 
-      if (!isLoaded || songDynamics.length === 0) {
+      const noData = exerciseMode ? takeDynamics.length === 0 : (!isLoaded || songDynamics.length === 0);
+      if (noData) {
         ctx.fillStyle = "#a0a0b060";
         ctx.font = "11px sans-serif";
         ctx.textAlign = "center";
@@ -89,12 +91,12 @@ export default function DynamicsCurve() {
     };
 
     drawRef.current();
-  }, [songDynamics, takeDynamics, isLoaded]);
+  }, [songDynamics, takeDynamics, isLoaded, exerciseMode]);
 
   // Effect 2: drive canvas at native frame rate via rAF — bypasses React entirely
   // during playback so no re-renders, no closure allocation, no GC pressure.
   useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded && !exerciseMode) return;
     let rafId: number;
     const tick = () => {
       drawRef.current();
@@ -102,7 +104,7 @@ export default function DynamicsCurve() {
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded]);
+  }, [isLoaded, exerciseMode]);
 
   // Effect 3: wire ResizeObserver once per canvas lifetime — no deps.
   useEffect(() => {
@@ -118,8 +120,12 @@ export default function DynamicsCurve() {
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Dynamics (RMS)</span>
         <div className="analysis-panel__legend">
-          <span className="legend-dot legend-dot--song" />
-          <span>Song</span>
+          {!exerciseMode && (
+            <>
+              <span className="legend-dot legend-dot--song" />
+              <span>Song</span>
+            </>
+          )}
           {takeDynamics.length > 0 && (
             <>
               <span className="legend-dot legend-dot--dynamics" />

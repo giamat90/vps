@@ -1,7 +1,13 @@
 import { useRef, useEffect } from "react";
-import { getMicAnalyser, usePlayerStore } from "../../stores/player";
+import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
+import { useExerciseStore } from "../../stores/exercise";
 import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB } from "./SpectrogramPanel";
+import { computeMagnitudeSpectrumDb } from "../../lib/fft";
+
+// Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
+// so live and buffer-snapshot data are the same resolution.
+const FFT_SIZE = 8192;
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -47,6 +53,10 @@ export default function ShortTermSpectrumPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
+  const loadedTrackId = useExerciseStore((s) => s.loadedTrackId);
+  // A loaded track snapshots its decoded buffer at the current playhead —
+  // works whether playing, paused, or scrubbed, unlike a live AnalyserNode.
+  const trackActive  = loadedTrackId !== null;
   const drawRef      = useRef<() => void>(() => {});
   const loggedRef    = useRef(false);
 
@@ -82,10 +92,28 @@ export default function ShortTermSpectrumPanel() {
       const bottomH = BOTTOM_AXIS_H * dpr;
       const plotH  = H - bottomH;
 
-      const analyser = getMicAnalyser();
-      const active    = (isRecording || isMonitoring) && !!analyser;
-      const sr        = analyser?.context.sampleRate ?? 48000;
-      const nyquist   = sr / 2;
+      let sr: number | null = null;
+      let freqData: Float32Array | null = null;
+      if (trackActive) {
+        const engineSr = getEngine().getExerciseTrackSampleRate();
+        const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
+        if (engineSr && samples) {
+          sr = engineSr;
+          freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
+        }
+      } else {
+        const analyser = getMicAnalyser();
+        if (analyser) {
+          const binCount = analyser.frequencyBinCount;
+          const data = new Float32Array(binCount);
+          analyser.getFloatFrequencyData(data);
+          sr = analyser.context.sampleRate;
+          freqData = data;
+        }
+      }
+
+      const active    = (isRecording || isMonitoring || trackActive) && sr !== null && freqData !== null;
+      const nyquist   = (sr ?? 48000) / 2;
       const fMax      = Math.min(F_MAX, nyquist);
 
       // 1. full clear (no trail)
@@ -144,11 +172,10 @@ export default function ShortTermSpectrumPanel() {
         return;
       }
 
-      // ── per-frame snapshot: same analyser/Float32Array feeding the spectrogram ──
-      const binCount = analyser!.frequencyBinCount;
-      const data = new Float32Array(binCount);
-      analyser!.getFloatFrequencyData(data);
-      const binHz   = sr / (binCount * 2);
+      // ── per-frame snapshot: same source feeding the spectrogram ──────────
+      const data = freqData!;
+      const binCount = data.length;
+      const binHz   = sr! / (binCount * 2);
       const maxBin  = binCount - 1;
       const dbRange = MAX_DB - MIN_DB;
 
@@ -224,7 +251,7 @@ export default function ShortTermSpectrumPanel() {
         ctx.stroke();
       }
     };
-  }, [isRecording, isMonitoring]);
+  }, [isRecording, isMonitoring, trackActive]);
 
   useEffect(() => {
     let rafId: number;
@@ -246,7 +273,7 @@ export default function ShortTermSpectrumPanel() {
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Short-Term Spectrum</span>
         <span className="analysis-panel__hint">
-          {isRecording || isMonitoring ? "live" : "off"}
+          {isRecording || isMonitoring || trackActive ? "live" : "off"}
         </span>
       </div>
       <canvas ref={canvasRef} className="analysis-panel__canvas short-term-spectrum-panel__canvas" />

@@ -120,7 +120,7 @@ Async method that reloads the vocals WaveSurfer instance with a different audio 
 
 ## Exercise Timer Mode
 
-When no song is loaded (Free Exercise page), the engine runs in **exercise timer mode** — no WaveSurfer instances, just a `performance.now()` clock.
+When no song is loaded (Free Exercise page) and no track is loaded for playback, the engine runs in **exercise timer mode** — no WaveSurfer instance, just a `performance.now()` clock, used while live-recording/monitoring.
 
 Private fields:
 
@@ -130,10 +130,11 @@ Private fields:
 | `_exerciseStartAt` | `performance.now()` at the last `startExerciseTimer()` / resume |
 | `_exerciseOffset` | Accumulated elapsed seconds before the last pause |
 
-`getCurrentTime()` checks `_exerciseMode` first:
+`getCurrentTime()` checks `_exerciseMode` first, and within it prefers a loaded `exerciseTrack` over the stopwatch:
 
 ```ts
 if (this._exerciseMode) {
+  if (this.exerciseTrack) return this.exerciseTrack.getCurrentTime();
   const elapsed = this._isPlaying
     ? this._exerciseOffset + (performance.now() - this._exerciseStartAt) / 1000
     : this._exerciseOffset;
@@ -148,3 +149,18 @@ The rAF tick is **unchanged** — it still runs via `_startTimeUpdate()` and fir
 | `startExerciseTimer()` | Sets `_exerciseMode=true`, captures `_exerciseStartAt`, starts rAF tick |
 | `pauseExerciseTimer()` | Saves offset, stops rAF tick |
 | `stopExerciseTimer()` | Resets all fields, stops rAF tick, fires `_timeUpdateCb(0)` to reset display |
+
+## Free Exercise Track Playback
+
+Loading a past `ExerciseTake` or an imported external file for post-hoc inspection uses a **fourth, independent WaveSurfer slot**, `exerciseTrack`, deliberately kept separate from the `vocals`/`instrumental`/`take` trio — those three are gated on `vocals && instrumental` being loaded (a song context), which never applies in Free Exercise.
+
+| Method | Description |
+|--------|-------------|
+| `loadExerciseTrack(filePath, container)` | Creates the WaveSurfer instance, awaits `"ready"`/`"error"`. On error, destroys and nulls `exerciseTrack` before rethrowing — a left-over errored instance would otherwise keep `getCurrentTime()`'s `exerciseTrack` branch active, corrupting the timer for any recording started afterward |
+| `playExerciseTrack()` / `pauseExerciseTrack()` | Ungated play/pause; sets `_isPlaying` and starts/stops the rAF tick, same as the timer methods above |
+| `seekExerciseTrack(time)` | Seeks by `time / getDuration()` progress ratio |
+| `clearExerciseTrack()` | Destroys and nulls the instance |
+| `getExerciseTrackSamples(windowSize)` | Returns a `Float32Array` window of raw samples ending at the current playhead, read directly from WaveSurfer's own already-decoded buffer (`exerciseTrack.getDecodedData()` — no extra fetch/decode). Powers the Spectrogram/Short-Term Spectrum panels' frame-accurate snapshot: unlike a live `AnalyserNode`, this works whether the track is playing, paused, or was just scrubbed, since it reads decoded PCM directly rather than data flowing through a live audio graph |
+| `getExerciseTrackSampleRate()` | The decoded buffer's sample rate, or `null` if nothing is loaded |
+
+An earlier iteration tapped a `MediaElementAudioSourceNode` off `exerciseTrack.getMediaElement()` to get a live-playback `AnalyserNode` (mirroring `getMicAnalyser()`). That was replaced by the buffer-snapshot approach above — it avoids the Web Audio media-element tap (a nontrivial cross-browser risk, and a media element tolerates only one such tap ever) and, more importantly, actually satisfies the point of the feature: inspecting a specific paused/scrubbed frame, which a live analyser cannot do since it only reports data while audio is actively playing.

@@ -114,9 +114,12 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | Field | Type | Description |
 |-------|------|-------------|
 | `exerciseTakes` | `ExerciseTake[]` | All free-exercise recordings |
-| `activeExerciseTakeId` | `string \| null` | Expanded take (shows audio player) |
+| `activeExerciseTakeId` | `string \| null` | Legacy expanded-take id (superseded by `loadedTrackId` below for the actual playback view) |
+| `loadedTrackKind` | `"take" \| "imported" \| null` | UX copy only — both persist as an ordinary `ExerciseTake`, no separate data model for imports |
+| `loadedTrackId` | `string \| null` | `ExerciseTake.id` currently loaded into `AudioEngine.exerciseTrack`, if any |
+| `isImporting` | `boolean` | True while `importExerciseFile` is mid-flight (spinner state) |
 
-Actions: `fetchExerciseTakes`, `addExerciseTake`, `deleteExerciseTake`, `setActiveExerciseTake`.
+Actions: `fetchExerciseTakes`, `addExerciseTake`, `deleteExerciseTake`, `setActiveExerciseTake`, `loadExerciseTakeIntoTrack(take, container)` (loads into `AudioEngine.exerciseTrack` + populates `useAnalysisStore`'s take-equivalent fields via `loadExerciseTakeAnalysis`), `clearLoadedTrack()`, `importExerciseFile(filePath, container)` (decodes duration client-side, calls the new `import_exercise_file` Tauri command, then loads the resulting take same as a recorded one).
 
 ### Updater Store (`src/stores/updater.ts`)
 
@@ -256,7 +259,9 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 
 ### SpectrogramPanel
 
-Scrolling live spectrogram rendered exclusively in the Free Exercise page. Shows the full audio spectrum of the microphone input in real time — not shown in song practice (`PracticeRoom`).
+Scrolling live spectrogram rendered exclusively in the Free Exercise page. Shows the full audio spectrum in real time — not shown in song practice (`PracticeRoom`). Data source is either the live microphone (recording/monitoring) or, when a track is loaded via [Free Exercise Track Loading](#free-exercise-track-loading), a frame-accurate snapshot of that track's decoded audio (see "Mic analyser" below).
+
+**Formant tick marks:** F1/F2/F3 estimated client-side via `estimateFormants()` (`src/lib/formants.ts` — pre-emphasis → Hamming window → autocorrelation → Levinson-Durbin LPC → Durand-Kerner polynomial root-finding → pole-to-resonance conversion → frequency/bandwidth candidate filtering → frame-to-frame continuity matching + light exponential smoothing) drawn as short horizontal tick marks at each formant's `freqToY(...)` position, written into the same new column the spectrogram writes to each capture so they scroll with the waterfall and leave a trail. A `null` estimate (unvoiced/silence) skips that tick rather than holding a stale mark. Durand-Kerner was chosen over the more commonly-cited Bairstow's method for lower implementation risk (no partial-derivative recurrence bookkeeping) at the polynomial orders (~14, after decimating to a ~12kHz-equivalent bandwidth) this needs — both validated against known-root polynomials during development.
 
 **Frequency axis:** 30 Hz (bottom) → 20 kHz / Nyquist (top) on a **log-frequency scale**. The 30 Hz floor (not 20 Hz) keeps the 50–100 Hz region fully visible within canvas bounds. Tick marks and Hz labels at 30 · 50 · 100 · 200 · 500 · 1k · 2k · 5k · 10k · 20k Hz (20k pinned at top edge). Faint horizontal grid lines at 100 · 500 · 1k · 5k · 10k Hz are drawn on the main canvas after the offscreen composite so they remain crisp. Axis strip: `AXIS_W = 56` physical pixels.
 
@@ -275,13 +280,15 @@ Scrolling live spectrogram rendered exclusively in the Free Exercise page. Shows
 
 **Colormap:** Thermal — black → dark navy (index 64) → medium blue → teal (index 148) → yellow → orange → bright red-orange (index 230) → salmon (index 245) → pure white (index 255). Built by `buildColormap()` in `src/lib/spectroUtils.ts` using index-based linear interpolation so the noise floor is dark navy/black and only peak harmonics flash white.
 
-**Mic analyser:** Reads from `getMicAnalyser()` (player store singleton, `fftSize = 8192`). No second `getUserMedia` is opened. Idle state (neither recording nor monitoring) freezes the canvas; the roll area is cleared to `#0f0f1e` only on true idle.
+**Mic analyser / track snapshot:** Live mic reads from `getMicAnalyser()` (player store singleton, `fftSize = 8192`); no second `getUserMedia` is opened. When a track is loaded (`loadedTrackId !== null`), the panel instead calls `AudioEngine.getExerciseTrackSamples(8192)` + `AudioEngine.getExerciseTrackSampleRate()` and runs its own FFT (`computeMagnitudeSpectrumDb` in `src/lib/fft.ts`, a dependency-free radix-2 Cooley-Tukey implementation, Blackman-windowed) — this works whether the track is playing, paused, or was just scrubbed, unlike an `AnalyserNode`, which only reports data while audio is actively flowing through it. **Scrolling vs. snapshot:** the waterfall only keeps shifting/scrolling while audio is actually advancing (`shouldScroll = isRecording || isMonitoring || (trackActive && isPlaying)`); paused/scrubbed with a loaded track, prior history stays in place and only a fixed 6px strip at the right edge is overwritten each capture with the current frame, so scrubbing updates the view without the waterfall endlessly "scrolling" a frozen value. Idle state (neither recording, monitoring, nor a loaded track) freezes the canvas; the roll area is cleared to `#0f0f1e` only on true idle.
 
 **Layout in ExercisePage:** Inside `exercise-page__spectro`, below the `exercise-page__keyboard` strip and `exercise-page__roll`, inside the `exercise-page__analysis` scrollable wrapper. Canvas height: `clamp(15rem, 45vh, 35rem)`.
 
 ### ShortTermSpectrumPanel
 
-Real-time spectral **snapshot** (not a waterfall) of the live microphone — a single spectrum curve redrawn each frame, on the Free Exercise page below the SpectrogramPanel. Horizontal **log-frequency axis** (reuses `freqToX`/`xToFreq` from `src/lib/spectroUtils.ts` and `F_MIN`/`F_MAX`/`MIN_DB`/`MAX_DB`/`AXIS_W`/`LEGEND_WIDTH` exported by `SpectrogramPanel`), vertical dB axis with 10 dB ticks. Draws the raw spectrum plus a **smoothed spectral envelope overlay** — a moving average whose window widens with frequency, since formants are proportionally wider at high frequencies on a log axis. Reads `getMicAnalyser()`; opens no second `getUserMedia`.
+Real-time spectral **snapshot** (not a waterfall) — a single spectrum curve fully redrawn each frame, on the Free Exercise page below the SpectrogramPanel. Horizontal **log-frequency axis** (reuses `freqToX`/`xToFreq` from `src/lib/spectroUtils.ts` and `F_MIN`/`F_MAX`/`MIN_DB`/`MAX_DB`/`AXIS_W`/`LEGEND_WIDTH` exported by `SpectrogramPanel`), vertical dB axis with 10 dB ticks. Draws the raw spectrum plus a **smoothed spectral envelope overlay** — a moving average whose window widens with frequency, since formants are proportionally wider at high frequencies on a log axis.
+
+Data source mirrors `SpectrogramPanel`: live mic via `getMicAnalyser()` (no second `getUserMedia`), or — when a track is loaded — a snapshot via `AudioEngine.getExerciseTrackSamples()`/`getExerciseTrackSampleRate()` + `computeMagnitudeSpectrumDb()`. Since this panel has no scroll/history state at all (it's a full redraw every frame regardless of play state), it needed no paused-vs-scrolling distinction — it already shows the current frame correctly whether playing, paused, or scrubbed.
 
 ### ShortTermSpectrumComparisonPanel
 
@@ -384,18 +391,29 @@ Standalone practice page — no song required. Used for warming up, vocal exerci
 **Layout:**
 ```
 ┌─ header ──────────────────────────────────────────────┐
-│  ← Back   FREE EXERCISE                   00:00       │  ← timer turns red while active
+│  ← Back   FREE EXERCISE                   00:00       │  ← timer turns red while active or a track is loaded
 ├─ exercise-page__keyboard (flex-shrink: 0) ────────────┤
 │  PianoKeyboard  [DualTuner bar above keys]            │  ← pinned, does not scroll
+├─ exercise-page__track-strip ──────────────────────────┤
+│  loaded-track WaveSurfer waveform (always rendered,   │  ← real dimensions before load, so
+│  so it has real dimensions before loadExerciseTrack)  │    WaveSurfer doesn't size a 0px canvas
+├─ ▶/⏸ Play · Unload  (only when a track is loaded) ───┤
 ├─ exercise-page__analysis (flex: 1, overflow-y: auto) ─┤
 │  ┌─ exercise-page__roll ──────────────────────────┐   │
-│  │  PianoRoll   (live orange ribbon only)         │   │
+│  │  PianoRoll   (live orange, or loaded-take red) │   │
 │  └────────────────────────────────────────────────┘   │
 │  ┌─ exercise-page__spectro ───────────────────────┐   │
-│  │  SpectrogramPanel  (30 Hz – 20 kHz, live mic)  │   │
+│  │  SpectrogramPanel  (30 Hz – 20 kHz, + formants)│   │
 │  └────────────────────────────────────────────────┘   │
+│  ┌─ exercise-page__spectro ───────────────────────┐   │
+│  │  ShortTermSpectrumPanel                        │   │
+│  └────────────────────────────────────────────────┘   │
+│  ┌─ exercise-page__dynamics ───────────────────────┐   │
+│  │  DynamicsCurve                                  │   │
+│  └────────────────────────────────────────────────┘   │
+│  VibratoCard                                          │
 ├─ exercise-page__controls ─────────────────────────────┤
-│  MicSelector · MonitorButton · ⏺ Record               │
+│  MicSelector · MonitorButton · ⏺ Record · 📂 Load track…│
 ├───────────────────────────────────────────────────────┤
 │  Recordings (ExerciseTakeList)                        │
 └───────────────────────────────────────────────────────┘
@@ -403,17 +421,27 @@ Standalone practice page — no song required. Used for warming up, vocal exerci
 
 `exercise-page__keyboard` is `flex-shrink: 0` and sits **outside** the scrollable analysis wrapper — it is always visible regardless of scroll position. `PianoKeyboard` owns and renders the `DualTuner` bar internally (between its header and its canvas key row). The `exercise-page__analysis` wrapper is `flex: 1; overflow-y: auto` so PianoRoll and SpectrogramPanel scroll independently on small screens.
 
-**Time source:** `AudioEngine` exercise timer (`_exerciseMode = true`). `getCurrentTime()` returns `performance.now()` elapsed seconds — no WaveSurfer involved. The rAF tick is shared, so PianoRoll and DualTuner require no changes.
+**Time source:** `AudioEngine` exercise timer (`_exerciseMode = true`). `getCurrentTime()` returns `performance.now()` elapsed seconds while live-recording/monitoring, or `exerciseTrack.getCurrentTime()` whenever a track is loaded (see [Free Exercise Track Playback](audio-engine.md#free-exercise-track-playback)) — no changes needed to PianoRoll/DualTuner, which just read through `getEngine().getCurrentTime()` either way.
 
 **Monitor mode:** calls `startMonitoring()` / `stopMonitoring()` from the player store. In exercise mode, `startMonitoring()` also calls `eng.startExerciseTimer()` so `currentTime` advances and the piano roll scrolls while monitoring. `stopMonitoring()` stops the timer again.
 
-**Record mode:** `startExerciseRecording()` opens the mic, applies WASAPI output routing, then calls `eng.startExerciseTimer()`. `stopExerciseRecording()` stops the timer, drains the recorder, calls `save_exercise_take` Tauri command (triggers pYIN analysis), and returns the `ExerciseTake`. `ExercisePage` then calls `addExerciseTake(take)` on the exercise store.
+**Record mode:** `startExerciseRecording()` opens the mic, applies WASAPI output routing, then calls `eng.startExerciseTimer()`. `stopExerciseRecording()` stops the timer, drains the recorder, calls `save_exercise_take` Tauri command (pitch algorithm per the Settings panel, default SRH — see [python-sidecar.md#pitch-detection-user-selectable](python-sidecar.md)), and returns the `ExerciseTake`. `ExercisePage` then calls `addExerciseTake(take)` on the exercise store.
 
-**Mutual exclusivity:** Monitor and Record buttons follow the same rules as PracticeRoom — `startRecording` stops monitoring first.
+**Mutual exclusivity:** Monitor and Record buttons follow the same rules as PracticeRoom — `startRecording` stops monitoring first. Recording and loaded-track playback are also mutually exclusive: the Record button is disabled while `loadedTrackId !== null`, and loading a take/importing a file is disabled while `isRecording` — `AudioEngine`'s exercise-mode stopwatch and the `exerciseTrack` playback clock are two different `getCurrentTime()` sources that must never both be "current" at once.
+
+### Free Exercise Track Loading
+
+Clicking a past take in `ExerciseTakeList`, or importing an external file via the "📂 Load track…" button (native file-open dialog filtered to audio extensions, reusing `DropZone`'s exported `AUDIO_EXTENSIONS` list), loads it into `AudioEngine.exerciseTrack` for full post-hoc inspection — synced `PianoRoll` pitch ribbon, `DynamicsCurve`, `VibratoCard`, and the Spectrogram/Short-Term Spectrum panels (including formant ticks), all driven by the loaded track's own already-stored `pitchData`/`dynamics`/`vibrato` (no re-analysis needed for a past take).
+
+`useAnalysisStore.loadExerciseTakeAnalysis(take)` populates `takePitch`/`takeDynamics`/`takeVibrato` directly from the `ExerciseTake` object — unlike `loadTakeAnalysis(take: Take)` (used by `PracticeRoom`), it needs no `startPosition`/`songId` context and computes no `timingDeviations`, since a song-less exercise recording has no reference onsets to compare against.
+
+An imported external file is persisted through the **same** `ExerciseTake` model as a recorded take (new `import_exercise_file` Tauri command: copies the file into `~/.vps/exercises/takes/`, runs it through the sidecar `analyze` command, appends it to `exercises.json`) — no separate data model for "imported" vs. "recorded," `loadedTrackKind` in the exercise store is UX copy only.
+
+**`DynamicsCurve` gating fix:** this component previously gated its rAF loop and "no data" message purely on the song-only `isLoaded` flag, which Free Exercise never sets — it would never have drawn here without adding `exerciseMode` (from the player store) as an alternate gate, mirroring `PianoRoll`'s existing `!isLoaded && !exerciseMode` precedent, and checking `takeDynamics.length === 0` instead of `songDynamics` in exercise mode. `VibratoCard` needed no changes — it already gates purely on `takeVibrato` being non-null.
 
 ### ExerciseTakeList
 
-Flat list of recorded exercise takes. Each row shows the recorded date and duration. Clicking a row expands it to show a native `<audio controls>` element using `convertFileSrc(take.filepath)`. Clicking again collapses it. A `×` button deletes the take.
+Flat list of recorded exercise takes. Each row shows the recorded date and duration. Clicking an inactive row loads it into the main view (see [Free Exercise Track Loading](#free-exercise-track-loading) above) via `loadExerciseTakeIntoTrack(take, containerEl)`, where `containerEl` is a ref to `ExercisePage`'s shared waveform-strip container (passed down as a prop, so there's one WaveSurfer container reused across list clicks rather than one per row). Clicking the already-loaded row again unloads it via `clearLoadedTrack()`. Disabled (no-op) while recording. A `×` button deletes the take; deleting the currently-loaded one also unloads it.
 
 ### YouTubeImport
 

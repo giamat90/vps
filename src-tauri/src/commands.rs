@@ -591,29 +591,26 @@ fn save_exercise_takes_list(takes: &[ExerciseTake]) -> Result<(), String> {
     std::fs::write(&path, data).map_err(|e| format!("Write exercises: {e}"))
 }
 
-#[tauri::command]
-pub async fn save_exercise_take(
-    state: State<'_, SidecarState>,
-    audio_data: Vec<u8>,
+// Shared by save_exercise_take (raw recorded bytes) and import_exercise_file
+// (an arbitrary external file copied in) — both need: sidecar `analyze`,
+// preferring its loudness-normalized output over the raw/copied file, then
+// build + persist the resulting ExerciseTake.
+fn analyze_and_persist_exercise_take(
+    state: &State<'_, SidecarState>,
+    analyze_path: &str,
+    raw_file_path: String,
+    output_dir_str: &str,
+    take_id: String,
     duration: f64,
     algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
-    let take_id = uuid::Uuid::new_v4().to_string();
-    let takes_dir = storage::exercises_takes_dir();
-
-    let file_path = takes_dir.join(format!("{take_id}.webm"));
-    std::fs::write(&file_path, &audio_data).map_err(|e| format!("Write exercise take: {e}"))?;
-
-    let file_path_str = file_path.to_string_lossy().to_string();
-    let output_dir_str = takes_dir.to_string_lossy().to_string();
-
     let (pitch_data, dynamics, vibrato, normalized_path) = {
-        let guard = ensure_sidecar(&state);
+        let guard = ensure_sidecar(state);
         if let Ok(guard) = guard {
             if let Some(sidecar) = guard.as_ref() {
                 let cmd = serde_json::json!({
                     "cmd": "analyze",
-                    "recordingPath": file_path_str,
+                    "recordingPath": analyze_path,
                     "outputDir": output_dir_str,
                     "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
                 });
@@ -648,15 +645,21 @@ pub async fn save_exercise_take(
         }
     };
 
-    // Prefer the loudness-normalized WAV; fall back to the raw webm if normalization failed.
+    // Prefer the loudness-normalized WAV; fall back to the raw/copied file if normalization failed.
+    // The sidecar derives the normalized path by swapping the raw file's extension for
+    // ".wav" (see analysis.py) — if the raw file was ALREADY a .wav (e.g. an imported
+    // file, unlike a recorded take's always-.webm raw file), that derived path is the
+    // exact same file, and removing "raw_file_path" would delete the only copy that
+    // exists. Only remove it when normalization actually produced a distinct file.
     let final_file_path_str = match &normalized_path {
-        Some(p) => {
-            if let Err(e) = std::fs::remove_file(&file_path) {
-                log::warn!("Could not remove raw exercise take recording {file_path_str}: {e}");
+        Some(p) if p != &raw_file_path => {
+            if let Err(e) = std::fs::remove_file(&raw_file_path) {
+                log::warn!("Could not remove raw exercise take recording {raw_file_path}: {e}");
             }
             p.clone()
         }
-        None => file_path_str,
+        Some(p) => p.clone(),
+        None => raw_file_path,
     };
 
     let take = ExerciseTake {
@@ -674,6 +677,52 @@ pub async fn save_exercise_take(
     save_exercise_takes_list(&takes)?;
 
     Ok(take)
+}
+
+#[tauri::command]
+pub async fn save_exercise_take(
+    state: State<'_, SidecarState>,
+    audio_data: Vec<u8>,
+    duration: f64,
+    algorithm: Option<String>,
+) -> Result<ExerciseTake, String> {
+    let take_id = uuid::Uuid::new_v4().to_string();
+    let takes_dir = storage::exercises_takes_dir();
+
+    let file_path = takes_dir.join(format!("{take_id}.webm"));
+    std::fs::write(&file_path, &audio_data).map_err(|e| format!("Write exercise take: {e}"))?;
+
+    let file_path_str = file_path.to_string_lossy().to_string();
+    let output_dir_str = takes_dir.to_string_lossy().to_string();
+
+    analyze_and_persist_exercise_take(&state, &file_path_str, file_path_str.clone(), &output_dir_str, take_id, duration, algorithm)
+}
+
+#[tauri::command]
+pub async fn import_exercise_file(
+    state: State<'_, SidecarState>,
+    file_path: String,
+    duration: f64,
+    algorithm: Option<String>,
+) -> Result<ExerciseTake, String> {
+    let take_id = uuid::Uuid::new_v4().to_string();
+    let takes_dir = storage::exercises_takes_dir();
+    std::fs::create_dir_all(&takes_dir).map_err(|e| format!("Create exercise takes dir: {e}"))?;
+
+    let src = std::path::Path::new(&file_path);
+    if !src.exists() {
+        return Err(format!("File not found: {file_path}"));
+    }
+    let ext = src.extension().and_then(|e| e.to_str()).unwrap_or("wav");
+    let dest = takes_dir.join(format!("{take_id}.{ext}"));
+    std::fs::copy(src, &dest).map_err(|e| format!("Copy imported exercise file: {e}"))?;
+
+    let dest_str = dest.to_string_lossy().to_string();
+    let output_dir_str = takes_dir.to_string_lossy().to_string();
+
+    // Analyze the copied file, not the original source, so the persisted
+    // ExerciseTake's filepath always matches what analyze actually ran against.
+    analyze_and_persist_exercise_take(&state, &dest_str, dest_str.clone(), &output_dir_str, take_id, duration, algorithm)
 }
 
 #[tauri::command]

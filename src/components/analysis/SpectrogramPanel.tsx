@@ -1,6 +1,13 @@
 import { useRef, useEffect } from "react";
-import { getMicAnalyser, usePlayerStore } from "../../stores/player";
+import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
+import { useExerciseStore } from "../../stores/exercise";
 import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
+import { estimateFormants, type FormantEstimate } from "../../lib/formants";
+import { computeMagnitudeSpectrumDb } from "../../lib/fft";
+
+// Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
+// so live and buffer-snapshot data are the same resolution.
+const FFT_SIZE = 8192;
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -159,13 +166,25 @@ export default function SpectrogramPanel() {
   const offscreenRef = useRef<OffscreenCanvas | HTMLCanvasElement | null>(null);
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
+  const isPlaying    = usePlayerStore((s) => s.isPlaying);
+  const loadedTrackId = useExerciseStore((s) => s.loadedTrackId);
+  // A loaded track snapshots its decoded buffer at the current playhead —
+  // unlike a live AnalyserNode, this works whether playing, paused, or
+  // scrubbed, so "active" (i.e. showing something at all) doesn't depend on
+  // isPlaying. Whether the waterfall keeps *scrolling* still does — see
+  // shouldScroll below.
+  const trackActive  = loadedTrackId !== null;
+  const shouldScroll = isRecording || isMonitoring || (trackActive && isPlaying);
 
   const lastCapture = useRef(0);
   const shiftAccum  = useRef(0);
   const fftScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const timeScratch = useRef<Float32Array<ArrayBuffer> | null>(null);
   const colNorms    = useRef<Float32Array | null>(null);
   const freqLut     = useRef<{ low: Uint16Array; high: Uint16Array; H: number; sr: number } | null>(null);
   const drawRef     = useRef<() => void>(() => {});
+  const prevFormant = useRef<FormantEstimate>({ f1: null, f2: null, f3: null });
+  const srRef       = useRef(48000);
 
   useEffect(() => {
     console.log('[Spectrogram] thermal LUT active, gamma=0.4, blur=3-tap');
@@ -240,29 +259,55 @@ export default function SpectrogramPanel() {
         : (offscreen as HTMLCanvasElement).getContext("2d");
       if (!offCtx) return;
 
-      const active = isRecording || isMonitoring;
+      const active = isRecording || isMonitoring || trackActive;
 
       // ── capture + scroll (~30 fps) ──────────────────────────────────────────
       const now = performance.now();
       if (now - lastCapture.current >= 33) {
         lastCapture.current = now;
 
-        const analyser = getMicAnalyser();
+        // Resolve this frame's data source: a loaded track snapshots its
+        // decoded buffer at the current playhead (works paused or playing);
+        // otherwise fall back to the live mic AnalyserNode.
+        let sr: number | null = null;
+        let freqData: Float32Array | null = null;
+        let timeData: Float32Array | null = null;
 
-        if (active && analyser) {
-          analyser.smoothingTimeConstant = 0.15;
-          const binCount = analyser.frequencyBinCount;
-
-          if (!fftScratch.current || fftScratch.current.length !== binCount) {
-            fftScratch.current = new Float32Array(binCount);
+        if (trackActive) {
+          const engineSr = getEngine().getExerciseTrackSampleRate();
+          const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
+          if (engineSr && samples) {
+            sr = engineSr;
+            timeData = samples;
+            freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
           }
+        } else {
+          const analyser = getMicAnalyser();
+          if (analyser) {
+            analyser.smoothingTimeConstant = 0.15;
+            const binCount = analyser.frequencyBinCount;
+            if (!fftScratch.current || fftScratch.current.length !== binCount) {
+              fftScratch.current = new Float32Array(binCount);
+            }
+            if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
+              timeScratch.current = new Float32Array(analyser.fftSize);
+            }
+            analyser.getFloatFrequencyData(fftScratch.current);
+            analyser.getFloatTimeDomainData(timeScratch.current);
+            sr = analyser.context.sampleRate;
+            freqData = fftScratch.current;
+            timeData = timeScratch.current;
+          }
+        }
+
+        if (active && sr !== null && freqData !== null) {
+          srRef.current = sr;
           if (!colNorms.current || colNorms.current.length !== H) {
             colNorms.current = new Float32Array(H);
           }
 
-          analyser.getFloatFrequencyData(fftScratch.current);
-
-          const sr      = analyser.context.sampleRate;
+          const data    = freqData;
+          const binCount = data.length;
           const fftSize = binCount * 2;
 
           if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
@@ -277,7 +322,6 @@ export default function SpectrogramPanel() {
 
           const lutLow  = freqLut.current.low;
           const lutHigh = freqLut.current.high;
-          const data    = fftScratch.current;
           const norms   = colNorms.current;
           const dbRange = MAX_DB - MIN_DB;
           const colLut  = SPECTRO_COLORMAP;
@@ -300,13 +344,22 @@ export default function SpectrogramPanel() {
             norms[py]  = curved;
           }
 
-          // Dynamic shift: rollW pixels spans WINDOW_S seconds at ~30 fps
-          shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
-          const shift = Math.max(1, Math.floor(shiftAccum.current));
-          shiftAccum.current -= shift;
-
-          const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
-          offCtx.putImageData(shifted, 0, 0);
+          // Scrolling (shifting existing history left + appending new columns)
+          // only makes sense while audio is actually advancing. Paused/scrubbed
+          // with a loaded track: leave prior history in place and just
+          // overwrite a fixed-width strip at the right edge with the current
+          // frame's snapshot, so scrubbing updates the view without an
+          // otherwise-empty waterfall endlessly "scrolling" a frozen value.
+          let shift: number;
+          if (shouldScroll) {
+            shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
+            shift = Math.max(1, Math.floor(shiftAccum.current));
+            shiftAccum.current -= shift;
+            const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
+            offCtx.putImageData(shifted, 0, 0);
+          } else {
+            shift = Math.min(6, rollW);
+          }
 
           // Pass 2: write `shift` new columns at right (no vertical blur —
           // relies on temporal blending only)
@@ -324,6 +377,22 @@ export default function SpectrogramPanel() {
             }
           }
           offCtx.putImageData(colImg, rollW - shift, 0);
+
+          // ── formant ticks — F1/F2/F3, drawn into the same new column so
+          // they scroll with the spectrogram history and leave a trail ──────
+          if (timeData) {
+            const formant = estimateFormants(timeData, sr, prevFormant.current);
+            prevFormant.current = formant;
+
+            const fMaxTick = Math.min(F_MAX, sr / 2);
+            offCtx.fillStyle = "#e8fbff";
+            for (const f of [formant.f1, formant.f2, formant.f3]) {
+              if (f === null) continue;
+              const y = freqToY(f, H, fMaxTick);
+              if (y < 0 || y > H) continue;
+              offCtx.fillRect(rollW - shift, Math.max(0, y - 1), shift, 2);
+            }
+          }
 
         } else if (active) {
           // Active but analyser not ready yet — silence columns
@@ -351,8 +420,7 @@ export default function SpectrogramPanel() {
       }
 
       // Grid lines and axis always drawn at full opacity after composite
-      const analyser  = getMicAnalyser();
-      const sr        = analyser?.context.sampleRate ?? 48000;
+      const sr        = srRef.current;
       const nyquist   = sr / 2;
       const fMax      = Math.min(F_MAX, nyquist);
       ctx.save();
@@ -380,7 +448,7 @@ export default function SpectrogramPanel() {
         ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, H / 2);
       }
     };
-  }, [isRecording, isMonitoring]);
+  }, [isRecording, isMonitoring, trackActive, shouldScroll]);
 
   useEffect(() => {
     let rafId: number;
@@ -402,7 +470,7 @@ export default function SpectrogramPanel() {
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Spectrum</span>
         <span className="analysis-panel__hint">
-          {isRecording || isMonitoring ? "live" : "off"}
+          {isRecording || isMonitoring || trackActive ? "live" : "off"}
         </span>
       </div>
       <canvas ref={canvasRef} className="analysis-panel__canvas spectro-panel__canvas" />

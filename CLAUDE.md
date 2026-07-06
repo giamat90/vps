@@ -437,7 +437,7 @@ usedLatencyFallback: boolean   // true when recording started with no usable cal
 ## Current git state
 
 - **Branch:** `master`
-- **Current version:** `0.1.26` (as of 2026-07-06)
+- **Current version:** `0.1.27` (as of 2026-07-07)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
 - Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording with live pitch + spectrogram), Short-Term Spectrum panels, key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer.
 

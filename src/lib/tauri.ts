@@ -137,6 +137,11 @@ export async function deleteExerciseTakeApi(takeId: string): Promise<void> {
   return invoke("delete_exercise_take", { takeId });
 }
 
+/** Import an arbitrary external audio file into Free Exercise as an ExerciseTake */
+export async function importExerciseFile(filePath: string, duration: number, algorithm?: PitchAlgorithm): Promise<ExerciseTake> {
+  return invoke<ExerciseTake>("import_exercise_file", { filePath, duration, algorithm });
+}
+
 /** Listen for processing progress events */
 export function onProcessingProgress(
   callback: (status: ProcessingStatus) => void

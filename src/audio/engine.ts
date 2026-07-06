@@ -31,6 +31,10 @@ export class AudioEngine {
   private _exerciseMode = false;
   private _exerciseStartAt = 0;   // performance.now() at last resume
   private _exerciseOffset = 0;    // accumulated seconds before last pause
+  // Free Exercise: a loaded past take or imported file, played back independently
+  // of the vocals/instrumental/take trio (which requires a song). Ungated —
+  // does not participate in play()/pause()/seekTo()'s vocals&&instrumental guard.
+  exerciseTrack: WaveSurfer | null = null;
 
   async load(
     songDir: string,
@@ -322,6 +326,115 @@ export class AudioEngine {
     this._takeIsPlaying = false;
   }
 
+  // ─── Free Exercise: loaded-track playback (independent of vocals/instrumental/take) ───
+
+  async loadExerciseTrack(filePath: string, container: HTMLElement): Promise<void> {
+    this.exerciseTrack?.destroy();
+    this.exerciseTrack = null;
+
+    const url = convertFileSrc(filePath.replace(/\\/g, "/"));
+
+    this.exerciseTrack = WaveSurfer.create({
+      height: 80,
+      waveColor: "#ff8c1e",
+      progressColor: "#ff8c1e",
+      cursorColor: "#ff8c1e",
+      cursorWidth: 2,
+      barWidth: 2,
+      barGap: 1,
+      barRadius: 2,
+      normalize: true,
+      interact: true,
+      container,
+      url,
+    });
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const unsubReady = this.exerciseTrack!.on("ready", () => { unsubReady(); unsubError(); resolve(); });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const unsubError = this.exerciseTrack!.on("error", (err: any) => {
+          unsubReady(); unsubError();
+          console.error("[engine] WaveSurfer exercise track load failed — url:", url, "raw err:", err);
+          reject(new Error(err?.message || err?.toString?.() || "WaveSurfer load error"));
+        });
+      });
+    } catch (e) {
+      // A left-over errored instance would otherwise keep getCurrentTime()'s
+      // exerciseTrack branch active (see below), silently corrupting the
+      // timer for any recording started afterward without a successful load.
+      this.exerciseTrack?.destroy();
+      this.exerciseTrack = null;
+      throw e;
+    }
+
+    // Guard: clearExerciseTrack()/destroy() may have run during the await.
+    if (!this.exerciseTrack) return;
+
+    this.exerciseTrack.on("interaction", (newTime) => {
+      this.seekExerciseTrack(newTime);
+    });
+
+    this.exerciseTrack.on("finish", () => {
+      this._isPlaying = false;
+      this._stopTimeUpdate();
+      this._finishCb?.();
+    });
+  }
+
+  playExerciseTrack(): void {
+    if (!this.exerciseTrack) return;
+    this.exerciseTrack.play();
+    this._isPlaying = true;
+    this._startTimeUpdate();
+  }
+
+  pauseExerciseTrack(): void {
+    if (!this.exerciseTrack) return;
+    this.exerciseTrack.pause();
+    this._isPlaying = false;
+    this._stopTimeUpdate();
+  }
+
+  seekExerciseTrack(time: number): void {
+    if (!this.exerciseTrack) return;
+    const dur = this.exerciseTrack.getDuration();
+    if (dur <= 0) return;
+    this.exerciseTrack.seekTo(Math.max(0, Math.min(1, time / dur)));
+  }
+
+  // Frame-accurate snapshot for the Spectrogram/Short-Term Spectrum panels:
+  // reuses WaveSurfer's own already-decoded buffer (no extra fetch/decode)
+  // to extract a time-domain window ending at the current playhead, whether
+  // the track is playing, paused, or was just scrubbed — unlike an
+  // AnalyserNode, which only ever reports something while audio is actively
+  // flowing through it.
+  getExerciseTrackSamples(windowSize: number): Float32Array | null {
+    if (!this.exerciseTrack) return null;
+    const buffer = this.exerciseTrack.getDecodedData();
+    if (!buffer) return null;
+    const channelData = buffer.getChannelData(0);
+    const end = Math.floor(this.exerciseTrack.getCurrentTime() * buffer.sampleRate);
+    const start = end - windowSize;
+    const out = new Float32Array(windowSize);
+    for (let i = 0; i < windowSize; i++) {
+      const srcIdx = start + i;
+      out[i] = srcIdx >= 0 && srcIdx < channelData.length ? channelData[srcIdx] : 0;
+    }
+    return out;
+  }
+
+  getExerciseTrackSampleRate(): number | null {
+    return this.exerciseTrack?.getDecodedData()?.sampleRate ?? null;
+  }
+
+  clearExerciseTrack(): void {
+    this.exerciseTrack?.destroy();
+    this.exerciseTrack = null;
+    this._isPlaying = false;
+    this._stopTimeUpdate();
+  }
+
   loadInstrumentalFromPath(filePath: string): void {
     if (!this.instrumental) return;
     const url = convertFileSrc(filePath.replace(/\\/g, "/"));
@@ -340,6 +453,7 @@ export class AudioEngine {
 
   getCurrentTime(): number {
     if (this._exerciseMode) {
+      if (this.exerciseTrack) return this.exerciseTrack.getCurrentTime();
       const elapsed = this._isPlaying
         ? this._exerciseOffset + (performance.now() - this._exerciseStartAt) / 1000
         : this._exerciseOffset;
@@ -394,9 +508,11 @@ export class AudioEngine {
     this.vocals?.destroy();
     this.instrumental?.destroy();
     this.take?.destroy();
+    this.exerciseTrack?.destroy();
     this.vocals = null;
     this.instrumental = null;
     this.take = null;
+    this.exerciseTrack = null;
     this._isPlaying = false;
     this._duration = 0;
     this._vocalsOffset = 0;
