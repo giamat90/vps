@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { useLibraryStore } from "../../stores/library";
 import type { PitchAlgorithm } from "../../lib/types";
 
-const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
+export const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
 
 interface DropZoneProps {
   highQuality?: boolean;

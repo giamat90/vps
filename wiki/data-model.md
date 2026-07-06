@@ -164,7 +164,8 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `rename_take` | `songId, takeId, name: string` | `Take` (empty/whitespace name resets to default) |
 | `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics, stSpectrum… }` (backfills the song spectrum via sidecar) |
 | `pitch_shift_song` | `songDir: string, nSteps: number` | `{ vocalsPath, instrumentalPath }` |
-| `save_exercise_take` | `audioData: number[], duration: f64` | `ExerciseTake` |
+| `save_exercise_take` | `audioData: number[], duration: f64, algorithm?: string` | `ExerciseTake` |
+| `import_exercise_file` | `filePath: string, duration: f64, algorithm?: string` | `ExerciseTake` (copies an arbitrary external audio file into `~/.vps/exercises/takes/`, analyzes it identically to a recorded take — shares its analyze+persist logic with `save_exercise_take` via a private `analyze_and_persist_exercise_take` helper) |
 | `list_exercise_takes` | — | `ExerciseTake[]` |
 | `delete_exercise_take` | `takeId: string` | `void` |
 | `export_stem` | `stemPath, suggestedName: string` | `void` (native Save As dialog) |

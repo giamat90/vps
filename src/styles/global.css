@@ -2111,6 +2111,55 @@ body,
   flex-shrink: 0;
 }
 
+.exercise-page__dynamics {
+  padding: 0.4rem 1rem 0.4rem;
+  flex-shrink: 0;
+}
+
+.exercise-page__track-strip {
+  min-height: 5rem;
+  margin: 0 1rem;
+  border-radius: 0.4rem;
+  background: var(--bg-secondary);
+  flex-shrink: 0;
+}
+
+.exercise-page__transport {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 1rem 0;
+  flex-shrink: 0;
+}
+
+.exercise-page__transport button {
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.exercise-page__import-btn {
+  background: var(--bg-surface);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--text-primary);
+  padding: 0.45rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.exercise-page__import-btn:disabled,
+.exercise-rec-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .exercise-page__controls {
   display: flex;
   align-items: center;
@@ -2217,10 +2266,15 @@ body,
   color: var(--text-primary);
 }
 
-.exercise-take-list__player {
-  width: 100%;
-  height: 2.2rem;
-  accent-color: var(--accent);
+.exercise-take-list__item--disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.exercise-take-list__load-error {
+  font-size: 0.78rem;
+  color: var(--accent);
+  padding: 0.3rem 0.5rem;
 }
 
 .exercise-take-list__delete {

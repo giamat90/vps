@@ -6,6 +6,7 @@ onto the second formant); see processor.get_pitch_fn.
 
 import os
 import sys
+import traceback
 import numpy as np
 import librosa
 import soundfile as sf
@@ -311,23 +312,44 @@ def analyze_recording(
     # --- Stage 6: Loudness normalization (1.0) ---
     print("Normalizing take loudness...", file=sys.stderr)
 
-    take_audio, take_sr = librosa.load(recording_path, sr=None, mono=True, offset=audio_offset_s)
-    take_rms_db = _rms_dbfs(take_audio)
-    take_peak = float(np.max(np.abs(take_audio))) if take_audio.size else 0.0
+    # Unlike every other stage above, this one has no fallback if it fails —
+    # a caller (Rust's save_exercise_take/save_take) that gets a truthy
+    # normalizedPath back deletes the raw recording, trusting the normalized
+    # file exists. Guard against any decode/write failure (a real webm/opus
+    # recording can hit backend-specific quirks the other librosa.load calls
+    # above didn't — see _probe_source's docstring on unreliable duration
+    # metadata for this exact file type) so a broken normalization degrades
+    # to "no normalized file" instead of a dangling reference to one that was
+    # never actually written.
+    normalized_path = None
+    gain_linear = 0.0
+    try:
+        take_audio, take_sr = librosa.load(recording_path, sr=None, mono=True, offset=audio_offset_s)
+        take_rms_db = _rms_dbfs(take_audio)
+        take_peak = float(np.max(np.abs(take_audio))) if take_audio.size else 0.0
 
-    if reference_path and os.path.exists(reference_path):
-        ref_audio, _ = librosa.load(reference_path, sr=take_sr, mono=True)
-        target_rms_db = _rms_dbfs(ref_audio)
-    else:
-        target_rms_db = TARGET_RMS_DBFS_FALLBACK
+        if reference_path and os.path.exists(reference_path):
+            ref_audio, _ = librosa.load(reference_path, sr=take_sr, mono=True)
+            target_rms_db = _rms_dbfs(ref_audio)
+        else:
+            target_rms_db = TARGET_RMS_DBFS_FALLBACK
 
-    gain_linear = 10 ** ((target_rms_db - take_rms_db) / 20)
-    if take_peak > 0:
-        max_safe_gain = 10 ** (PEAK_CEILING_DBFS / 20) / take_peak
-        gain_linear = min(gain_linear, max_safe_gain)
+        gain_linear = 10 ** ((target_rms_db - take_rms_db) / 20)
+        if take_peak > 0:
+            max_safe_gain = 10 ** (PEAK_CEILING_DBFS / 20) / take_peak
+            gain_linear = min(gain_linear, max_safe_gain)
 
-    normalized_path = os.path.splitext(recording_path)[0] + ".wav"
-    sf.write(normalized_path, take_audio * gain_linear, take_sr)
+        candidate_path = os.path.splitext(recording_path)[0] + ".wav"
+        sf.write(candidate_path, take_audio * gain_linear, take_sr)
+
+        # Verify the write actually landed before reporting success — a
+        # caller trusts this path enough to delete the raw recording.
+        if os.path.exists(candidate_path) and os.path.getsize(candidate_path) > 0:
+            normalized_path = candidate_path
+        else:
+            print(f"Normalization wrote no usable file at {candidate_path}", file=sys.stderr)
+    except Exception as e:
+        print(f"Loudness normalization error: {e}\n{traceback.format_exc()}", file=sys.stderr)
 
     on_progress(1.0, "complete")
 

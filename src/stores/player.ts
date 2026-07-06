@@ -76,6 +76,13 @@ export function getMonitorStream(): MediaStream | null {
   return monitorStream;
 }
 
+// Free Exercise loaded-track playback used to tap a MediaElementAudioSourceNode
+// analyser here, but that only reports data while audio is actively flowing —
+// useless for a paused/scrubbed playhead. Superseded by
+// AudioEngine.getExerciseTrackSamples(), which snapshots WaveSurfer's own
+// decoded buffer directly at any current-time position (see SpectrogramPanel/
+// ShortTermSpectrumPanel).
+
 export function getRecorderStream(): MediaStream | null {
   return recorder?.getProcessedStream() ?? recorder?.getStream() ?? null;
 }
@@ -265,6 +272,8 @@ interface PlayerActions {
   stopExercise: () => void;
   startExerciseRecording: () => Promise<void>;
   stopExerciseRecording: () => Promise<ExerciseTake>;
+  playExerciseTrack: () => void;
+  pauseExerciseTrack: () => void;
 }
 
 function _loadOffsets(): Record<string, CalibrationEntry> {
@@ -981,5 +990,15 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
     set({ isRecording: false, isPlaying: false, currentTime: 0 });
     return take;
+  },
+
+  playExerciseTrack: () => {
+    getEngine().playExerciseTrack();
+    set({ isPlaying: true });
+  },
+
+  pauseExerciseTrack: () => {
+    getEngine().pauseExerciseTrack();
+    set({ isPlaying: false });
   },
 }));

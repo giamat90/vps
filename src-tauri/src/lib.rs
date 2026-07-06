@@ -26,6 +26,7 @@ pub fn run() {
             commands::rename_take,
             commands::load_analysis,
             commands::save_exercise_take,
+            commands::import_exercise_file,
             commands::list_exercise_takes,
             commands::delete_exercise_take,
         ])
