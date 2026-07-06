@@ -68,6 +68,7 @@ pub async fn process_song(
     file_path: String,
     high_quality: Option<bool>,
     track_kind: Option<String>,
+    algorithm: Option<String>,
 ) -> Result<Song, String> {
     let track_kind = track_kind.unwrap_or_else(|| "vocal".to_string());
     let skip_separation = track_kind == "instrument";
@@ -100,6 +101,7 @@ pub async fn process_song(
         "outputDir": output_dir_str,
         "highQuality": high_quality.unwrap_or(false),
         "skipSeparation": skip_separation,
+        "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
     });
 
     // Hold the lock for the duration of the processing to prevent concurrent jobs
@@ -336,6 +338,7 @@ pub async fn save_take(
     audio_data: Vec<u8>,
     start_position: f64,
     audio_offset: f64,
+    algorithm: Option<String>,
 ) -> Result<Take, String> {
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::song_dir(&song_id).join("takes");
@@ -359,6 +362,7 @@ pub async fn save_take(
                     "recordingPath": file_path_str,
                     "outputDir": output_dir_str,
                     "audioOffset": audio_offset,
+                    "algorithm": algorithm.clone().unwrap_or_else(|| "srh".to_string()),
                 });
                 if let Some(ref_path) = &reference_path_str {
                     cmd_obj["referencePath"] = serde_json::json!(ref_path);
@@ -592,6 +596,7 @@ pub async fn save_exercise_take(
     state: State<'_, SidecarState>,
     audio_data: Vec<u8>,
     duration: f64,
+    algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::exercises_takes_dir();
@@ -610,6 +615,7 @@ pub async fn save_exercise_take(
                     "cmd": "analyze",
                     "recordingPath": file_path_str,
                     "outputDir": output_dir_str,
+                    "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
                 });
                 let _ = sidecar.send_command(&cmd);
                 let timeout = std::time::Duration::from_secs(300);
@@ -694,6 +700,7 @@ pub async fn import_youtube(
     state: State<'_, SidecarState>,
     url: String,
     high_quality: Option<bool>,
+    algorithm: Option<String>,
 ) -> Result<Song, String> {
     if !url.contains("youtube.com/") && !url.contains("youtu.be/") {
         return Err("Not a valid YouTube URL".to_string());
@@ -708,6 +715,7 @@ pub async fn import_youtube(
         "url": url,
         "outputDir": output_dir_str,
         "highQuality": high_quality.unwrap_or(false),
+        "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
     });
 
     let guard = ensure_sidecar(&state)?;

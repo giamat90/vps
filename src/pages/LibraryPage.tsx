@@ -3,9 +3,11 @@ import { getVersion } from "@tauri-apps/api/app";
 import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
 import RecordingOffsetControl from "../components/recording/RecordingOffsetControl";
+import PitchAlgorithmControl from "../components/settings/PitchAlgorithmControl";
 import { exportStem, pitchShiftSong } from "../lib/tauri";
 import type { Song } from "../lib/types";
 import { useLibraryStore } from "../stores/library";
+import { useSettingsStore } from "../stores/settings";
 
 interface LibraryPageProps {
   onSelectSong: (songId: string) => void;
@@ -157,6 +159,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const [appVersion, setAppVersion] = useState("");
   const [highQuality, setHighQuality] = useState(false);
   const [trackKind, setTrackKind] = useState<"vocal" | "instrument">("vocal");
+  const pitchAlgorithm = useSettingsStore((s) => s.pitchAlgorithm);
 
   useEffect(() => {
     fetchSongs();
@@ -232,8 +235,8 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
             Instrument practice track (piano/guitar melody)
           </label>
         </div>
-        <DropZone highQuality={highQuality} trackKind={trackKind} />
-        <YouTubeImport highQuality={highQuality} />
+        <DropZone highQuality={highQuality} trackKind={trackKind} algorithm={pitchAlgorithm} />
+        <YouTubeImport highQuality={highQuality} algorithm={pitchAlgorithm} />
         <label
           className="library-page__quality-toggle"
           title={
@@ -256,6 +259,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
 
       {showSettings && (
         <div className="library-page__settings">
+          <PitchAlgorithmControl />
           <RecordingOffsetControl />
         </div>
       )}

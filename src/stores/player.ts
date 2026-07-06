@@ -4,6 +4,7 @@ import { VocalRecorder } from "../audio/recorder";
 import type { Song, Take } from "../lib/types";
 import { saveTake, listTakes, deleteTakeApi, renameTakeApi, pitchShiftSong, saveExerciseTake } from "../lib/tauri";
 import type { ExerciseTake } from "../lib/types";
+import { useSettingsStore } from "./settings";
 
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
@@ -832,7 +833,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const rawCompensated = recordingStartPos - _recordingLatencyS;
       const compensatedStartPos = Math.max(0, rawCompensated);
       const audioOffset = rawCompensated < 0 ? -rawCompensated : 0;
-      const take = await saveTake(song.id, audioData, compensatedStartPos, audioOffset);
+      const take = await saveTake(
+        song.id,
+        audioData,
+        compensatedStartPos,
+        audioOffset,
+        useSettingsStore.getState().pitchAlgorithm,
+      );
 
       // Instrumentation only: correlate future misalignment reports with take length
       // before deciding whether within-take clock drift is worth correcting.
@@ -970,7 +977,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
     const arrayBuffer = await blob.arrayBuffer();
     const audioData = Array.from(new Uint8Array(arrayBuffer));
-    const take = await saveExerciseTake(audioData, duration);
+    const take = await saveExerciseTake(audioData, duration, useSettingsStore.getState().pitchAlgorithm);
 
     set({ isRecording: false, isPlaying: false, currentTime: 0 });
     return take;

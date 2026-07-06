@@ -56,6 +56,7 @@ def main():
                     on_progress=make_progress_callback("process"),
                     high_quality=cmd.get("highQuality", False),
                     skip_separation=cmd.get("skipSeparation", False),
+                    pitch_algorithm=cmd.get("algorithm", "srh"),
                 )
                 send({"type": "result", "cmd": "process", "data": result})
 
@@ -66,6 +67,7 @@ def main():
                     on_progress=make_progress_callback("analyze"),
                     audio_offset_s=float(cmd.get("audioOffset", 0.0)),
                     reference_path=cmd.get("referencePath"),
+                    pitch_algorithm=cmd.get("algorithm", "srh"),
                 )
                 send({"type": "result", "cmd": "analyze", "data": result})
 
@@ -106,6 +108,7 @@ def main():
                     cmd["outputDir"],
                     on_progress=make_progress_callback("import_yt"),
                     high_quality=cmd.get("highQuality", False),
+                    algorithm=cmd.get("algorithm", "srh"),
                 )
                 send({"type": "result", "cmd": "import_yt", "data": result})
 

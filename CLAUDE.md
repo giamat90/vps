@@ -32,8 +32,7 @@ Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log wi
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | `htdemucs` (default) / `htdemucs_ft` (high-quality opt-in) |
-| Song pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
-| Take pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
+| Pitch detection (song + take) | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / pYIN / HPS / CREPE (`torchcrepe`) | — |
 | Pitch shifting | librosa phase vocoder | — |
 
 **Platform:** Windows 11, x86_64. WebView2 is pre-installed.
@@ -119,6 +118,8 @@ VPS/
 │   │   │   └── ShortTermSpectrumComparisonPanel.tsx  song-vs-take spectral envelope comparison
 │   │   ├── coaching/
 │   │   │   └── CoachPanel.tsx      AI coaching tips
+│   │   ├── settings/
+│   │   │   └── PitchAlgorithmControl.tsx  SRH/pYIN/HPS/CREPE selector (library-page settings panel)
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
 │   ├── lib/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
@@ -129,7 +130,8 @@ VPS/
 │   │   ├── library.ts         song list + import flow (Zustand)
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
-│   │   └── updater.ts         auto-update state (Zustand)
+│   │   ├── updater.ts         auto-update state (Zustand)
+│   │   └── settings.ts        app settings, e.g. pitchAlgorithm (Zustand, localStorage-persisted)
 │   ├── pages/
 │   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)
 │   │   ├── PracticeRoom.tsx   main practice UI (waveforms + analysis + recording)
@@ -239,17 +241,17 @@ interface PitchPoint {       // frontend-internal representation
 
 | Command | Returns | Notes |
 |---|---|---|
-| `process_song(filePath, kind?, highQuality?)` | `Song` | Demucs + SRH; 10-min timeout; `kind: "instrument"` skips separation |
+| `process_song(filePath, kind?, highQuality?, algorithm?)` | `Song` | Demucs + pitch detection (algorithm per Settings, default SRH); 10-min timeout; `kind: "instrument"` skips separation |
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
-| `save_take(songId, audioData, startPosition, audioOffset)` | `Take` | sidecar `analyze` (SRH + spectrum) + RMS-normalizes loudness against vocals.wav |
+| `save_take(songId, audioData, startPosition, audioOffset, algorithm?)` | `Take` | sidecar `analyze` (pitch + spectrum) + RMS-normalizes loudness against vocals.wav |
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
 | `rename_take(songId, takeId, name)` | `Take` | empty/whitespace name clears back to default |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
-| `import_youtube(url)` | `Song` | yt-dlp + Demucs; 15-min timeout |
+| `import_youtube(url, highQuality?, algorithm?)` | `Song` | yt-dlp + Demucs; 15-min timeout |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |
 | `export_mix(sources, startSec, endSec, suggestedName)` | `void` | renders a mixdown WAV via sidecar `mix_export` honoring live mute/solo/volume + punch region, then native Save As dialog |
@@ -387,10 +389,13 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices
-- **Song vocals → SRH** (Summation of Residual Harmonics, Drugman & Dutoit 2011). Chosen because pYIN and CREPE both tracked upper harmonics instead of the fundamental on strong chest-voice singers. SRH sums harmonic energy and subtracts inter-harmonic energy — structurally immune to dominant upper harmonics. Validated on Chris Cornell vocals vs VoceVista.
+- **User-selectable, single global setting** — `src/stores/settings.ts`'s `pitchAlgorithm` (`"srh" | "pyin" | "hps" | "crepe"`), chosen via `PitchAlgorithmControl` in the library-page Settings panel, applies identically to song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s `analyze_recording()`) so the two pitch ribbons stay comparable. Dispatch is a small registry in `processor.py` (`PITCH_ALGORITHMS` / `get_pitch_fn`); defaults to `"srh"` when absent.
+- **SRH** (Summation of Residual Harmonics, Drugman & Dutoit 2011) — the default. Chosen because pYIN and CREPE both tracked upper harmonics instead of the fundamental on strong chest-voice singers. SRH sums harmonic energy and subtracts inter-harmonic energy — structurally immune to dominant upper harmonics. Validated on Chris Cornell vocals vs VoceVista.
   - Resamples to 22050 Hz, `frame_length=2756` (125 ms, per Babacan et al. 2019), 0.5 Hz candidate grid, `n_harmonics=5`, parabolic interpolation, median + Gaussian smoothing on voiced frames.
-- **Recorded takes → SRH** (`analysis.py` calls `detect_pitch_srh`, same as song vocals — this table previously said pYIN, which is stale; pYIN (`detect_pitch` in `processor.py`) is unused dead code, kept only as a comparison baseline in `sidecar/pitch_lab/`).
-- **Algorithm validation workspace:** `sidecar/pitch_lab/` — reuses the production SRH/pYIN functions to visualize, sonify, and cross-compare pitch detection on real Demucs-split tracks. See `sidecar/pitch_lab/README.md`.
+- **pYIN** (`detect_pitch` in `processor.py`) — was unused dead code for a period (comparison baseline only in `sidecar/pitch_lab/`), now selectable again as a live option.
+- **HPS** (`detect_pitch_hps`) — new; Harmonic Product Spectrum, no new dependency, more octave-jitter-prone than SRH by design (multiplicative harmonic combination).
+- **CREPE** (`detect_pitch_crepe`) — new; deep-learning tracker via `torchcrepe` (`"tiny"` model, reuses the `torch` dependency Demucs already needs), slower than the DSP algorithms on full-song audio.
+- **Algorithm validation workspace:** `sidecar/pitch_lab/` — reuses the production SRH/pYIN/HPS/CREPE functions to visualize, sonify, and cross-compare pitch detection on real Demucs-split tracks. See `sidecar/pitch_lab/README.md`.
 
 ---
 
@@ -432,9 +437,9 @@ usedLatencyFallback: boolean   // true when recording started with no usable cal
 ## Current git state
 
 - **Branch:** `master`
-- **Current version:** `0.1.25` (as of 2026-07-05)
+- **Current version:** `0.1.26` (as of 2026-07-06)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
-- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording with live pitch + spectrogram), Short-Term Spectrum panels, key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, auto-update, self-contained installer.
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording with live pitch + spectrogram), Short-Term Spectrum panels, key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer.
 
 ---
 

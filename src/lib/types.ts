@@ -1,3 +1,6 @@
+/** Pitch-extraction algorithm choice for the vocals stem (settings, global) */
+export type PitchAlgorithm = "srh" | "pyin" | "hps" | "crepe";
+
 /** Song in the library */
 export interface Song {
   id: string;

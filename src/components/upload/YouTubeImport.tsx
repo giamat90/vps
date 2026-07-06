@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useLibraryStore } from "../../stores/library";
+import type { PitchAlgorithm } from "../../lib/types";
 
 const YT_PATTERN = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//;
 
 interface YouTubeImportProps {
   highQuality?: boolean;
+  algorithm?: PitchAlgorithm;
 }
 
-function YouTubeImport({ highQuality }: YouTubeImportProps) {
+function YouTubeImport({ highQuality, algorithm }: YouTubeImportProps) {
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
   const importYoutube = useLibraryStore((s) => s.importYoutube);
@@ -19,7 +21,7 @@ function YouTubeImport({ highQuality }: YouTubeImportProps) {
       return;
     }
     setError(null);
-    await importYoutube(url, highQuality);
+    await importYoutube(url, highQuality, algorithm);
     setUrl("");
   };
 

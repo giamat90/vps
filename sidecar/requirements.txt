@@ -6,6 +6,7 @@
 torch<2.6
 torchaudio<2.6
 demucs
+torchcrepe
 librosa
 soundfile
 numpy

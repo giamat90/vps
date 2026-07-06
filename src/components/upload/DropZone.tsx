@@ -1,14 +1,16 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { useLibraryStore } from "../../stores/library";
+import type { PitchAlgorithm } from "../../lib/types";
 
 const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
 
 interface DropZoneProps {
   highQuality?: boolean;
   trackKind?: "vocal" | "instrument";
+  algorithm?: PitchAlgorithm;
 }
 
-function DropZone({ highQuality, trackKind }: DropZoneProps) {
+function DropZone({ highQuality, trackKind, algorithm }: DropZoneProps) {
   const uploadSong = useLibraryStore((s) => s.uploadSong);
   const processing = useLibraryStore((s) => s.processing);
   const isProcessing = processing !== null;
@@ -27,7 +29,7 @@ function DropZone({ highQuality, trackKind }: DropZoneProps) {
     });
 
     if (selected) {
-      uploadSong(selected, highQuality, trackKind);
+      uploadSong(selected, highQuality, trackKind, algorithm);
     }
   };
 

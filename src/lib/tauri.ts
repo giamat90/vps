@@ -1,14 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ProcessingStatus, Song, Take, ExerciseTake } from "./types";
+import type { ProcessingStatus, Song, Take, ExerciseTake, PitchAlgorithm } from "./types";
 
 /** Process a song file through the Python sidecar */
 export async function processSong(
   filePath: string,
   highQuality?: boolean,
-  trackKind?: "vocal" | "instrument"
+  trackKind?: "vocal" | "instrument",
+  algorithm?: PitchAlgorithm
 ): Promise<Song> {
-  return invoke<Song>("process_song", { filePath, highQuality, trackKind });
+  return invoke<Song>("process_song", { filePath, highQuality, trackKind, algorithm });
 }
 
 /** List all songs in the library */
@@ -27,8 +28,9 @@ export async function saveTake(
   audioData: number[],
   startPosition: number,
   audioOffset = 0,
+  algorithm?: PitchAlgorithm,
 ): Promise<Take> {
-  return invoke<Take>("save_take", { songId, audioData, startPosition, audioOffset });
+  return invoke<Take>("save_take", { songId, audioData, startPosition, audioOffset, algorithm });
 }
 
 /** List takes for a song */
@@ -74,8 +76,8 @@ export async function pitchShiftSong(
 }
 
 /** Import a YouTube URL through yt-dlp + Demucs pipeline */
-export async function importYoutube(url: string, highQuality?: boolean): Promise<Song> {
-  return invoke<Song>("import_youtube", { url, highQuality });
+export async function importYoutube(url: string, highQuality?: boolean, algorithm?: PitchAlgorithm): Promise<Song> {
+  return invoke<Song>("import_youtube", { url, highQuality, algorithm });
 }
 
 /** Open a native Save As dialog and copy a stem WAV to user-chosen location */
@@ -121,8 +123,8 @@ export async function exportMix(
 }
 
 /** Save a free-exercise recorded take */
-export async function saveExerciseTake(audioData: number[], duration: number): Promise<ExerciseTake> {
-  return invoke<ExerciseTake>("save_exercise_take", { audioData, duration });
+export async function saveExerciseTake(audioData: number[], duration: number, algorithm?: PitchAlgorithm): Promise<ExerciseTake> {
+  return invoke<ExerciseTake>("save_exercise_take", { audioData, duration, algorithm });
 }
 
 /** List all exercise takes */

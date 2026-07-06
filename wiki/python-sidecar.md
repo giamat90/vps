@@ -59,16 +59,18 @@ Rust sends one command at a time (the sidecar processes synchronously):
 Separates a mixed audio file and extracts analysis data.
 
 ```json
-{"cmd": "process", "filePath": "/path/to/song.mp3", "outputDir": "/path/to/output/", "highQuality": false, "skipSeparation": false}
+{"cmd": "process", "filePath": "/path/to/song.mp3", "outputDir": "/path/to/output/", "highQuality": false, "skipSeparation": false, "algorithm": "srh"}
 ```
 
 `highQuality` (optional, default `false`) — selects the Demucs model: `htdemucs_ft` (fine-tuned, ~2-3x slower, better isolation) instead of `htdemucs` (fast, standard quality). Only affects model selection in `processor.process()`; no other stage changes. Ignored when `skipSeparation` is set.
 
 `skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage.
 
+`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"pyin"`, `"hps"`, `"crepe"`; user-selectable in the Settings panel. See [Pitch Detection](#pitch-detection-user-selectable).
+
 Steps (in `processor.py`):
 1. Demucs `htdemucs` (or `htdemucs_ft` if `highQuality`) — produces `vocals.wav` and `instrumental.wav`; **or**, if `skipSeparation`, load the input directly and duplicate it to both paths
-2. SRH pitch detection on the vocals track (see [Pitch Detection](#pitch-detection))
+2. Pitch detection on the vocals track, algorithm per `algorithm` (see [Pitch Detection](#pitch-detection-user-selectable))
 3. Onset detection
 4. RMS dynamics
 5. BPM estimation (full mix)
@@ -81,15 +83,17 @@ Returns Song metadata as `data`.
 Analyzes a recorded take (after the singer finishes recording).
 
 ```json
-{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/takes/", "audioOffset": 0.256, "referencePath": "/path/to/song/vocals.wav"}
+{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/takes/", "audioOffset": 0.256, "referencePath": "/path/to/song/vocals.wav", "algorithm": "srh"}
 ```
 
 `audioOffset` (optional, default `0.0`) — seconds to skip at the start of the audio file before processing. Non-zero when latency compensation shifted the take's `startPosition` below 0 and the engine skips a silent prefix on playback. Both `librosa.load()` calls in `analysis.py` pass `offset=audio_offset_s`, so all output times (pitch, onsets, dynamics) are 0-based from the audible content start and correctly align with the song.
 
 `referencePath` (optional) — loudness reference stem, in practice always `vocals.wav`. When present, the take is **RMS-normalized** against it: gain = reference RMS / take RMS, peak-capped so nothing clips, written as a `{takeId}.wav` next to the raw recording and returned as `normalizedPath`. Rust's `save_take` then keeps the normalized WAV and deletes the raw `.webm` (falling back to the `.webm` if normalization failed). This is why recorded takes no longer sound quiet next to mastered Demucs stems.
 
+`algorithm` (optional, default `"srh"`) — same selectable pitch algorithm as `process`; should match whatever was used for the song so take/song pitch curves compare meaningfully.
+
 Steps (in `analysis.py`):
-1. SRH pitch detection (same `detect_pitch_srh` as song processing) — resampled to 22050 Hz
+1. Pitch detection via `get_pitch_fn(algorithm)` (same dispatch as song processing) — resampled to 22050 Hz
 2. Onset detection
 3. RMS dynamics
 4. Vibrato rate/depth computation
@@ -115,7 +119,7 @@ Returns `{"vocalsPath": "...", "instrumentalPath": "..."}` as `data`.
 Downloads a YouTube video as audio and runs it through the full `process` pipeline.
 
 ```json
-{"cmd": "import_yt", "url": "https://youtube.com/watch?v=...", "outputDir": "/path/to/output/", "highQuality": false}
+{"cmd": "import_yt", "url": "https://youtube.com/watch?v=...", "outputDir": "/path/to/output/", "highQuality": false, "algorithm": "srh"}
 ```
 
 `highQuality` (optional, default `false`) — same meaning as in `process`; threaded straight through to `processor.process()`.
@@ -162,13 +166,31 @@ Each source is loaded only over the `[startSec, endSec)` window; takes are align
 {"cmd": "quit"}
 ```
 
-## Pitch Detection
+## Pitch Detection (user-selectable)
 
-### Song vocals — SRH (Summation of Residual Harmonics)
+Pitch extraction on separated vocals is a **user-selectable algorithm**, chosen in the app's Settings
+panel (`src/components/settings/PitchAlgorithmControl.tsx`, backed by the `pitchAlgorithm` field in
+`src/stores/settings.ts`, persisted to `localStorage`). The choice is global — the same algorithm is
+used for song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s
+`analyze_recording()`), so song and take pitch ribbons stay comparable in the piano roll.
+
+`processor.py` holds a small dispatch registry:
+
+```python
+PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect_pitch_hps, "crepe": detect_pitch_crepe}
+def get_pitch_fn(algorithm): return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
+```
+
+The `algorithm` field flows: Settings UI → `useSettingsStore` → `processSong`/`saveTake`/`importYoutube`/
+`saveExerciseTake` (`src/lib/tauri.ts`) → Rust `commands.rs` → JSON `"algorithm"` field on the `process`/
+`analyze`/`import_yt` sidecar commands → `main.py` dispatch (defaults to `"srh"` if absent, so any caller
+that doesn't pass it gets the pre-selectable behavior) → `get_pitch_fn(...)`.
+
+### SRH (Summation of Residual Harmonics) — the default
 
 `processor.py` uses a custom SRH implementation (Drugman & Dutoit 2011) for pitch detection on separated vocals.
 
-CREPE and pYIN were tried first and both failed on singers with strong upper harmonics (e.g. chest-voice tenors/baritones where the 2nd harmonic has more energy than the fundamental — CREPE tracked the 2nd formant, pYIN tracked the 2nd harmonic). HPS was tried next and gave the correct octave but was too jittery due to coarse FFT bin resolution. SRH was chosen because it sums harmonic energy and subtracts inter-harmonic energy, making it structurally immune to dominant upper harmonics. Validated against VoceVista on Chris Cornell vocals.
+CREPE and pYIN were tried first and both failed on singers with strong upper harmonics (e.g. chest-voice tenors/baritones where the 2nd harmonic has more energy than the fundamental — CREPE tracked the 2nd formant, pYIN tracked the 2nd harmonic). HPS was tried next and gave the correct octave but was too jittery due to coarse FFT bin resolution. SRH was chosen as the **default** because it sums harmonic energy and subtracts inter-harmonic energy, making it structurally immune to dominant upper harmonics. Validated against VoceVista on Chris Cornell vocals. All three alternatives are still offered as selectable options rather than removed — see below.
 
 **Parameters are aligned with VoceVista "Singing - Narrowband" profile:**
 
@@ -205,19 +227,54 @@ Output schema (identical to previous detectors — no TypeScript changes require
 
 SRH evaluates ~2670 candidates per frame; acceptable for synchronous sidecar execution. Do not add threading to compensate.
 
-### Recording takes — SRH
+### pYIN — selectable alternative
 
-`analysis.py` uses the same `detect_pitch_srh` function as song processing. All parameters (window, thresholds, window function) are identical — consistent pitch representation between song and take ribbons in the piano roll.
+`detect_pitch` in `processor.py`: `librosa.pyin` (autocorrelation-based) plus a spectral subharmonic
+correction pass (`_correct_octave_errors_spectral`). Was dead code in the live pipeline for some time
+(pitch_lab-only baseline) before becoming user-selectable again — see `sidecar/pitch_lab/CLAUDE.md` for
+that history. Known failure mode: locks onto the 2nd harmonic on strong chest-voice singers, which is
+why SRH is the default rather than this.
+
+### HPS (Harmonic Product Spectrum) — selectable alternative
+
+`detect_pitch_hps` in `processor.py`: decimates the spectrum by each harmonic index and multiplies the
+results together. Simpler than SRH, no new dependency, but multiplicative combination makes it sensitive
+to any single weak/missing harmonic — gives the correct octave but is noticeably more jittery than SRH,
+consistent with the earlier lab finding above. Shares SRH's window/frame/hop conventions (22050 Hz,
+`chebwin`, 4096-point FFT, 512 hop) so results stay visually comparable on the piano roll.
+
+### CREPE — selectable alternative
+
+`detect_pitch_crepe` in `processor.py`: deep-learning pitch tracker via `torchcrepe` (PyTorch-based,
+reuses the `torch` dependency Demucs already needs — chosen over the original TensorFlow `crepe` package
+specifically to avoid bundling a second ML framework). Uses the `"tiny"` model capacity to keep the
+bundled model small and CPU inference tractable for a desktop app with no GPU assumed. Runs on 16 kHz
+audio (its native/trained rate) rather than SRH/HPS's 22050 Hz. Noticeably slower than the DSP-based
+algorithms on full-song audio — `torchcrepe.predict`'s own `batch_size` keeps this from being
+prohibitive, but this is still the slowest of the four options. `torch`/`torchcrepe` are imported lazily
+inside the function so a sidecar run that never selects CREPE doesn't pay the import cost.
+
+All four algorithms (SRH, pYIN, HPS, CREPE) share a `_smooth_voiced()` helper (median filter `size=6` +
+Gaussian `sigma=1.5` on voiced frames only) for consistent post-processing behavior.
+
+### Recording takes
+
+`analysis.py`'s `analyze_recording()` calls the same `get_pitch_fn(pitch_algorithm)` dispatch as song
+processing, so song and take pitch curves use the same algorithm and stay comparable in the piano roll.
+One correctness wrinkle: `_detect_vibrato`'s frequency-domain step-size assumption previously used a
+fixed `STEP_MS` constant derived from SRH's hop length — since HPS/CREPE can use different effective
+hops, `step_ms` is now derived per-call from the actual returned `pitch_result["times"]` spacing instead.
 
 ## Libraries
 
 | Library | Use |
 |---------|-----|
 | Demucs | Stem separation (htdemucs model, CPU or GPU) |
-| librosa | SRH pitch detection, pYIN, pitch shifting, onset detection, RMS |
+| librosa | SRH/HPS pitch detection, pYIN, pitch shifting, onset detection, RMS |
+| torchcrepe | CREPE pitch detection (selectable alternative), `"tiny"` model capacity |
 | soundfile | Audio file I/O |
 | numpy / scipy | Numerical operations, filters |
-| torch | Required by Demucs (not used for pitch detection) |
+| torch | Required by Demucs; also backs `torchcrepe` |
 | yt-dlp | YouTube audio download with browser-cookie fallback |
 
 ## Synchronous Execution

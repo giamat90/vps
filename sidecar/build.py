@@ -41,7 +41,12 @@ args = [
     "--hidden-import=soundfile",
     "--hidden-import=torch",
     "--hidden-import=torchaudio",
+    "--hidden-import=torchcrepe",
     "--collect-data=demucs",
+    # torchcrepe ships its pretrained weights (tiny/full) as package data
+    # (assets/*.pth) rather than a separate network download, so bundling
+    # this is enough — no vendor/fetch step needed like the Demucs models.
+    "--collect-data=torchcrepe",
     "--collect-all=yt_dlp",
     "--noconfirm",
     "--clean",

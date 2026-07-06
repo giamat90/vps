@@ -38,6 +38,12 @@ build/
 ~/.vps/
 .vps/
 
+# Pitch lab — audio samples and generated results are local-only
+sidecar/pitch_lab/tracks/*
+!sidecar/pitch_lab/tracks/.gitkeep
+sidecar/pitch_lab/results/*
+!sidecar/pitch_lab/results/.gitkeep
+
 # Logs
 *.log
 

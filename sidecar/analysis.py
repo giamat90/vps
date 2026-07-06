@@ -1,6 +1,7 @@
 """
 Analyze a user's vocal recording (take).
-Uses SRH pitch detection — spectral, avoids locking onto the second formant.
+Pitch algorithm is user-selectable (SRH default — spectral, avoids locking
+onto the second formant); see processor.get_pitch_fn.
 """
 
 import os
@@ -8,13 +9,13 @@ import sys
 import numpy as np
 import librosa
 import soundfile as sf
-from processor import detect_pitch_srh, compute_short_term_spectrum
+from processor import get_pitch_fn, compute_short_term_spectrum
 
 SAMPLE_RATE = 44100
 CONFIDENCE_THRESHOLD = 0.5
 SRH_SR = 22050
 SRH_HOP = 512
-STEP_MS = SRH_HOP / SRH_SR * 1000   # ≈ 23.2 ms per frame
+STEP_MS = SRH_HOP / SRH_SR * 1000   # ≈ 23.2 ms per frame — fallback when a pitch result has <2 frames
 
 # Raw mic takes have far more dynamic range than a mastered/limited commercial
 # mix, so matching peak level alone still leaves takes sounding quiet next to
@@ -233,26 +234,38 @@ def analyze_recording(
     on_progress=None,
     audio_offset_s: float = 0.0,
     reference_path: str | None = None,
+    pitch_algorithm: str = "srh",
 ) -> dict:
     """
     Analyze a vocal recording (user take).
 
     audio_offset_s: seconds to skip at the start of the file (latency compensation).
     reference_path: optional loudness reference (e.g. vocals.wav) to RMS-match the take against.
+    pitch_algorithm: one of "srh" (default), "pyin", "hps", "crepe" — see
+      processor.PITCH_ALGORITHMS / get_pitch_fn. Must match whatever was used
+      for the song's own pitch data for song/take pitch curves to compare
+      meaningfully.
     Returns dict with pitchData (parallel arrays), onsets, dynamics, vibrato, normalizedPath.
     """
     if on_progress is None:
         on_progress = lambda v, s: None
 
-    # --- Stage 1: SRH pitch extraction (0.0 – 0.50) ---
+    # --- Stage 1: pitch extraction (0.0 – 0.50) ---
     on_progress(0.0, "pitch-extraction")
-    print("Running SRH pitch extraction on recording...", file=sys.stderr)
+    print(f"Running {pitch_algorithm.upper()} pitch extraction on recording...", file=sys.stderr)
 
     audio, sr = librosa.load(recording_path, sr=SRH_SR, mono=True, offset=audio_offset_s)
-    pitch_result = detect_pitch_srh(audio, sr)
+    pitch_result = get_pitch_fn(pitch_algorithm)(audio, sr)
     n_voiced = sum(pitch_result["voiced"])
     print(f"Pitch detection complete: {n_voiced} voiced frames", file=sys.stderr)
     on_progress(0.50, "pitch-extraction")
+
+    # Different algorithms may use different effective hop lengths, which
+    # _detect_vibrato's frequency-domain step-size assumption depends on —
+    # derive it from the actual returned times rather than assuming the
+    # SRH-specific STEP_MS constant.
+    pitch_times = pitch_result["times"]
+    step_ms = (pitch_times[1] - pitch_times[0]) * 1000 if len(pitch_times) > 1 else STEP_MS
 
     # --- Stage 2: Onset detection (0.50 – 0.70) ---
     on_progress(0.60, "onset-detection")
@@ -282,7 +295,7 @@ def analyze_recording(
     vibrato = _detect_vibrato(
         np.array(pitch_result["f0"]),
         np.array(pitch_result["confidence"]),
-        STEP_MS,
+        step_ms,
     )
 
     # --- Stage 5: Short-Term Spectrum (0.90 – 1.0) ---

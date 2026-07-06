@@ -1,6 +1,6 @@
 """
 Core processing pipeline for uploaded songs.
-Demucs stem separation → pyin pitch → librosa onsets/dynamics/BPM → key detection.
+Demucs stem separation → pitch extraction (user-selectable algorithm) → librosa onsets/dynamics/BPM → key detection.
 """
 
 import base64
@@ -45,6 +45,28 @@ NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
 def _log(msg: str):
     print(msg, file=sys.stderr, flush=True)
+
+
+def _smooth_voiced(f0_clean: np.ndarray, voiced: np.ndarray) -> np.ndarray:
+    """
+    Median + Gaussian smoothing on voiced frames only, shared across the
+    spectral pitch algorithms (SRH/HPS/CREPE) — removes outlier jitter while
+    preserving vibrato shape (FWHM ~82 ms is well below typical vibrato rate).
+    """
+    f0_smooth = f0_clean.copy()
+    voiced_indices = np.where(voiced)[0]
+
+    if len(voiced_indices) > 3:
+        f0_smooth[voiced_indices] = median_filter(
+            f0_clean[voiced_indices],
+            size=6  # ~140 ms at 43 fps — removes consecutive outlier pairs
+        )
+        f0_smooth[voiced_indices] = gaussian_filter1d(
+            f0_smooth[voiced_indices],
+            sigma=1.5  # FWHM ~82 ms — reduces jitter while preserving vibrato shape
+        )
+
+    return f0_smooth
 
 
 def _correct_octave_errors_spectral(
@@ -238,22 +260,7 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     # Voicing detection
     voiced = confidence > voicing_threshold
     f0_clean = np.where(voiced, f0, 0.0)
-
-    # Post-processing smoothing on voiced frames only
-    f0_smooth = f0_clean.copy()
-    voiced_indices = np.where(voiced)[0]
-
-    if len(voiced_indices) > 3:
-        f0_smooth[voiced_indices] = median_filter(
-            f0_clean[voiced_indices],
-            size=6  # ~140 ms at 43 fps — removes consecutive outlier pairs
-        )
-        f0_smooth[voiced_indices] = gaussian_filter1d(
-            f0_smooth[voiced_indices],
-            sigma=1.5  # FWHM ~82 ms — reduces jitter while preserving vibrato shape
-        )
-
-    f0_clean = f0_smooth
+    f0_clean = _smooth_voiced(f0_clean, voiced)
 
     # Time axis
     times = librosa.frames_to_time(
@@ -266,6 +273,150 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         "voiced": voiced.tolist(),
         "confidence": confidence.tolist()
     }
+
+
+def detect_pitch_hps(audio: np.ndarray, sr: int, n_harmonics: int = 5, fmin: float = 65.0, fmax: float = 1400.0) -> dict:
+    """
+    Harmonic Product Spectrum (HPS) pitch detection.
+
+    Decimates the spectrum by each harmonic index (2..n_harmonics) and
+    multiplies the results together — energy at the true F0 stacks across
+    all harmonic positions. Simpler than SRH but multiplicative combination
+    makes it sensitive to any single weak/missing harmonic, which is exactly
+    why SRH (additive, with inter-harmonic subtraction) was chosen as the
+    default for strong chest-voice singers — see wiki/python-sidecar.md.
+    Offered here as a selectable alternative, not the default.
+    """
+    target_sr = 22050
+    if sr != target_sr:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    frame_length = 2756
+    fft_size = 4096
+    hop_length = 512
+    voicing_threshold = 0.1
+    amplitude_threshold = 10 ** (-50 / 20)
+
+    audio = np.pad(audio, frame_length // 2, mode='reflect')
+    frames = librosa.util.frame(audio, frame_length=frame_length, hop_length=hop_length)
+    n_frames = frames.shape[1]
+
+    freqs = np.fft.rfftfreq(fft_size, d=1.0 / sr)
+    fmin_bin = np.searchsorted(freqs, fmin)
+    fmax_bin = np.searchsorted(freqs, fmax)
+
+    window = chebwin(frame_length, at=100)
+    f0 = np.zeros(n_frames)
+    confidence = np.zeros(n_frames)
+
+    for i in range(n_frames):
+        raw_frame = frames[:, i]
+        if np.sqrt(np.mean(raw_frame ** 2)) < amplitude_threshold:
+            continue  # silent frame — f0[i] and confidence[i] stay 0
+
+        frame = raw_frame * window
+        spectrum = np.abs(np.fft.rfft(frame, n=fft_size))
+        if spectrum.max() < 1e-8:
+            continue
+        spectrum = spectrum / spectrum.max()
+
+        hps = spectrum.copy()
+        for h in range(2, n_harmonics + 1):
+            decimated = spectrum[::h]
+            hps[:len(decimated)] *= decimated
+
+        candidate = hps[fmin_bin:fmax_bin]
+        if candidate.size == 0 or candidate.max() <= 0:
+            continue
+
+        best_idx = int(np.argmax(candidate)) + fmin_bin
+        f0[i] = freqs[best_idx]
+        confidence[i] = candidate.max()
+
+    if confidence.max() > 0:
+        confidence = confidence / confidence.max()
+
+    voiced = confidence > voicing_threshold
+    f0_clean = np.where(voiced, f0, 0.0)
+    f0_clean = _smooth_voiced(f0_clean, voiced)
+
+    times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
+
+    return {
+        "times": times.tolist(),
+        "f0": f0_clean.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": confidence.tolist(),
+    }
+
+
+def detect_pitch_crepe(audio: np.ndarray, sr: int, model_capacity: str = "tiny", fmin: float = 65.0, fmax: float = 1400.0) -> dict:
+    """
+    CREPE (deep-learning) pitch detection via torchcrepe.
+
+    Runs on CPU only (no GPU assumed for a desktop app) — noticeably slower
+    than the DSP-based algorithms on full-song audio; torchcrepe's own
+    batch_size keeps this tractable. Uses the "tiny" model capacity to limit
+    bundled model size and inference cost; imports torchcrepe/torch lazily so
+    a sidecar run that never selects CREPE doesn't pay the import cost.
+    """
+    import torch
+    import torchcrepe
+
+    target_sr = 16000  # torchcrepe's native/trained sample rate
+    if sr != target_sr:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    hop_length = int(target_sr * 512 / 22050)  # ~23ms hop, matches SRH/HPS cadence
+    voicing_threshold = 0.5
+
+    audio_t = torch.from_numpy(audio).float().unsqueeze(0)
+    f0_t, periodicity_t = torchcrepe.predict(
+        audio_t,
+        sr,
+        hop_length,
+        fmin,
+        fmax,
+        model=model_capacity,
+        batch_size=2048,
+        device="cpu",
+        return_periodicity=True,
+    )
+
+    f0 = f0_t.squeeze(0).numpy()
+    confidence = periodicity_t.squeeze(0).numpy()
+
+    voiced = confidence > voicing_threshold
+    f0_clean = np.where(voiced, f0, 0.0)
+    f0_clean = _smooth_voiced(f0_clean, voiced)
+
+    times = librosa.times_like(f0, sr=sr, hop_length=hop_length)
+
+    return {
+        "times": times.tolist(),
+        "f0": f0_clean.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": confidence.tolist(),
+    }
+
+
+PITCH_ALGORITHMS = {
+    "srh": detect_pitch_srh,
+    "pyin": detect_pitch,
+    "hps": detect_pitch_hps,
+    "crepe": detect_pitch_crepe,
+}
+
+
+def get_pitch_fn(algorithm: str | None):
+    """
+    Look up the pitch-detection function for a user-selected algorithm.
+    Defaults to SRH for unknown/absent values, matching the previous
+    hardcoded behavior for any caller that doesn't pass `algorithm`.
+    """
+    return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
 
 
 def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
@@ -425,6 +576,7 @@ def process(
     on_progress=None,
     high_quality: bool = False,
     skip_separation: bool = False,
+    pitch_algorithm: str = "srh",
 ) -> dict:
     """Full processing pipeline for an uploaded song.
 
@@ -436,6 +588,8 @@ def process(
       and analyze the file directly. vocals.wav and instrumental.wav are
       written as identical copies of the input so the rest of the pipeline
       (AudioEngine, pitch_shift_song, Waveform) needs no special-casing.
+    pitch_algorithm: one of "srh" (default), "pyin", "hps", "crepe" — see
+      PITCH_ALGORITHMS / get_pitch_fn.
     """
     if on_progress is None:
         on_progress = lambda v, s: None
@@ -509,22 +663,22 @@ def process(
             torch.cuda.empty_cache()
 
     # ===================================================================
-    # Stage 2: pyin pitch extraction (0.50 – 0.70)
+    # Stage 2: pitch extraction (0.50 – 0.70)
     # ===================================================================
     on_progress(0.50, "pitch-extraction")
-    _log("Running pitch detection (SRH)...")
+    _log(f"Running pitch detection ({pitch_algorithm.upper()})...")
 
     pitch_result = {"times": [], "f0": [], "voiced": [], "confidence": []}
     spectro_result = {"spectroTimes": [], "spectroB64": "", "spectroFrames": 0}
 
     try:
         vocals_mono, sr_pyin = librosa.load(vocals_path, sr=22050, mono=True)
-        pitch_result = detect_pitch_srh(vocals_mono, sr_pyin)
+        pitch_result = get_pitch_fn(pitch_algorithm)(vocals_mono, sr_pyin)
         n_voiced = sum(pitch_result["voiced"])
         _log(f"Pitch detection complete: {n_voiced} voiced frames")
 
     except Exception as e:
-        _log(f"pyin error: {e}\n{traceback.format_exc()}")
+        _log(f"pitch detection error: {e}\n{traceback.format_exc()}")
 
     on_progress(0.68, "pitch-extraction")
 

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { ProcessingStatus, Song } from "../lib/types";
+import type { PitchAlgorithm, ProcessingStatus, Song } from "../lib/types";
 import {
   deleteSong as apiDeleteSong,
   importYoutube as importYoutubeApi,
@@ -15,8 +15,8 @@ interface LibraryState {
   error: string | null;
 
   fetchSongs: () => Promise<void>;
-  uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument") => Promise<void>;
-  importYoutube: (url: string, highQuality?: boolean) => Promise<void>;
+  uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument", algorithm?: PitchAlgorithm) => Promise<void>;
+  importYoutube: (url: string, highQuality?: boolean, algorithm?: PitchAlgorithm) => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
   clearError: () => void;
   initProgressListener: () => Promise<() => void>;
@@ -78,10 +78,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }
   },
 
-  uploadSong: async (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument") => {
+  uploadSong: async (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument", algorithm?: PitchAlgorithm) => {
     set({ error: null, processing: { songId: "", stage: "Preparing…", progress: 0, isComplete: false } });
     try {
-      const song = await processSong(filePath, highQuality, trackKind);
+      const song = await processSong(filePath, highQuality, trackKind, algorithm);
       set((state) => ({
         songs: [...state.songs, song],
         processing: null,
@@ -92,10 +92,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }
   },
 
-  importYoutube: async (url: string, highQuality?: boolean) => {
+  importYoutube: async (url: string, highQuality?: boolean, algorithm?: PitchAlgorithm) => {
     set({ error: null, processing: { songId: "", stage: "Connecting…", progress: 0, isComplete: false } });
     try {
-      const song = await importYoutubeApi(url, highQuality);
+      const song = await importYoutubeApi(url, highQuality, algorithm);
       set((state) => ({
         songs: [...state.songs, song],
         processing: null,
