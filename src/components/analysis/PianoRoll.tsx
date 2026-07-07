@@ -384,7 +384,7 @@ export default function PianoRoll() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      if (!isLoaded && livePitch.length === 0) {
+      if (!isLoaded && livePitch.length === 0 && takePitch.length === 0) {
         ctx.fillStyle    = "#a0a0b060";
         ctx.font         = "11px sans-serif";
         ctx.textAlign    = "center";
