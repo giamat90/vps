@@ -452,8 +452,16 @@ export class AudioEngine {
   }
 
   getCurrentTime(): number {
+    // A loaded exercise track is authoritative on its own — playing it via
+    // playExerciseTrack() never touches _exerciseMode (that flag is only
+    // flipped by startExerciseTimer(), called from live monitoring/recording
+    // paths that have no WaveSurfer instance of their own). Checking
+    // _exerciseMode first meant a loaded-and-played track fell through to
+    // the instrumental branch below (always null in Free Exercise), so
+    // getCurrentTime() silently returned 0 for the whole session — PianoRoll
+    // and PianoKeyboard read a frozen time and never appeared to advance.
+    if (this.exerciseTrack) return this.exerciseTrack.getCurrentTime();
     if (this._exerciseMode) {
-      if (this.exerciseTrack) return this.exerciseTrack.getCurrentTime();
       const elapsed = this._isPlaying
         ? this._exerciseOffset + (performance.now() - this._exerciseStartAt) / 1000
         : this._exerciseOffset;
