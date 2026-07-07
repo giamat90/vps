@@ -67,6 +67,59 @@ export function getCurrentMidi(points: PitchPoint[], currentTime: number): numbe
   return Math.round(avg);
 }
 
+interface PitchInfo { note: string; hz: number }
+
+// Averages raw Hz directly (not via rounded MIDI) so the readout reflects
+// the actual detected pitch, e.g. a few cents sharp/flat of the nearest note.
+function getCurrentPitchInfo(points: PitchPoint[], currentTime: number): PitchInfo | null {
+  const near = points.filter(
+    (p) => Math.abs(p.time - currentTime) < 0.06 && p.confidence >= CONF_MIN && p.frequency > 0,
+  );
+  if (near.length === 0) return null;
+  const hz = near.reduce((s, p) => s + p.frequency, 0) / near.length;
+  const m = Math.round(frequencyToMidi(hz));
+  const note = `${NOTE_NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`;
+  return { note, hz };
+}
+
+function drawPitchReadout(
+  ctx: CanvasRenderingContext2D,
+  W: number,
+  songPitch: PitchPoint[],
+  takePitch: PitchPoint[],
+  livePitch: PitchPoint[],
+  currentTime: number,
+): void {
+  const song = getCurrentPitchInfo(songPitch, currentTime);
+  const take = getCurrentPitchInfo(takePitch, currentTime);
+  const live = getCurrentPitchInfo(livePitch, currentTime);
+  if (!song && !take && !live) return;
+
+  ctx.save();
+  ctx.font         = "bold 12px monospace";
+  ctx.textBaseline = "top";
+  ctx.textAlign    = "right";
+
+  const y = 4;
+  let x = W - 6;
+  // Backing chip behind each label — the readout sits directly on top of the
+  // key strip (unlike PianoRoll's note label, which has empty lane space
+  // above it), so plain text would lose contrast against light/colored keys.
+  const draw = (info: PitchInfo, color: string) => {
+    const label = `${info.note} ${Math.round(info.hz)}Hz`;
+    const w = ctx.measureText(label).width;
+    ctx.fillStyle = "rgba(15, 15, 30, 0.78)";
+    ctx.fillRect(x - w - 6, y - 2, w + 8, 16);
+    ctx.fillStyle = color;
+    ctx.fillText(label, x, y);
+    x -= w + 14;
+  };
+  if (live) draw(live, COLOR_LIVE);
+  if (take) draw(take, COLOR_TAKE);
+  if (song) draw(song, COLOR_SONG);
+  ctx.restore();
+}
+
 function drawKeyboard(
   ctx: CanvasRenderingContext2D,
   H: number,
@@ -151,6 +204,7 @@ export default function PianoKeyboard() {
 
       const layout = buildLayout(W, Math.round(windowMinRef.current));
       drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi);
+      drawPitchReadout(ctx, W, songPitch, takePitch, livePitch, t);
     };
 
     drawRef.current();

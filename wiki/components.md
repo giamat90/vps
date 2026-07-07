@@ -330,6 +330,8 @@ Horizontal piano key strip showing the currently playing note highlighted in the
 
 **Redraw loop gating:** the rAF tick loop only runs while `isLoaded || exerciseMode` — mirroring `PianoRoll`'s gate (see that section's `isLoaded`/`exerciseMode` dependency). `isLoaded` is set only by `loadSongAnalysis` (`PracticeRoom`'s flow), so without the `exerciseMode` fallback the keyboard never redraws after `usePlayerStore`'s `startExercise()` sets `exerciseMode: true` in `ExercisePage` — it would draw once on mount and then freeze, never reflecting a loaded exercise track's or the live mic's detected pitch. `PianoRoll` already had this fallback; `PianoKeyboard` needed the same fix.
 
+**Pitch readout:** a `"{note} {Hz}Hz"` label per active source (song/take/live, same priority/colors as the key highlight) is drawn top-right each frame, averaging raw Hz directly across nearby pitch points (not derived from the rounded MIDI key) so it reflects the actual detected frequency rather than snapping to the nearest semitone. Unlike `PianoRoll`'s note label — which sits in empty lane space above the ribbon — this readout draws directly over the key strip, so each label gets a small translucent backing chip (`rgba(15,15,30,0.78)`) for contrast against light/colored keys underneath.
+
 ### PracticeRoom
 
 Song practice page. Requires a processed song.
