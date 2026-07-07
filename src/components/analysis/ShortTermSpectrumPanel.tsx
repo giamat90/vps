@@ -4,6 +4,7 @@ import { useExerciseStore } from "../../stores/exercise";
 import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB } from "./SpectrogramPanel";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
+import { estimateFormants, type FormantEstimate } from "../../lib/formants";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
@@ -14,6 +15,9 @@ const FFT_SIZE = 8192;
 const BOTTOM_AXIS_H = 16; // px (dpr-scaled) reserved at bottom for Hz labels
 const DB_TICK_STEP   = 10;
 const FREQ_DECADES    = [100, 1000, 10000];
+
+// One color per formant slot (F1/F2/F3) so overlapping lines stay distinguishable.
+const FORMANT_COLORS = ["#ffcf5c", "#5cffe0", "#ff5ca8"];
 
 // ─── frequency axis (shared log math, inverted for horizontal placement) ─────
 
@@ -59,6 +63,8 @@ export default function ShortTermSpectrumPanel() {
   const trackActive  = loadedTrackId !== null;
   const drawRef      = useRef<() => void>(() => {});
   const loggedRef    = useRef(false);
+  const prevFormant  = useRef<FormantEstimate>({ f1: null, f2: null, f3: null });
+  const timeScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
 
   useEffect(() => {
     if (!loggedRef.current) {
@@ -94,11 +100,13 @@ export default function ShortTermSpectrumPanel() {
 
       let sr: number | null = null;
       let freqData: Float32Array | null = null;
+      let timeData: Float32Array | null = null;
       if (trackActive) {
         const engineSr = getEngine().getExerciseTrackSampleRate();
         const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
         if (engineSr && samples) {
           sr = engineSr;
+          timeData = samples;
           freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
         }
       } else {
@@ -107,8 +115,13 @@ export default function ShortTermSpectrumPanel() {
           const binCount = analyser.frequencyBinCount;
           const data = new Float32Array(binCount);
           analyser.getFloatFrequencyData(data);
+          if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
+            timeScratch.current = new Float32Array(analyser.fftSize);
+          }
+          analyser.getFloatTimeDomainData(timeScratch.current);
           sr = analyser.context.sampleRate;
           freqData = data;
+          timeData = timeScratch.current;
         }
       }
 
@@ -249,6 +262,34 @@ export default function ShortTermSpectrumPanel() {
         ctx.lineWidth = 2 * dpr;
         ctx.setLineDash([]);
         ctx.stroke();
+      }
+
+      // ── formant markers: one dashed vertical line + Hz label per detected
+      // formant (F1/F2/F3), same LPC estimator the spectrogram uses ──────────
+      if (timeData) {
+        const formant = estimateFormants(timeData, sr!, prevFormant.current);
+        prevFormant.current = formant;
+
+        ctx.font         = `${11 * dpr}px monospace`;
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "bottom";
+        [formant.f1, formant.f2, formant.f3].forEach((f, i) => {
+          if (f === null || f > fMax) return;
+          const x = AXIS_W + freqToX(f, rollW, fMax);
+          const color = FORMANT_COLORS[i];
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth   = 1.5 * dpr;
+          ctx.setLineDash([4 * dpr, 3 * dpr]);
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, plotH);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = color;
+          ctx.fillText(`F${i + 1} ${Math.round(f)}Hz`, x, plotH - 3 * dpr - i * 12 * dpr);
+        });
       }
     };
   }, [isRecording, isMonitoring, trackActive]);

@@ -117,6 +117,7 @@ export default function PianoKeyboard() {
   const livePitch   = useAnalysisStore((s) => s.livePitch);
   const isLoaded    = useAnalysisStore((s) => s.isLoaded);
   const isRecording = usePlayerStore((s) => s.isRecording);
+  const exerciseMode = usePlayerStore((s) => s.exerciseMode);
   const drawRef     = useRef<() => void>(() => {});
   const windowMinRef = useRef<number>(PIANO_WINDOW_DEFAULT_MIN);
 
@@ -156,12 +157,15 @@ export default function PianoKeyboard() {
   }, [songPitch, takePitch, livePitch, isLoaded]);
 
   useEffect(() => {
-    if (!isLoaded) return;
+    // Same gate as PianoRoll: in Free Exercise, isLoaded (song-analysis flag)
+    // never becomes true, so exerciseMode keeps the tick loop running whenever
+    // a loaded track or live mic can be feeding takePitch/livePitch.
+    if (!isLoaded && !exerciseMode) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded]);
+  }, [isLoaded, exerciseMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;

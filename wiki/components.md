@@ -290,6 +290,8 @@ Real-time spectral **snapshot** (not a waterfall) — a single spectrum curve fu
 
 Data source mirrors `SpectrogramPanel`: live mic via `getMicAnalyser()` (no second `getUserMedia`), or — when a track is loaded — a snapshot via `AudioEngine.getExerciseTrackSamples()`/`getExerciseTrackSampleRate()` + `computeMagnitudeSpectrumDb()`. Since this panel has no scroll/history state at all (it's a full redraw every frame regardless of play state), it needed no paused-vs-scrolling distinction — it already shows the current frame correctly whether playing, paused, or scrubbed.
 
+**Formant markers:** the same `estimateFormants()` LPC estimator `SpectrogramPanel` uses (`src/lib/formants.ts`) also drives this panel, fed the same time-domain buffer captured alongside `freqData` (`AudioEngine.getExerciseTrackSamples()` for a loaded track, or `analyser.getFloatTimeDomainData()` for the live mic — a second call alongside the existing `getFloatFrequencyData()`, no extra `getUserMedia`). Unlike the spectrogram's scrolling tick marks, each detected formant (F1/F2/F3) is drawn as a full-height dashed vertical line at its `freqToX(...)` position plus an `"F{n} {Hz}Hz"` label, one color per slot (`FORMANT_COLORS`) so overlapping formants stay distinguishable; labels stack by slot index (not by x-position) so close-together formants don't overlap each other's text. A `null` estimate (unvoiced/silence) skips that line.
+
 ### ShortTermSpectrumComparisonPanel
 
 Song-vs-take spectral envelope comparison in `PracticeRoom`. Overlays up to three curves at the current playhead position, using the shared song/take/live colors from `PianoKeyboard` (`COLOR_SONG`/`COLOR_TAKE`/`COLOR_LIVE`):
@@ -325,6 +327,8 @@ Opening a second `getUserMedia` to the same device caused silent failures on Win
 Horizontal piano key strip showing the currently playing note highlighted in the matching color (song=blue, take=red, live=orange). All white keys show a full note label with octave number at the bottom of each key: `C3`, `D3`, `E3`, `F3`, `G3`, `A3`, `B3`, `C4`, `D4` … The octave is derived as `Math.floor(midi / 12) - 1` (MIDI convention).
 
 **Sliding window:** shares the same `PIANO_WINDOW_SIZE`/`computePianoWindowTarget`/`stepPianoWindow` helpers as `PianoRoll` (see that section and [constants.ts](../src/lib/constants.ts)) to follow the active pitch across the full C0–C7 range, via its own `windowMinRef` — the two components' windows aren't shared state and can drift slightly out of sync, which isn't visually noticeable. Unlike `PianoRoll`'s continuous pixel-level scroll, `buildLayout()` here rounds the smoothed `midiMin` to the nearest semitone before laying out keys, so the keyboard image shifts key-by-key rather than scrolling fractionally — a discrete white/black key strip reads more naturally snapping to whole keys than sliding continuously.
+
+**Redraw loop gating:** the rAF tick loop only runs while `isLoaded || exerciseMode` — mirroring `PianoRoll`'s gate (see that section's `isLoaded`/`exerciseMode` dependency). `isLoaded` is set only by `loadSongAnalysis` (`PracticeRoom`'s flow), so without the `exerciseMode` fallback the keyboard never redraws after `usePlayerStore`'s `startExercise()` sets `exerciseMode: true` in `ExercisePage` — it would draw once on mount and then freeze, never reflecting a loaded exercise track's or the live mic's detected pitch. `PianoRoll` already had this fallback; `PianoKeyboard` needed the same fix.
 
 ### PracticeRoom
 
@@ -406,7 +410,7 @@ Standalone practice page — no song required. Used for warming up, vocal exerci
 │  │  SpectrogramPanel  (30 Hz – 20 kHz, + formants)│   │
 │  └────────────────────────────────────────────────┘   │
 │  ┌─ exercise-page__spectro ───────────────────────┐   │
-│  │  ShortTermSpectrumPanel                        │   │
+│  │  ShortTermSpectrumPanel (+ formant lines)      │   │
 │  └────────────────────────────────────────────────┘   │
 │  ┌─ exercise-page__dynamics ───────────────────────┐   │
 │  │  DynamicsCurve                                  │   │
