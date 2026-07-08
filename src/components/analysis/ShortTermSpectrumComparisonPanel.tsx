@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore, type STSpectrum } from "../../stores/analysis";
 import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
-import { freqToX, xToFreq, smoothSpectrumEnvelope, type SpectrumPoint } from "../../lib/spectroUtils";
+import { freqToX, xToFreq, smoothSpectrumLight, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 
@@ -33,10 +33,12 @@ function nearestFrame(spectrum: STSpectrum, t: number): Uint8Array | null {
 }
 
 /** Strokes a polyline through pre-normalized points, optionally smoothing
- * first — the singer's own live/take curve benefits from the same
- * moving-average envelope ShortTermSpectrumPanel uses (raw per-bin noise is
- * distracting when you're trying to compare your voice's shape to the song),
- * while the Song reference curve is left raw/precise on purpose. */
+ * first — a light pass takes the edge off the singer's own live/take curve
+ * (per-frame jitter is distracting when comparing your voice's shape to the
+ * song) without flattening real harmonic peaks the way ShortTermSpectrumPanel's
+ * much heavier formant-envelope smoothing would (that one's designed to be an
+ * overlay on top of a raw curve, not a replacement for it). The Song
+ * reference curve is left fully raw/precise on purpose. */
 function strokePoints(
   ctx: CanvasRenderingContext2D,
   points: SpectrumPoint[],
@@ -45,7 +47,7 @@ function strokePoints(
   dpr: number,
   smooth: boolean,
 ): void {
-  const drawn = smooth ? smoothSpectrumEnvelope(points) : points;
+  const drawn = smooth ? smoothSpectrumLight(points) : points;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * dpr;
   ctx.lineJoin = "round";

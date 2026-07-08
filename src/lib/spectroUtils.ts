@@ -156,3 +156,27 @@ export function smoothSpectrumEnvelope(points: SpectrumPoint[]): SpectrumPoint[]
   return result;
 }
 
+/**
+ * Light fixed-window moving average — just enough to take the edge off
+ * single-frame noise/jitter without flattening real harmonic peaks, unlike
+ * smoothSpectrumEnvelope's much wider window (15-40 samples), which is
+ * deliberately aggressive to extract a formant-envelope shape and is meant
+ * to be drawn as an overlay ON TOP of the raw curve, not as a replacement
+ * for it. Used where the curve itself needs to stay recognizable as an
+ * actual spectrum (e.g. ShortTermSpectrumComparisonPanel's live/take line).
+ */
+export function smoothSpectrumLight(points: SpectrumPoint[], windowSize = 2): SpectrumPoint[] {
+  const result: SpectrumPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const start = Math.max(0, i - windowSize);
+    const end = Math.min(points.length - 1, i + windowSize);
+    let sum = 0, count = 0;
+    for (let j = start; j <= end; j++) {
+      sum += points[j].normalized;
+      count++;
+    }
+    result.push({ x: points[i].x, y: 0, normalized: sum / count });
+  }
+  return result;
+}
+
