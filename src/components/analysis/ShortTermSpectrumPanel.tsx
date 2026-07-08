@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
-import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared } from "../../lib/spectroUtils";
+import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared, smoothSpectrumEnvelope } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB } from "./SpectrogramPanel";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
 import { estimateFormants, type FormantEstimate } from "../../lib/formants";
@@ -33,25 +33,6 @@ function formatHz(f: number): string {
   return f >= 1000 ? `${f / 1000}k` : `${f}`;
 }
 
-// Moving average with a window that widens with frequency — formants are
-// proportionally wider at high frequencies on a log axis.
-function smoothEnvelope(
-  points: { x: number; y: number; normalized: number }[],
-): { x: number; y: number; normalized: number }[] {
-  const result: { x: number; y: number; normalized: number }[] = [];
-  for (let i = 0; i < points.length; i++) {
-    const windowSize = Math.round(15 + (i / points.length) * 25);
-    const start = Math.max(0, i - windowSize);
-    const end = Math.min(points.length - 1, i + windowSize);
-    let sum = 0, count = 0;
-    for (let j = start; j <= end; j++) {
-      sum += points[j].normalized;
-      count++;
-    }
-    result.push({ x: points[i].x, y: 0, normalized: sum / count });
-  }
-  return result;
-}
 
 export default function ShortTermSpectrumPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -250,7 +231,7 @@ export default function ShortTermSpectrumPanel() {
 
       // ── smoothed spectral envelope overlay, drawn on top of the comb ────
       if (points.length > 1) {
-        const envelopePoints = smoothEnvelope(points);
+        const envelopePoints = smoothSpectrumEnvelope(points);
         envelopePoints.forEach((p) => { p.y = plotH * (1 - p.normalized); });
 
         ctx.beginPath();

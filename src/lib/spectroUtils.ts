@@ -131,3 +131,28 @@ export function decodeSTSpectrumFrames(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
+export interface SpectrumPoint { x: number; y: number; normalized: number }
+
+/**
+ * Moving average with a window that widens with frequency — formants are
+ * proportionally wider at high frequencies on a log axis. Shared by
+ * ShortTermSpectrumPanel (Free Exercise) and ShortTermSpectrumComparisonPanel
+ * (PracticeRoom, applied to the singer's own live/take curve only — the Song
+ * reference curve is left raw/precise on purpose).
+ */
+export function smoothSpectrumEnvelope(points: SpectrumPoint[]): SpectrumPoint[] {
+  const result: SpectrumPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const windowSize = Math.round(15 + (i / points.length) * 25);
+    const start = Math.max(0, i - windowSize);
+    const end = Math.min(points.length - 1, i + windowSize);
+    let sum = 0, count = 0;
+    for (let j = start; j <= end; j++) {
+      sum += points[j].normalized;
+      count++;
+    }
+    result.push({ x: points[i].x, y: 0, normalized: sum / count });
+  }
+  return result;
+}
+
