@@ -19,6 +19,14 @@ pub struct ProcessingStatus {
     pub error: Option<String>,
 }
 
+/// Minimum stSpectrumBins for a cached blob to be considered current —
+/// bumped from 128 to 1024 (sidecar's compute_short_term_spectrum) so a
+/// precomputed frame looks as smooth as the live FFT panels. Acts as a
+/// version marker like stSpectrumMinDb/MaxDb: any cached blob below this
+/// predates the bump and gets transparently recomputed rather than left
+/// stale at the old resolution.
+const ST_SPECTRUM_MIN_BINS: i64 = 1024;
+
 /// Ensure sidecar is running, spawning if needed. Returns a lock guard.
 fn ensure_sidecar(
     state: &SidecarState,
@@ -458,17 +466,18 @@ pub async fn load_analysis(
         serde_json::from_str(&data).map_err(|e| format!("Parse analysis: {e}"))?;
 
     // Backfill: songs processed before the Short-Term Spectrum feature (or
-    // before its dB range was widened to -100..0) won't have both range
-    // fields in analysis.json — stSpectrumMinDb/MaxDb double as a version
-    // marker, so any older encoding is transparently recomputed rather than
-    // misread. Uses the already-separated vocals.wav, so future loads skip
-    // straight to the cached data.
+    // before its dB range was widened to -100..0, or before its resolution
+    // was raised to ST_SPECTRUM_MIN_BINS) won't have all three version-marker
+    // fields in analysis.json — any older/lower-res encoding is transparently
+    // recomputed rather than misread or left stale. Uses the already-separated
+    // vocals.wav, so future loads skip straight to the cached data.
     let has_spectrum = analysis
         .get("stSpectrumB64")
         .and_then(|v| v.as_str())
         .is_some_and(|s| !s.is_empty())
         && analysis.get("stSpectrumMinDb").is_some_and(|v| v.is_number())
-        && analysis.get("stSpectrumMaxDb").is_some_and(|v| v.is_number());
+        && analysis.get("stSpectrumMaxDb").is_some_and(|v| v.is_number())
+        && analysis.get("stSpectrumBins").and_then(|v| v.as_i64()).is_some_and(|b| b >= ST_SPECTRUM_MIN_BINS);
     if !has_spectrum {
         let vocals_path = song_dir.join("vocals.wav");
         if vocals_path.exists() {
@@ -507,7 +516,8 @@ pub async fn list_takes(state: State<'_, SidecarState>, song_id: String) -> Resu
             .and_then(|v| v.as_str())
             .is_some_and(|s| !s.is_empty())
             && take.st_spectrum_min_db.as_ref().is_some_and(|v| v.is_number())
-            && take.st_spectrum_max_db.as_ref().is_some_and(|v| v.is_number());
+            && take.st_spectrum_max_db.as_ref().is_some_and(|v| v.is_number())
+            && take.st_spectrum_bins.as_ref().and_then(|v| v.as_i64()).is_some_and(|b| b >= ST_SPECTRUM_MIN_BINS);
         if has_spectrum || !std::path::Path::new(&take.filepath).exists() {
             continue;
         }
