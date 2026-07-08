@@ -165,6 +165,15 @@ export class AudioEngine {
   }
 
   seekTo(time: number): void {
+    // A loaded exercise track is authoritative on its own (see getCurrentTime()
+    // above) — PianoRoll's drag-to-seek calls the generic seek() player-store
+    // action for both PracticeRoom and Free Exercise, but this method used to
+    // require vocals+instrumental (always null in Free Exercise), silently
+    // no-op-ing and leaving the drag with no effect on playback.
+    if (this.exerciseTrack) {
+      this.seekExerciseTrack(time);
+      return;
+    }
     if (!this.vocals || !this.instrumental) return;
     const instrProgress = Math.max(0, Math.min(1, time / this._duration));
     this.instrumental.seekTo(instrProgress);
@@ -452,8 +461,16 @@ export class AudioEngine {
   }
 
   getCurrentTime(): number {
+    // A loaded exercise track is authoritative on its own — playing it via
+    // playExerciseTrack() never touches _exerciseMode (that flag is only
+    // flipped by startExerciseTimer(), called from live monitoring/recording
+    // paths that have no WaveSurfer instance of their own). Checking
+    // _exerciseMode first meant a loaded-and-played track fell through to
+    // the instrumental branch below (always null in Free Exercise), so
+    // getCurrentTime() silently returned 0 for the whole session — PianoRoll
+    // and PianoKeyboard read a frozen time and never appeared to advance.
+    if (this.exerciseTrack) return this.exerciseTrack.getCurrentTime();
     if (this._exerciseMode) {
-      if (this.exerciseTrack) return this.exerciseTrack.getCurrentTime();
       const elapsed = this._isPlaying
         ? this._exerciseOffset + (performance.now() - this._exerciseStartAt) / 1000
         : this._exerciseOffset;

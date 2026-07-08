@@ -131,3 +131,52 @@ export function decodeSTSpectrumFrames(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
+export interface SpectrumPoint { x: number; y: number; normalized: number }
+
+/**
+ * Moving average with a window that widens with frequency — formants are
+ * proportionally wider at high frequencies on a log axis. Shared by
+ * ShortTermSpectrumPanel (Free Exercise) and ShortTermSpectrumComparisonPanel
+ * (PracticeRoom, applied to the singer's own live/take curve only — the Song
+ * reference curve is left raw/precise on purpose).
+ */
+export function smoothSpectrumEnvelope(points: SpectrumPoint[]): SpectrumPoint[] {
+  const result: SpectrumPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const windowSize = Math.round(15 + (i / points.length) * 25);
+    const start = Math.max(0, i - windowSize);
+    const end = Math.min(points.length - 1, i + windowSize);
+    let sum = 0, count = 0;
+    for (let j = start; j <= end; j++) {
+      sum += points[j].normalized;
+      count++;
+    }
+    result.push({ x: points[i].x, y: 0, normalized: sum / count });
+  }
+  return result;
+}
+
+/**
+ * Light fixed-window moving average — just enough to take the edge off
+ * single-frame noise/jitter without flattening real harmonic peaks, unlike
+ * smoothSpectrumEnvelope's much wider window (15-40 samples), which is
+ * deliberately aggressive to extract a formant-envelope shape and is meant
+ * to be drawn as an overlay ON TOP of the raw curve, not as a replacement
+ * for it. Used where the curve itself needs to stay recognizable as an
+ * actual spectrum (e.g. ShortTermSpectrumComparisonPanel's live/take line).
+ */
+export function smoothSpectrumLight(points: SpectrumPoint[], windowSize = 2): SpectrumPoint[] {
+  const result: SpectrumPoint[] = [];
+  for (let i = 0; i < points.length; i++) {
+    const start = Math.max(0, i - windowSize);
+    const end = Math.min(points.length - 1, i + windowSize);
+    let sum = 0, count = 0;
+    for (let j = start; j <= end; j++) {
+      sum += points[j].normalized;
+      count++;
+    }
+    result.push({ x: points[i].x, y: 0, normalized: sum / count });
+  }
+  return result;
+}
+

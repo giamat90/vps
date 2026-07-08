@@ -21,9 +21,22 @@ export const MAX_DB = -20; // ceiling -20dB — loud bins reach top of thermal L
 
 const FREQ_TICKS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
 
+// dB → normalized [0,1] curve driving the thermal colormap lookup. Shared by
+// the live waterfall below and exerciseSpectrogram.ts's precompute pass so a
+// loaded track's static spectrogram looks identical to the live one.
+export function dbToCurvedNorm(db: number): number {
+  const norm = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / (MAX_DB - MIN_DB)));
+  // soft gate pushes noise floor to black like VoceVista
+  const gated = norm < 0.15 ? norm * (norm / 0.15) * 0.3 : norm;
+  // gamma 0.38 — preserves fundamental peak brightness
+  return Math.pow(gated, 0.38);
+}
+
 // ─── frequency ↔ canvas-row LUT (Float32 for bilinear interpolation) ─────────
 
-function buildFreqBinLut(
+// Exported so exerciseSpectrogram.ts's precompute pass can bucket bins into
+// rows identically to the live waterfall (same F_MIN/F_MAX log mapping).
+export function buildFreqBinLut(
   H: number,
   fftSize: number,
   sampleRate: number,
@@ -167,14 +180,23 @@ export default function SpectrogramPanel() {
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const isPlaying    = usePlayerStore((s) => s.isPlaying);
+  const duration     = usePlayerStore((s) => s.duration);
+  const seek         = usePlayerStore((s) => s.seek);
   const loadedTrackId = useExerciseStore((s) => s.loadedTrackId);
+  const trackSpectrogram    = useExerciseStore((s) => s.exerciseTrackSpectrogram);
+  const isComputingSpectrogram = useExerciseStore((s) => s.isComputingSpectrogram);
   // A loaded track snapshots its decoded buffer at the current playhead —
   // unlike a live AnalyserNode, this works whether playing, paused, or
   // scrubbed, so "active" (i.e. showing something at all) doesn't depend on
   // isPlaying. Whether the waterfall keeps *scrolling* still does — see
   // shouldScroll below.
   const trackActive  = loadedTrackId !== null;
-  const shouldScroll = isRecording || isMonitoring || (trackActive && isPlaying);
+  // A loaded track with its spectrogram precomputed renders a centered,
+  // drag-to-seek window (like PianoRoll) instead of the live waterfall —
+  // see exerciseSpectrogram.ts. Live mic monitoring/recording has no
+  // finite buffer to precompute, so it always uses the waterfall.
+  const staticMode   = trackActive && trackSpectrogram !== null;
+  const shouldScroll = isRecording || isMonitoring || (trackActive && !staticMode && isPlaying);
 
   const lastCapture = useRef(0);
   const shiftAccum  = useRef(0);
@@ -185,6 +207,11 @@ export default function SpectrogramPanel() {
   const drawRef     = useRef<() => void>(() => {});
   const prevFormant = useRef<FormantEstimate>({ f1: null, f2: null, f3: null });
   const srRef       = useRef(48000);
+  const rollDrag    = useRef<{ active: boolean; startX: number; startTime: number }>({
+    active: false,
+    startX: 0,
+    startTime: 0,
+  });
 
   useEffect(() => {
     console.log('[Spectrogram] thermal LUT active, gamma=0.4, blur=3-tap');
@@ -232,191 +259,241 @@ export default function SpectrogramPanel() {
         offscreenRef.current = null;
       }
 
-      // Lazily create offscreen — sized to roll area only (rollW × H)
-      if (
-        !offscreenRef.current ||
-        offscreenRef.current.width  !== rollW ||
-        offscreenRef.current.height !== H
-      ) {
-        try {
-          offscreenRef.current = new OffscreenCanvas(rollW, H);
-        } catch {
-          const fb = document.createElement("canvas");
-          fb.width  = rollW;
-          fb.height = H;
-          offscreenRef.current = fb;
-        }
-        const oc = offscreenRef.current;
-        const ic = oc instanceof OffscreenCanvas
-          ? oc.getContext("2d")
-          : (oc as HTMLCanvasElement).getContext("2d");
-        if (ic) { ic.fillStyle = "#000"; ic.fillRect(0, 0, rollW, H); }
-      }
-
-      const offscreen = offscreenRef.current;
-      const offCtx = offscreen instanceof OffscreenCanvas
-        ? offscreen.getContext("2d")
-        : (offscreen as HTMLCanvasElement).getContext("2d");
-      if (!offCtx) return;
-
       const active = isRecording || isMonitoring || trackActive;
 
-      // ── capture + scroll (~30 fps) ──────────────────────────────────────────
-      const now = performance.now();
-      if (now - lastCapture.current >= 33) {
-        lastCapture.current = now;
+      if (staticMode && trackSpectrogram) {
+        // ── centered, drag-to-seek window over a precomputed track
+        // spectrogram (exerciseSpectrogram.ts) — mirrors PianoRoll's
+        // centered pitch ribbon instead of the live scrolling waterfall,
+        // since the whole track's spectrum is already known up front. ──────
+        const engineSr = getEngine().getExerciseTrackSampleRate();
+        if (engineSr) srRef.current = engineSr;
 
-        // Resolve this frame's data source: a loaded track snapshots its
-        // decoded buffer at the current playhead (works paused or playing);
-        // otherwise fall back to the live mic AnalyserNode.
-        let sr: number | null = null;
-        let freqData: Float32Array | null = null;
-        let timeData: Float32Array | null = null;
+        ctx.fillStyle = "#0f0f1e";
+        ctx.fillRect(AXIS_W, 0, rollW, H);
 
-        if (trackActive) {
-          const engineSr = getEngine().getExerciseTrackSampleRate();
-          const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
-          if (engineSr && samples) {
-            sr = engineSr;
-            timeData = samples;
-            freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
-          }
-        } else {
-          const analyser = getMicAnalyser();
-          if (analyser) {
-            analyser.smoothingTimeConstant = 0.15;
-            const binCount = analyser.frequencyBinCount;
-            if (!fftScratch.current || fftScratch.current.length !== binCount) {
-              fftScratch.current = new Float32Array(binCount);
-            }
-            if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
-              timeScratch.current = new Float32Array(analyser.fftSize);
-            }
-            analyser.getFloatFrequencyData(fftScratch.current);
-            analyser.getFloatTimeDomainData(timeScratch.current);
-            sr = analyser.context.sampleRate;
-            freqData = fftScratch.current;
-            timeData = timeScratch.current;
-          }
+        const currentTime = getEngine().getCurrentTime();
+        const t0 = currentTime - WINDOW_S / 2;
+        const t1 = currentTime + WINDOW_S / 2;
+        const { hopTime, cols, rows } = trackSpectrogram;
+        const pxPerSec = rollW / WINDOW_S;
+
+        const colF0 = t0 / hopTime;
+        const colF1 = t1 / hopTime;
+        const srcColStart = Math.max(0, colF0);
+        const srcColEnd   = Math.min(cols, colF1);
+        if (srcColEnd > srcColStart) {
+          const destX = AXIS_W + (srcColStart - colF0) * hopTime * pxPerSec;
+          const destW = (srcColEnd - srcColStart) * hopTime * pxPerSec;
+          ctx.drawImage(
+            trackSpectrogram.canvas,
+            srcColStart, 0, srcColEnd - srcColStart, rows,
+            destX, 0, destW, H,
+          );
         }
 
-        if (active && sr !== null && freqData !== null) {
-          srRef.current = sr;
-          if (!colNorms.current || colNorms.current.length !== H) {
-            colNorms.current = new Float32Array(H);
+        // Center playhead — same visual language as PianoRoll's dashed center line.
+        const cx = AXIS_W + rollW / 2;
+        ctx.save();
+        ctx.strokeStyle = "rgba(255, 200, 60, 0.85)";
+        ctx.lineWidth   = 1.5 * dpr;
+        ctx.setLineDash([4 * dpr, 3 * dpr]);
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, H);
+        ctx.stroke();
+        ctx.restore();
+
+        // Formant markers at the playhead — estimated live from the current
+        // position's samples rather than precomputed per-column (formant
+        // tracking needs frame-to-frame continuity, not a one-off pass).
+        const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
+        if (samples && engineSr) {
+          const formant = estimateFormants(samples, engineSr, prevFormant.current);
+          prevFormant.current = formant;
+          const fMaxTick = Math.min(F_MAX, engineSr / 2);
+          ctx.fillStyle = "#e8fbff";
+          for (const f of [formant.f1, formant.f2, formant.f3]) {
+            if (f === null) continue;
+            const y = freqToY(f, H, fMaxTick);
+            if (y < 0 || y > H) continue;
+            ctx.fillRect(cx - 2 * dpr, Math.max(0, y - 1), 4 * dpr, 2);
           }
+        }
+      } else {
+        // ── live scrolling waterfall — mic monitoring/recording, or a
+        // loaded track whose spectrogram hasn't finished precomputing yet ──
 
-          const data    = freqData;
-          const binCount = data.length;
-          const fftSize = binCount * 2;
-
-          if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
-            const { low, high } = buildFreqBinLut(H, fftSize, sr);
-            freqLut.current = { low, high, H, sr };
-            const rowAt = (freq: number) =>
-              Math.floor(H * (1 - Math.log(freq / F_MIN) / Math.log((Math.min(F_MAX, sr / 2)) / F_MIN)));
-            console.log(`SpectroLUT — H:${H} fftSize:${fftSize} sr:${sr} binHz:${(sr / fftSize).toFixed(2)}`);
-            console.log("2kHz bin range:", low[rowAt(2000)], high[rowAt(2000)]);
-            console.log("5kHz bin range:", low[rowAt(5000)], high[rowAt(5000)]);
+        // Lazily create offscreen — sized to roll area only (rollW × H)
+        if (
+          !offscreenRef.current ||
+          offscreenRef.current.width  !== rollW ||
+          offscreenRef.current.height !== H
+        ) {
+          try {
+            offscreenRef.current = new OffscreenCanvas(rollW, H);
+          } catch {
+            const fb = document.createElement("canvas");
+            fb.width  = rollW;
+            fb.height = H;
+            offscreenRef.current = fb;
           }
+          const oc = offscreenRef.current;
+          const ic = oc instanceof OffscreenCanvas
+            ? oc.getContext("2d")
+            : (oc as HTMLCanvasElement).getContext("2d");
+          if (ic) { ic.fillStyle = "#000"; ic.fillRect(0, 0, rollW, H); }
+        }
 
-          const lutLow  = freqLut.current.low;
-          const lutHigh = freqLut.current.high;
-          const norms   = colNorms.current;
-          const dbRange = MAX_DB - MIN_DB;
-          const colLut  = SPECTRO_COLORMAP;
+        const offscreen = offscreenRef.current;
+        const offCtx = offscreen instanceof OffscreenCanvas
+          ? offscreen.getContext("2d")
+          : (offscreen as HTMLCanvasElement).getContext("2d");
+        if (!offCtx) return;
 
-          // Pass 1: dB → normalised magnitude for each canvas row
-          for (let py = 0; py < H; py++) {
-            // max-in-range bin mapping — fills gaps on log scale
-            let maxDb = -Infinity;
-            for (let b = lutLow[py]; b <= lutHigh[py]; b++) {
-              if (data[b] > maxDb) maxDb = data[b];
+        // ── capture + scroll (~30 fps) ────────────────────────────────────
+        const now = performance.now();
+        if (now - lastCapture.current >= 33) {
+          lastCapture.current = now;
+
+          // Resolve this frame's data source: a loaded track snapshots its
+          // decoded buffer at the current playhead (works paused or playing);
+          // otherwise fall back to the live mic AnalyserNode.
+          let sr: number | null = null;
+          let freqData: Float32Array | null = null;
+          let timeData: Float32Array | null = null;
+
+          if (trackActive) {
+            const engineSr = getEngine().getExerciseTrackSampleRate();
+            const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
+            if (engineSr && samples) {
+              sr = engineSr;
+              timeData = samples;
+              freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
             }
-            const db   = maxDb;
-            const norm   = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-            // soft gate pushes noise floor to black like VoceVista
-            const gated = norm < 0.15
-              ? norm * (norm / 0.15) * 0.3
-              : norm;
-            // gamma 0.38 — preserves fundamental peak brightness
-            const curved = Math.pow(gated, 0.38);
-            norms[py]  = curved;
+          } else {
+            const analyser = getMicAnalyser();
+            if (analyser) {
+              analyser.smoothingTimeConstant = 0.15;
+              const binCount = analyser.frequencyBinCount;
+              if (!fftScratch.current || fftScratch.current.length !== binCount) {
+                fftScratch.current = new Float32Array(binCount);
+              }
+              if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
+                timeScratch.current = new Float32Array(analyser.fftSize);
+              }
+              analyser.getFloatFrequencyData(fftScratch.current);
+              analyser.getFloatTimeDomainData(timeScratch.current);
+              sr = analyser.context.sampleRate;
+              freqData = fftScratch.current;
+              timeData = timeScratch.current;
+            }
           }
 
-          // Scrolling (shifting existing history left + appending new columns)
-          // only makes sense while audio is actually advancing. Paused/scrubbed
-          // with a loaded track: leave prior history in place and just
-          // overwrite a fixed-width strip at the right edge with the current
-          // frame's snapshot, so scrubbing updates the view without an
-          // otherwise-empty waterfall endlessly "scrolling" a frozen value.
-          let shift: number;
-          if (shouldScroll) {
+          if (active && sr !== null && freqData !== null) {
+            srRef.current = sr;
+            if (!colNorms.current || colNorms.current.length !== H) {
+              colNorms.current = new Float32Array(H);
+            }
+
+            const data    = freqData;
+            const binCount = data.length;
+            const fftSize = binCount * 2;
+
+            if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
+              const { low, high } = buildFreqBinLut(H, fftSize, sr);
+              freqLut.current = { low, high, H, sr };
+            }
+
+            const lutLow  = freqLut.current.low;
+            const lutHigh = freqLut.current.high;
+            const norms   = colNorms.current;
+            const colLut  = SPECTRO_COLORMAP;
+
+            // Pass 1: dB → normalised magnitude for each canvas row
+            for (let py = 0; py < H; py++) {
+              // max-in-range bin mapping — fills gaps on log scale
+              let maxDb = -Infinity;
+              for (let b = lutLow[py]; b <= lutHigh[py]; b++) {
+                if (data[b] > maxDb) maxDb = data[b];
+              }
+              norms[py] = dbToCurvedNorm(maxDb);
+            }
+
+            // Scrolling (shifting existing history left + appending new columns)
+            // only makes sense while audio is actually advancing. Paused/scrubbed
+            // with a loaded track: leave prior history in place and just
+            // overwrite a fixed-width strip at the right edge with the current
+            // frame's snapshot, so scrubbing updates the view without an
+            // otherwise-empty waterfall endlessly "scrolling" a frozen value.
+            let shift: number;
+            if (shouldScroll) {
+              shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
+              shift = Math.max(1, Math.floor(shiftAccum.current));
+              shiftAccum.current -= shift;
+              const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
+              offCtx.putImageData(shifted, 0, 0);
+            } else {
+              shift = Math.min(6, rollW);
+            }
+
+            // Pass 2: write `shift` new columns at right (no vertical blur —
+            // relies on temporal blending only)
+            const colImg = offCtx.createImageData(shift, H);
+            const cd     = colImg.data;
+            for (let py = 0; py < H; py++) {
+              const curr    = norms[py];
+              const ci      = Math.min(255, Math.floor(curr * 255));
+              for (let s = 0; s < shift; s++) {
+                const base    = (py * shift + s) * 4;
+                cd[base]      = colLut[ci * 3];
+                cd[base + 1]  = colLut[ci * 3 + 1];
+                cd[base + 2]  = colLut[ci * 3 + 2];
+                cd[base + 3]  = 255;
+              }
+            }
+            offCtx.putImageData(colImg, rollW - shift, 0);
+
+            // ── formant ticks — F1/F2/F3, drawn into the same new column so
+            // they scroll with the spectrogram history and leave a trail ──
+            if (timeData) {
+              const formant = estimateFormants(timeData, sr, prevFormant.current);
+              prevFormant.current = formant;
+
+              const fMaxTick = Math.min(F_MAX, sr / 2);
+              offCtx.fillStyle = "#e8fbff";
+              for (const f of [formant.f1, formant.f2, formant.f3]) {
+                if (f === null) continue;
+                const y = freqToY(f, H, fMaxTick);
+                if (y < 0 || y > H) continue;
+                offCtx.fillRect(rollW - shift, Math.max(0, y - 1), shift, 2);
+              }
+            }
+
+          } else if (active) {
+            // Active but analyser not ready yet — silence columns
             shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
-            shift = Math.max(1, Math.floor(shiftAccum.current));
+            const shift = Math.max(1, Math.floor(shiftAccum.current));
             shiftAccum.current -= shift;
             const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
             offCtx.putImageData(shifted, 0, 0);
-          } else {
-            shift = Math.min(6, rollW);
+            offCtx.fillStyle = "#000000";
+            offCtx.fillRect(rollW - shift, 0, shift, H);
           }
-
-          // Pass 2: write `shift` new columns at right (no vertical blur —
-          // relies on temporal blending only)
-          const colImg = offCtx.createImageData(shift, H);
-          const cd     = colImg.data;
-          for (let py = 0; py < H; py++) {
-            const curr    = norms[py];
-            const ci      = Math.min(255, Math.floor(curr * 255));
-            for (let s = 0; s < shift; s++) {
-              const base    = (py * shift + s) * 4;
-              cd[base]      = colLut[ci * 3];
-              cd[base + 1]  = colLut[ci * 3 + 1];
-              cd[base + 2]  = colLut[ci * 3 + 2];
-              cd[base + 3]  = 255;
-            }
-          }
-          offCtx.putImageData(colImg, rollW - shift, 0);
-
-          // ── formant ticks — F1/F2/F3, drawn into the same new column so
-          // they scroll with the spectrogram history and leave a trail ──────
-          if (timeData) {
-            const formant = estimateFormants(timeData, sr, prevFormant.current);
-            prevFormant.current = formant;
-
-            const fMaxTick = Math.min(F_MAX, sr / 2);
-            offCtx.fillStyle = "#e8fbff";
-            for (const f of [formant.f1, formant.f2, formant.f3]) {
-              if (f === null) continue;
-              const y = freqToY(f, H, fMaxTick);
-              if (y < 0 || y > H) continue;
-              offCtx.fillRect(rollW - shift, Math.max(0, y - 1), shift, 2);
-            }
-          }
-
-        } else if (active) {
-          // Active but analyser not ready yet — silence columns
-          shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
-          const shift = Math.max(1, Math.floor(shiftAccum.current));
-          shiftAccum.current -= shift;
-          const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
-          offCtx.putImageData(shifted, 0, 0);
-          offCtx.fillStyle = "#000000";
-          offCtx.fillRect(rollW - shift, 0, shift, H);
+          // Not active: no shift — canvas freezes at last frame
         }
-        // Not active: no shift — canvas freezes at last frame
-      }
 
-      // ── composite to main canvas ────────────────────────────────────────────
-      // Active: blend offscreen at 72% over previous frame (temporal smoothing).
-      // Idle: clear roll area so stale spectrogram doesn't linger.
-      if (active) {
-        ctx.globalAlpha = 0.72;
-        ctx.drawImage(offscreen, AXIS_W, 0);
-        ctx.globalAlpha = 1.0;
-      } else {
-        ctx.fillStyle = "#0f0f1e";
-        ctx.fillRect(AXIS_W, 0, rollW, H);
+        // ── composite to main canvas ──────────────────────────────────────
+        // Active: blend offscreen at 72% over previous frame (temporal smoothing).
+        // Idle: clear roll area so stale spectrogram doesn't linger.
+        if (active) {
+          ctx.globalAlpha = 0.72;
+          ctx.drawImage(offscreen, AXIS_W, 0);
+          ctx.globalAlpha = 1.0;
+        } else {
+          ctx.fillStyle = "#0f0f1e";
+          ctx.fillRect(AXIS_W, 0, rollW, H);
+        }
       }
 
       // Grid lines and axis always drawn at full opacity after composite
@@ -448,7 +525,7 @@ export default function SpectrogramPanel() {
         ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, H / 2);
       }
     };
-  }, [isRecording, isMonitoring, trackActive, shouldScroll]);
+  }, [isRecording, isMonitoring, trackActive, shouldScroll, staticMode, trackSpectrogram]);
 
   useEffect(() => {
     let rafId: number;
@@ -465,15 +542,54 @@ export default function SpectrogramPanel() {
     return () => ro.disconnect();
   }, []);
 
+  // ── drag-to-seek — same semantics as PianoRoll's main-canvas drag, so
+  // both widgets scrub the shared engine/store time in the same way. Only
+  // meaningful with a loaded track (live mic monitoring has no seekable
+  // timeline); works during the brief precompute window too, since seeking
+  // doesn't depend on the spectrogram picture itself.
+  const onCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isRecording || !trackActive) return;
+    rollDrag.current = {
+      active: true,
+      startX: e.nativeEvent.offsetX,
+      startTime: getEngine().getCurrentTime(),
+    };
+  };
+
+  const onCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!rollDrag.current.active) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const rollW = canvas.clientWidth - AXIS_W - LEGEND_WIDTH;
+    if (rollW <= 0) return;
+    const { startX, startTime } = rollDrag.current;
+    const deltaT = -((e.nativeEvent.offsetX - startX) / rollW) * WINDOW_S;
+    seek(Math.max(0, Math.min(duration, startTime + deltaT)));
+  };
+
+  const onCanvasMouseUp = () => { rollDrag.current.active = false; };
+
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Spectrum</span>
         <span className="analysis-panel__hint">
-          {isRecording || isMonitoring || trackActive ? "live" : "off"}
+          {isComputingSpectrogram
+            ? "computing…"
+            : isRecording || isMonitoring || trackActive
+            ? "live"
+            : "off"}
         </span>
       </div>
-      <canvas ref={canvasRef} className="analysis-panel__canvas spectro-panel__canvas" />
+      <canvas
+        ref={canvasRef}
+        className="analysis-panel__canvas spectro-panel__canvas"
+        style={{ cursor: trackActive && !isRecording ? "grab" : "default" }}
+        onMouseDown={onCanvasMouseDown}
+        onMouseMove={onCanvasMouseMove}
+        onMouseUp={onCanvasMouseUp}
+        onMouseLeave={onCanvasMouseUp}
+      />
     </div>
   );
 }

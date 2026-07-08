@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore, type STSpectrum } from "../../stores/analysis";
 import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
-import { freqToX, xToFreq } from "../../lib/spectroUtils";
+import { freqToX, xToFreq, smoothSpectrumLight, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 
@@ -32,31 +32,51 @@ function nearestFrame(spectrum: STSpectrum, t: number): Uint8Array | null {
   return bytes.subarray(lo * bins, (lo + 1) * bins);
 }
 
-/**
- * Draws a precomputed frame (0-255 bytes encoded over the spectrum's own
- * minDb..maxDb, per compute_short_term_spectrum) as a polyline. Decoded
- * against its own stored range, then re-normalized to the panel's display
- * range (PANEL_MIN_DB..PANEL_MAX_DB) — the two currently coincide, but this
- * keeps rendering correct even if the encode range changes again later.
- */
-function drawStoredCurve(
+/** Strokes a polyline through pre-normalized points, optionally smoothing
+ * first — a light pass takes the edge off the singer's own live/take curve
+ * (per-frame jitter is distracting when comparing your voice's shape to the
+ * song) without flattening real harmonic peaks the way ShortTermSpectrumPanel's
+ * much heavier formant-envelope smoothing would (that one's designed to be an
+ * overlay on top of a raw curve, not a replacement for it). The Song
+ * reference curve is left fully raw/precise on purpose. */
+function strokePoints(
   ctx: CanvasRenderingContext2D,
-  frame: Uint8Array,
-  minDb: number,
-  maxDb: number,
+  points: SpectrumPoint[],
   color: string,
-  rollW: number,
   plotH: number,
-  fMax: number,
   dpr: number,
+  smooth: boolean,
 ): void {
+  const drawn = smooth ? smoothSpectrumLight(points) : points;
   ctx.strokeStyle = color;
   ctx.lineWidth = 2 * dpr;
   ctx.lineJoin = "round";
   ctx.beginPath();
+  for (let i = 0; i < drawn.length; i++) {
+    const y = plotH * (1 - drawn[i].normalized);
+    if (i === 0) ctx.moveTo(drawn[i].x, y); else ctx.lineTo(drawn[i].x, y);
+  }
+  ctx.stroke();
+}
+
+/**
+ * Builds normalized points from a precomputed frame (0-255 bytes encoded
+ * over the spectrum's own minDb..maxDb, per compute_short_term_spectrum).
+ * Decoded against its own stored range, then re-normalized to the panel's
+ * display range (PANEL_MIN_DB..PANEL_MAX_DB) — the two currently coincide,
+ * but this keeps rendering correct even if the encode range changes again.
+ */
+function storedCurvePoints(
+  frame: Uint8Array,
+  minDb: number,
+  maxDb: number,
+  rollW: number,
+  fMax: number,
+): SpectrumPoint[] {
   const bins = frame.length;
   const logFMin = Math.log(F_MIN);
   const logFMax = Math.log(fMax);
+  const points: SpectrumPoint[] = [];
   for (let px = 0; px < rollW; px++) {
     // Column → frequency → source bin (log axis, so columns near F_MIN are
     // denser in bins than columns near F_MAX).
@@ -65,33 +85,23 @@ function drawStoredCurve(
     const bt = Math.log(f / F_MIN) / Math.log(fMax / F_MIN);
     const bi = Math.max(0, Math.min(bins - 1, Math.round(bt * (bins - 1))));
     const db = minDb + (frame[bi] / 255) * (maxDb - minDb);
-    const norm = Math.max(0, Math.min(1, (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB)));
-    const x = AXIS_W + px;
-    const y = plotH * (1 - norm);
-    if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    const normalized = Math.max(0, Math.min(1, (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB)));
+    points.push({ x: AXIS_W + px, y: 0, normalized });
   }
-  ctx.stroke();
+  return points;
 }
 
-/** Draws a live curve straight from the mic AnalyserNode (dBFS already). */
-function drawLiveCurve(
-  ctx: CanvasRenderingContext2D,
+/** Builds normalized points from a live curve straight off the mic AnalyserNode (dBFS already). */
+function liveCurvePoints(
   data: Float32Array,
   sr: number,
-  color: string,
   rollW: number,
-  plotH: number,
   fMax: number,
-  dpr: number,
-): void {
+): SpectrumPoint[] {
   const binCount = data.length;
   const binHz = sr / (binCount * 2);
   const maxBin = binCount - 1;
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2 * dpr;
-  ctx.lineJoin = "round";
-  ctx.beginPath();
+  const points: SpectrumPoint[] = [];
   for (let px = 0; px < rollW; px++) {
     const fLo = xToFreq(Math.max(0, px - 0.5), rollW, F_MIN, fMax);
     const fHi = xToFreq(Math.min(rollW, px + 0.5), rollW, F_MIN, fMax);
@@ -102,12 +112,10 @@ function drawLiveCurve(
       if (data[b] > db) db = data[b];
     }
     if (db === -Infinity) db = data[Math.min(maxBin, Math.max(0, binLo))];
-    const norm = Math.max(0, Math.min(1, (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB)));
-    const x = AXIS_W + px;
-    const y = plotH * (1 - norm);
-    if (px === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    const normalized = Math.max(0, Math.min(1, (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB)));
+    points.push({ x: AXIS_W + px, y: 0, normalized });
   }
-  ctx.stroke();
+  return points;
 }
 
 export default function ShortTermSpectrumComparisonPanel() {
@@ -201,7 +209,8 @@ export default function ShortTermSpectrumComparisonPanel() {
       if (songSTSpectrum) {
         const frame = nearestFrame(songSTSpectrum, currentTime);
         if (frame) {
-          drawStoredCurve(ctx, frame, songSTSpectrum.minDb, songSTSpectrum.maxDb, COLOR_SONG, rollW, H, fMax, dpr);
+          const points = storedCurvePoints(frame, songSTSpectrum.minDb, songSTSpectrum.maxDb, rollW, fMax);
+          strokePoints(ctx, points, COLOR_SONG, H, dpr, false);
         }
       }
 
@@ -212,11 +221,13 @@ export default function ShortTermSpectrumComparisonPanel() {
           liveScratch.current = new Float32Array(binCount);
         }
         analyser.getFloatFrequencyData(liveScratch.current);
-        drawLiveCurve(ctx, liveScratch.current, analyser.context.sampleRate, COLOR_LIVE, rollW, H, fMax, dpr);
+        const points = liveCurvePoints(liveScratch.current, analyser.context.sampleRate, rollW, fMax);
+        strokePoints(ctx, points, COLOR_LIVE, H, dpr, true);
       } else if (takeSTSpectrum) {
         const frame = nearestFrame(takeSTSpectrum, currentTime);
         if (frame) {
-          drawStoredCurve(ctx, frame, takeSTSpectrum.minDb, takeSTSpectrum.maxDb, COLOR_TAKE, rollW, H, fMax, dpr);
+          const points = storedCurvePoints(frame, takeSTSpectrum.minDb, takeSTSpectrum.maxDb, rollW, fMax);
+          strokePoints(ctx, points, COLOR_TAKE, H, dpr, true);
         }
       } else {
         ctx.fillStyle = "#a0a0b060";

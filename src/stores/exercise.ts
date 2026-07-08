@@ -5,6 +5,7 @@ import { listExerciseTakes, deleteExerciseTakeApi, importExerciseFile as importE
 import { getEngine, usePlayerStore } from "./player";
 import { useAnalysisStore } from "./analysis";
 import { useSettingsStore } from "./settings";
+import { computeTrackSpectrogram, type TrackSpectrogram } from "../lib/exerciseSpectrogram";
 
 interface ExerciseState {
   exerciseTakes: ExerciseTake[];
@@ -12,6 +13,11 @@ interface ExerciseState {
   loadedTrackKind: "take" | "imported" | null;
   loadedTrackId: string | null;
   isImporting: boolean;
+  // Precomputed once per loaded track so SpectrogramPanel can render a
+  // centered, drag-to-seek window over it like PianoRoll's pitch ribbon,
+  // instead of the live-only scrolling waterfall.
+  exerciseTrackSpectrogram: TrackSpectrogram | null;
+  isComputingSpectrogram: boolean;
 }
 
 interface ExerciseActions {
@@ -42,6 +48,8 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
   loadedTrackKind: null,
   loadedTrackId: null,
   isImporting: false,
+  exerciseTrackSpectrogram: null,
+  isComputingSpectrogram: false,
 
   fetchExerciseTakes: async () => {
     const takes = await listExerciseTakes();
@@ -67,15 +75,39 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
   loadExerciseTakeIntoTrack: async (take, container) => {
     await getEngine().loadExerciseTrack(take.filepath, container);
     useAnalysisStore.getState().loadExerciseTakeAnalysis(take);
-    usePlayerStore.setState({ isPlaying: false, currentTime: 0 });
-    set({ loadedTrackKind: "take", loadedTrackId: take.id });
+    // duration must be set here — it defaults to 0 and nothing else in the
+    // Free Exercise flow sets it, so PianoRoll's drag-to-seek clamp
+    // (Math.min(duration, ...)) clamped every seek target to 0.
+    usePlayerStore.setState({ isPlaying: false, currentTime: 0, duration: take.duration });
+    set({
+      loadedTrackKind: "take",
+      loadedTrackId: take.id,
+      exerciseTrackSpectrogram: null,
+      isComputingSpectrogram: true,
+    });
+
+    const buffer = getEngine().exerciseTrack?.getDecodedData() ?? null;
+    try {
+      const spectrogram = buffer ? await computeTrackSpectrogram(buffer) : null;
+      // The track may have been unloaded/replaced while this was computing.
+      if (get().loadedTrackId === take.id) set({ exerciseTrackSpectrogram: spectrogram });
+    } catch (e) {
+      console.error("[exercise] track spectrogram computation failed:", e);
+    } finally {
+      if (get().loadedTrackId === take.id) set({ isComputingSpectrogram: false });
+    }
   },
 
   clearLoadedTrack: () => {
     getEngine().clearExerciseTrack();
     useAnalysisStore.getState().clear();
-    usePlayerStore.setState({ isPlaying: false, currentTime: 0 });
-    set({ loadedTrackKind: null, loadedTrackId: null });
+    usePlayerStore.setState({ isPlaying: false, currentTime: 0, duration: 0 });
+    set({
+      loadedTrackKind: null,
+      loadedTrackId: null,
+      exerciseTrackSpectrogram: null,
+      isComputingSpectrogram: false,
+    });
   },
 
   importExerciseFile: async (filePath, container) => {

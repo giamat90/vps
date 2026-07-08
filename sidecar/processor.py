@@ -510,16 +510,23 @@ def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
     range, nor compute_spectrogram's -80..0-relative-to-peak scale), wide
     enough to show a vocal's full dynamic range without clipping the quiet
     end. MIN_DB/MAX_DB are returned alongside the data so the frontend
-    decodes with the exact range this was encoded at, and so a range change
-    here naturally invalidates any already-cached blobs (the frontend backfill
-    keys off their presence).
+    decodes with the exact range this was encoded at.
+    N_BINS=1024/fft_size=8192 (raised from 128/4096) so a precomputed frame
+    looks as smooth as the live per-frame FFT panels (Free Exercise's
+    ShortTermSpectrumPanel/SpectrogramPanel use FFT_SIZE=8192 too) instead of
+    a visibly stepped nearest-bin polyline — 128 log-spaced bins stretched
+    across a ~1000px-wide panel produced a "staircase" look, especially at
+    low frequencies where bins were widest. Bumping N_BINS also changes the
+    stored blob's shape, so commands.rs's backfill treats stSpectrumBins as
+    a version marker (like MIN_DB/MAX_DB) and recomputes older lower-res
+    cached blobs rather than leaving them stale.
     Stored as base64-encoded uint8: n_frames x N_BINS bytes.
     """
     F_MIN, F_MAX = 30.0, 20000.0
     MIN_DB, MAX_DB = -100.0, 0.0
-    N_BINS = 128
+    N_BINS = 1024
 
-    fft_size = 4096
+    fft_size = 8192
     hop_length = 2048  # coarser than compute_spectrogram — this is a snapshot line, not a waterfall
     window = chebwin(fft_size, at=100)
 

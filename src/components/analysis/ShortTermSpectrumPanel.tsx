@@ -1,9 +1,10 @@
 import { useRef, useEffect } from "react";
 import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
-import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared } from "../../lib/spectroUtils";
+import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared, smoothSpectrumEnvelope } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB } from "./SpectrogramPanel";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
+import { estimateFormants, type FormantEstimate } from "../../lib/formants";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
@@ -14,6 +15,9 @@ const FFT_SIZE = 8192;
 const BOTTOM_AXIS_H = 16; // px (dpr-scaled) reserved at bottom for Hz labels
 const DB_TICK_STEP   = 10;
 const FREQ_DECADES    = [100, 1000, 10000];
+
+// One color per formant slot (F1/F2/F3) so overlapping lines stay distinguishable.
+const FORMANT_COLORS = ["#ffcf5c", "#5cffe0", "#ff5ca8"];
 
 // ─── frequency axis (shared log math, inverted for horizontal placement) ─────
 
@@ -29,25 +33,6 @@ function formatHz(f: number): string {
   return f >= 1000 ? `${f / 1000}k` : `${f}`;
 }
 
-// Moving average with a window that widens with frequency — formants are
-// proportionally wider at high frequencies on a log axis.
-function smoothEnvelope(
-  points: { x: number; y: number; normalized: number }[],
-): { x: number; y: number; normalized: number }[] {
-  const result: { x: number; y: number; normalized: number }[] = [];
-  for (let i = 0; i < points.length; i++) {
-    const windowSize = Math.round(15 + (i / points.length) * 25);
-    const start = Math.max(0, i - windowSize);
-    const end = Math.min(points.length - 1, i + windowSize);
-    let sum = 0, count = 0;
-    for (let j = start; j <= end; j++) {
-      sum += points[j].normalized;
-      count++;
-    }
-    result.push({ x: points[i].x, y: 0, normalized: sum / count });
-  }
-  return result;
-}
 
 export default function ShortTermSpectrumPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -59,6 +44,8 @@ export default function ShortTermSpectrumPanel() {
   const trackActive  = loadedTrackId !== null;
   const drawRef      = useRef<() => void>(() => {});
   const loggedRef    = useRef(false);
+  const prevFormant  = useRef<FormantEstimate>({ f1: null, f2: null, f3: null });
+  const timeScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
 
   useEffect(() => {
     if (!loggedRef.current) {
@@ -94,11 +81,13 @@ export default function ShortTermSpectrumPanel() {
 
       let sr: number | null = null;
       let freqData: Float32Array | null = null;
+      let timeData: Float32Array | null = null;
       if (trackActive) {
         const engineSr = getEngine().getExerciseTrackSampleRate();
         const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
         if (engineSr && samples) {
           sr = engineSr;
+          timeData = samples;
           freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
         }
       } else {
@@ -107,8 +96,13 @@ export default function ShortTermSpectrumPanel() {
           const binCount = analyser.frequencyBinCount;
           const data = new Float32Array(binCount);
           analyser.getFloatFrequencyData(data);
+          if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
+            timeScratch.current = new Float32Array(analyser.fftSize);
+          }
+          analyser.getFloatTimeDomainData(timeScratch.current);
           sr = analyser.context.sampleRate;
           freqData = data;
+          timeData = timeScratch.current;
         }
       }
 
@@ -237,7 +231,7 @@ export default function ShortTermSpectrumPanel() {
 
       // ── smoothed spectral envelope overlay, drawn on top of the comb ────
       if (points.length > 1) {
-        const envelopePoints = smoothEnvelope(points);
+        const envelopePoints = smoothSpectrumEnvelope(points);
         envelopePoints.forEach((p) => { p.y = plotH * (1 - p.normalized); });
 
         ctx.beginPath();
@@ -249,6 +243,34 @@ export default function ShortTermSpectrumPanel() {
         ctx.lineWidth = 2 * dpr;
         ctx.setLineDash([]);
         ctx.stroke();
+      }
+
+      // ── formant markers: one dashed vertical line + Hz label per detected
+      // formant (F1/F2/F3), same LPC estimator the spectrogram uses ──────────
+      if (timeData) {
+        const formant = estimateFormants(timeData, sr!, prevFormant.current);
+        prevFormant.current = formant;
+
+        ctx.font         = `${11 * dpr}px monospace`;
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "bottom";
+        [formant.f1, formant.f2, formant.f3].forEach((f, i) => {
+          if (f === null || f > fMax) return;
+          const x = AXIS_W + freqToX(f, rollW, fMax);
+          const color = FORMANT_COLORS[i];
+
+          ctx.strokeStyle = color;
+          ctx.lineWidth   = 1.5 * dpr;
+          ctx.setLineDash([4 * dpr, 3 * dpr]);
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, plotH);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          ctx.fillStyle = color;
+          ctx.fillText(`F${i + 1} ${Math.round(f)}Hz`, x, plotH - 3 * dpr - i * 12 * dpr);
+        });
       }
     };
   }, [isRecording, isMonitoring, trackActive]);
