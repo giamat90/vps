@@ -165,6 +165,15 @@ export class AudioEngine {
   }
 
   seekTo(time: number): void {
+    // A loaded exercise track is authoritative on its own (see getCurrentTime()
+    // above) — PianoRoll's drag-to-seek calls the generic seek() player-store
+    // action for both PracticeRoom and Free Exercise, but this method used to
+    // require vocals+instrumental (always null in Free Exercise), silently
+    // no-op-ing and leaving the drag with no effect on playback.
+    if (this.exerciseTrack) {
+      this.seekExerciseTrack(time);
+      return;
+    }
     if (!this.vocals || !this.instrumental) return;
     const instrProgress = Math.max(0, Math.min(1, time / this._duration));
     this.instrumental.seekTo(instrProgress);

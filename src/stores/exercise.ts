@@ -67,14 +67,17 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
   loadExerciseTakeIntoTrack: async (take, container) => {
     await getEngine().loadExerciseTrack(take.filepath, container);
     useAnalysisStore.getState().loadExerciseTakeAnalysis(take);
-    usePlayerStore.setState({ isPlaying: false, currentTime: 0 });
+    // duration must be set here — it defaults to 0 and nothing else in the
+    // Free Exercise flow sets it, so PianoRoll's drag-to-seek clamp
+    // (Math.min(duration, ...)) clamped every seek target to 0.
+    usePlayerStore.setState({ isPlaying: false, currentTime: 0, duration: take.duration });
     set({ loadedTrackKind: "take", loadedTrackId: take.id });
   },
 
   clearLoadedTrack: () => {
     getEngine().clearExerciseTrack();
     useAnalysisStore.getState().clear();
-    usePlayerStore.setState({ isPlaying: false, currentTime: 0 });
+    usePlayerStore.setState({ isPlaying: false, currentTime: 0, duration: 0 });
     set({ loadedTrackKind: null, loadedTrackId: null });
   },
 
