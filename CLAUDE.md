@@ -87,7 +87,8 @@ VPS/
 ├── src/
 │   ├── audio/
 │   │   ├── engine.ts          AudioEngine class (WaveSurfer management)
-│   │   └── recorder.ts        VocalRecorder (MediaRecorder wrapper)
+│   │   ├── recorder.ts        VocalRecorder (MediaRecorder wrapper)
+│   │   └── metronome.ts       Metronome class (Web Audio lookahead-scheduled click track)
 │   ├── components/
 │   │   ├── upload/
 │   │   │   ├── DropZone.tsx       file drag-and-drop → processSong (song or instrument track)
@@ -98,7 +99,7 @@ VPS/
 │   │   │   ├── DownloadAllButton.tsx  zip export of all tracks + takes (rendered in PracticeRoom header)
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
 │   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
-│   │   │   ├── TempoControl.tsx    BPM-first speed control
+│   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
 │   │   │   └── OutputSelector.tsx  audio output device picker
 │   │   ├── recording/
