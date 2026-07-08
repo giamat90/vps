@@ -169,6 +169,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `list_exercise_takes` | — | `ExerciseTake[]` |
 | `delete_exercise_take` | `takeId: string` | `void` |
 | `export_stem` | `stemPath, suggestedName: string` | `void` (native Save As dialog) |
+| `export_all` | `entries: {path, archiveName}[], suggestedName: string` | `void` (zips vocals/instrumental + every take into one archive via the `zip` crate, then a single native Save As dialog) |
 | `export_take` | `takePath, suggestedName: string` | `void` (always WAV; sidecar `convert_take` first) |
 | `export_mix` | `sources: MixSource[], startSec, endSec: f64, suggestedName: string` | `void` (sidecar `mix_export`, then Save As) |
 

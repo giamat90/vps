@@ -93,7 +93,9 @@ VPS/
 │   │   │   ├── DropZone.tsx       file drag-and-drop → processSong (song or instrument track)
 │   │   │   └── YouTubeImport.tsx  URL paste → importYoutube
 │   │   ├── player/
-│   │   │   ├── Waveform.tsx        3-track waveform display + take loading + Export Mix button
+│   │   │   ├── Waveform.tsx        3-track waveform display + take loading
+│   │   │   ├── ExportMixButton.tsx export current mix as WAV (rendered in PracticeRoom header)
+│   │   │   ├── DownloadAllButton.tsx  zip export of all tracks + takes (rendered in PracticeRoom header)
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
 │   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
 │   │   │   ├── TempoControl.tsx    BPM-first speed control
@@ -253,6 +255,7 @@ interface PitchPoint {       // frontend-internal representation
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
 | `import_youtube(url, highQuality?, algorithm?)` | `Song` | yt-dlp + Demucs; 15-min timeout |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
+| `export_all(entries, suggestedName)` | `void` | bundles vocals/instrumental + every take into one zip (`zip` crate) via a single native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |
 | `export_mix(sources, startSec, endSec, suggestedName)` | `void` | renders a mixdown WAV via sidecar `mix_export` honoring live mute/solo/volume + punch region, then native Save As dialog |
 
@@ -437,7 +440,7 @@ usedLatencyFallback: boolean   // true when recording started with no usable cal
 ## Current git state
 
 - **Branch:** `master`
-- **Current version:** `0.1.29` (as of 2026-07-08)
+- **Current version:** `0.1.30` (as of 2026-07-08)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
 - Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer.
 

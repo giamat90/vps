@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import Waveform from "../components/player/Waveform";
+import DownloadAllButton from "../components/player/DownloadAllButton";
+import ExportMixButton from "../components/player/ExportMixButton";
 import TransportControls from "../components/player/TransportControls";
 import TempoControl from "../components/player/TempoControl";
 import KeyTranspose from "../components/player/KeyTranspose";
@@ -85,6 +87,8 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             {song.detectedKey && <span>{song.detectedKey}</span>}
           </div>
         </div>
+        <DownloadAllButton song={song} />
+        <ExportMixButton />
       </header>
 
       <div className="practice-room__topbar">

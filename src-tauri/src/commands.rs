@@ -918,6 +918,65 @@ pub async fn export_stem(
     Ok(())
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ZipEntry {
+    pub path: String,
+    pub archive_name: String,
+}
+
+#[tauri::command]
+pub async fn export_all(
+    app: AppHandle,
+    entries: Vec<ZipEntry>,
+    suggested_name: String,
+) -> Result<(), String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    if entries.is_empty() {
+        return Err("Nothing to export".to_string());
+    }
+
+    let dest = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        let suggested_name = suggested_name.clone();
+        move || {
+            app.dialog()
+                .file()
+                .set_file_name(&suggested_name)
+                .add_filter("Zip Archive", &["zip"])
+                .blocking_save_file()
+        }
+    })
+    .await
+    .map_err(|e| format!("Dialog task: {e}"))?;
+
+    let Some(dest) = dest else { return Ok(()) };
+    let dest_path = dest.as_path().ok_or("Invalid path")?.to_path_buf();
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        let file = std::fs::File::create(&dest_path).map_err(|e| format!("Create zip: {e}"))?;
+        let mut zip = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        for entry in &entries {
+            let mut src = std::fs::File::open(&entry.path)
+                .map_err(|e| format!("Open {}: {e}", entry.path))?;
+            zip.start_file(&entry.archive_name, options)
+                .map_err(|e| format!("Zip entry {}: {e}", entry.archive_name))?;
+            std::io::copy(&mut src, &mut zip)
+                .map_err(|e| format!("Write {}: {e}", entry.archive_name))?;
+        }
+        zip.finish().map_err(|e| format!("Finish zip: {e}"))?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| format!("Zip task: {e}"))??;
+
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn export_take(
     app: AppHandle,

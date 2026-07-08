@@ -452,6 +452,33 @@ body,
   color: var(--text-secondary);
 }
 
+.practice-room__download-all,
+.practice-room__export-mix {
+  flex-shrink: 0;
+  padding: 0.4rem 0.9rem;
+  border-radius: 4px;
+  border: 1px solid var(--bg-surface);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.practice-room__download-all:hover:not(:disabled),
+.practice-room__export-mix:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.practice-room__download-all:disabled,
+.practice-room__export-mix:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .practice-room__waveforms {
   flex-shrink: 0;
   display: flex;
@@ -583,35 +610,6 @@ body,
 .waveform__take-rail {
   flex: 1;
   min-width: 0;
-}
-
-.waveform__toolbar {
-  display: flex;
-  justify-content: flex-end;
-  padding: 0 0.1rem;
-}
-
-.waveform__export-mix {
-  padding: 0.3rem 0.8rem;
-  border-radius: 4px;
-  border: 1px solid var(--bg-surface);
-  background: transparent;
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: 0.72rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.waveform__export-mix:hover:not(:disabled) {
-  border-color: var(--accent);
-  color: var(--text-primary);
-}
-
-.waveform__export-mix:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 /* Time ruler above the waveform tracks */

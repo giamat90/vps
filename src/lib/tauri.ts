@@ -88,6 +88,16 @@ export async function exportStem(
   return invoke("export_stem", { stemPath, suggestedName });
 }
 
+export interface ZipExportEntry {
+  path: string;
+  archiveName: string;
+}
+
+/** Open a native Save As dialog and bundle stems + takes into a zip archive */
+export async function exportAll(entries: ZipExportEntry[], suggestedName: string): Promise<void> {
+  return invoke("export_all", { entries, suggestedName });
+}
+
 /**
  * Open a native Save As dialog and write a recorded take to a user-chosen
  * location as WAV. The take (typically webm/opus) is decoded via the
