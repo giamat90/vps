@@ -1,15 +1,24 @@
 import { useEffect, useState } from "react";
-import { usePlayerStore } from "../../stores/player";
+import { usePlayerStore, getEngine } from "../../stores/player";
 import { metronome } from "../../audio/metronome";
+import { computeMetronomePhase } from "../../lib/metronomeSync";
 
 interface Props {
   detectedBpm?: number;
 }
 
+function fmtOffset(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${s.toFixed(1).padStart(4, "0")}`;
+}
+
 function TempoControl({ detectedBpm }: Props) {
-  const playbackRate    = usePlayerStore((s) => s.playbackRate);
-  const setPlaybackRate = usePlayerStore((s) => s.setPlaybackRate);
-  const isPlaying       = usePlayerStore((s) => s.isPlaying);
+  const playbackRate      = usePlayerStore((s) => s.playbackRate);
+  const setPlaybackRate   = usePlayerStore((s) => s.setPlaybackRate);
+  const isPlaying         = usePlayerStore((s) => s.isPlaying);
+  const metronomeOffset   = usePlayerStore((s) => s.metronomeOffset);
+  const setMetronomeOffset = usePlayerStore((s) => s.setMetronomeOffset);
 
   const [bpmInput, setBpmInput] = useState(() =>
     detectedBpm ? String(Math.round(detectedBpm * playbackRate)) : ""
@@ -21,15 +30,24 @@ function TempoControl({ detectedBpm }: Props) {
 
   useEffect(() => {
     if (metronomeEnabled && isPlaying) {
-      metronome.start(effectiveBpm);
+      // Phase-lock to metronomeOffset rather than always starting fresh at
+      // beat 0 — otherwise the click drifts out of sync with the song's
+      // actual downbeat whenever there's silence (or a pickup) before it.
+      const { timeUntilNextBeat, beatIndex } = computeMetronomePhase({
+        detectedBpm: detectedBpm ?? 120,
+        playbackRate,
+        anchorTime: metronomeOffset,
+        currentSongTime: getEngine().getCurrentTime(),
+      });
+      metronome.start(effectiveBpm, timeUntilNextBeat, beatIndex);
     } else {
       metronome.stop();
     }
-  }, [metronomeEnabled, isPlaying]);
-
-  useEffect(() => {
-    if (metronomeEnabled && isPlaying) metronome.setBpm(effectiveBpm);
-  }, [effectiveBpm]);
+    // Resyncs (not just retunes) on every bpm/offset change while playing,
+    // so a mid-playback speed change or a dragged downbeat marker doesn't
+    // leave the click phase-locked to a stale mapping.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [metronomeEnabled, isPlaying, effectiveBpm, metronomeOffset]);
 
   useEffect(() => () => metronome.stop(), []);
 
@@ -114,6 +132,33 @@ function TempoControl({ detectedBpm }: Props) {
           />
           <span className="tempo-control__bpm-unit">×</span>
         </div>
+        {metronomeEnabled && (
+          <div className="tempo-control__bpm-row">
+            <span
+              className="tempo-control__bpm-unit"
+              title="Where the metronome's accented beat 1 lands — drag the blue marker on the time ruler, or use Set below"
+            >
+              Downbeat
+            </span>
+            <span className="tempo-control__downbeat-value">{fmtOffset(metronomeOffset)}</span>
+            <button
+              className="tempo-control__downbeat-btn"
+              onClick={() => setMetronomeOffset(getEngine().getCurrentTime())}
+              title="Set the metronome's downbeat to the current playhead position"
+            >
+              ⚑ Set
+            </button>
+            {metronomeOffset > 0 && (
+              <button
+                className="tempo-control__downbeat-btn"
+                onClick={() => setMetronomeOffset(0)}
+                title="Reset downbeat to song start"
+              >
+                ↺
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

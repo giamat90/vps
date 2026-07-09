@@ -12,6 +12,7 @@ export interface Song {
   processedAt: string;
   directory: string;
   kind?: "vocal" | "instrument";
+  metronomeOffset?: number;
 }
 
 /** Processing status */

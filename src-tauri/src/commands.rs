@@ -173,6 +173,7 @@ pub async fn process_song(
                     processed_at: now,
                     directory: output_dir_str,
                     kind: track_kind.clone(),
+                    metronome_offset: None,
                 };
 
                 // Save analysis data to analysis.json
@@ -274,6 +275,11 @@ pub async fn list_songs() -> Result<Vec<Song>, String> {
 #[tauri::command]
 pub async fn delete_song(song_id: String) -> Result<(), String> {
     library::remove(&song_id)
+}
+
+#[tauri::command]
+pub async fn set_metronome_offset(song_id: String, offset: Option<f64>) -> Result<Song, String> {
+    library::update_metronome_offset(&song_id, offset)
 }
 
 // --- Take commands ---
@@ -837,6 +843,7 @@ pub async fn import_youtube(
                     processed_at: chrono::Utc::now().to_rfc3339(),
                     directory: output_dir_str,
                     kind: "vocal".to_string(),
+                    metronome_offset: None,
                 };
 
                 let analysis = serde_json::json!({

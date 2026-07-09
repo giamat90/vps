@@ -128,7 +128,8 @@ VPS/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
 │   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
 │   │   ├── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
-│   │   └── zoomPan.ts         pure zoom-to-cursor / pan math for timeline ctrl+wheel/shift+wheel (byte-identical to SPS)
+│   │   ├── zoomPan.ts         pure zoom-to-cursor / pan math for timeline ctrl+wheel/shift+wheel (byte-identical to SPS)
+│   │   └── metronomeSync.ts   pure phase-lock math for the metronome downbeat anchor (byte-identical to SPS)
 │   ├── stores/
 │   │   ├── player.ts          player + recording + punch + latency-calibration state (Zustand)
 │   │   ├── library.ts         song list + import flow (Zustand)
@@ -248,6 +249,7 @@ interface PitchPoint {       // frontend-internal representation
 | `process_song(filePath, kind?, highQuality?, algorithm?)` | `Song` | Demucs + pitch detection (algorithm per Settings, default SRH); 10-min timeout; `kind: "instrument"` skips separation |
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
+| `set_metronome_offset(songId, offset?)` | `Song` | persists the metronome's downbeat anchor (song time, seconds); `null` clears it back to song start |
 | `save_take(songId, audioData, startPosition, audioOffset, algorithm?)` | `Take` | sidecar `analyze` (pitch + spectrum) + RMS-normalizes loudness against vocals.wav |
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
@@ -435,6 +437,7 @@ recordingOffsets: Record<string, CalibrationEntry>  // per-mic latency calibrati
 usedLatencyFallback: boolean   // true when recording started with no usable calibration
 minPxPerSec: number       // timeline zoom level (px per second); ctrl+wheel changes this
 scrollTime: number        // song time (s) at the left edge of the visible timeline window
+metronomeOffset: number   // song time (s) where the metronome's beat 1 lands; persisted per song
 ```
 
 `getEngine()` and `getRecorder()` are module-level singletons, not stored in Zustand.
@@ -446,7 +449,7 @@ scrollTime: number        // song time (s) at the left edge of the visible timel
 - **Branch:** `master`
 - **Current version:** `0.1.30` (as of 2026-07-08)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
-- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing).
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence).
 
 ---
 

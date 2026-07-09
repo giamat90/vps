@@ -17,8 +17,11 @@ interface Song {
   processedAt: string;  // ISO timestamp
   directory: string;    // absolute path to ~/.vps/library/{id}/
   kind?: "vocal" | "instrument"; // defaults to "vocal" (Rust: #[serde(default)])
+  metronomeOffset?: number; // song time (s) where the metronome's beat 1 lands
 }
 ```
+
+**`metronomeOffset`** — set via `set_metronome_offset(songId, offset)`, which mirrors `rename_take`'s "find by id, mutate one field, re-save library.json" shape rather than going through `library::add`. `null`/absent means the metronome phase-locks to song position 0 (unchanged legacy behavior). See [Components: TempoControl](components.md#tempocontrol).
 
 **`kind: "instrument"`** — an instrument practice track (e.g. an isolated piano/guitar melody). Set by `process_song(filePath, highQuality, trackKind: "instrument")`, which passes `skipSeparation: true` to the sidecar so `processor.process()` skips Demucs entirely and writes the input file as both `vocals.wav` and `instrumental.wav` (identical copies — see [Python Sidecar](python-sidecar.md)). The frontend relabels the vocals track "Melody", hides the redundant instrumental waveform row (`waveform__track--hidden`), and mutes the `instrumental` track by default (`mutedTracks.instrumental = true` on `loadSong`) so the duplicate audio isn't audible. `LibraryPage` shows an "Instrument" badge on the song card and a single "Download" button instead of separate vocals/instrumental exports. Songs imported via YouTube are always `kind: "vocal"`.
 

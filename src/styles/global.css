@@ -847,6 +847,31 @@ body,
   color: var(--text-secondary);
 }
 
+.tempo-control__downbeat-value {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  min-width: 3rem;
+}
+
+.tempo-control__downbeat-btn {
+  padding: 0 0.4rem;
+  height: 1.4rem;
+  border-radius: 4px;
+  border: 1px solid var(--bg-surface);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.68rem;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.tempo-control__downbeat-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 /* Key Transpose */
 .key-transpose {
   display: flex;
