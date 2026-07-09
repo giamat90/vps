@@ -17,7 +17,7 @@ function fmt(seconds: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-type DragMode = "create" | "drag-in" | "drag-out";
+type DragMode = "create" | "drag-in" | "drag-out" | "drag-metronome";
 
 export default function TimeRuler() {
   const canvasRef   = useRef<HTMLCanvasElement>(null);
@@ -32,6 +32,8 @@ export default function TimeRuler() {
   const setPunchLoop = usePlayerStore((s) => s.setPunchLoop);
   const minPxPerSec = usePlayerStore((s) => s.minPxPerSec);
   const scrollTime  = usePlayerStore((s) => s.scrollTime);
+  const metronomeOffset    = usePlayerStore((s) => s.metronomeOffset);
+  const setMetronomeOffset = usePlayerStore((s) => s.setMetronomeOffset);
 
   // anchorT: the fixed end when dragging a single handle
   const drag = useRef<{ mode: DragMode | null; anchorT: number }>({
@@ -42,7 +44,7 @@ export default function TimeRuler() {
   // ── drawing ──────────────────────────────────────────────────────────────
 
   const draw = useCallback(
-    (overrideIn?: number | null, overrideOut?: number | null) => {
+    (overrideIn?: number | null, overrideOut?: number | null, overrideMetronome?: number) => {
       const canvas = canvasRef.current;
       if (!canvas || duration <= 0 || minPxPerSec <= 0) return;
       const W = canvas.width;
@@ -104,8 +106,28 @@ export default function TimeRuler() {
       ctx.moveTo(0, H - 0.5);
       ctx.lineTo(W, H - 0.5);
       ctx.stroke();
+
+      // Metronome downbeat marker — dashed line + flag at the bottom edge,
+      // draggable to align the click track with the song's actual downbeat.
+      const metroT = overrideMetronome !== undefined ? overrideMetronome : metronomeOffset;
+      const mx = tX(metroT);
+      ctx.strokeStyle = "rgba(74,158,255,0.85)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 2]);
+      ctx.beginPath();
+      ctx.moveTo(mx, 0);
+      ctx.lineTo(mx, H);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "rgba(74,158,255,0.95)";
+      ctx.beginPath();
+      ctx.moveTo(mx, H);
+      ctx.lineTo(mx - 5, H - 7);
+      ctx.lineTo(mx + 5, H - 7);
+      ctx.closePath();
+      ctx.fill();
     },
-    [duration, punchIn, punchOut, minPxPerSec, scrollTime],
+    [duration, punchIn, punchOut, minPxPerSec, scrollTime, metronomeOffset],
   );
 
   // ── resize observer ───────────────────────────────────────────────────────
@@ -153,6 +175,14 @@ export default function TimeRuler() {
     if (isRecording || duration <= 0) return;
     e.preventDefault();
     const { offsetX } = e.nativeEvent;
+
+    const metroX = (metronomeOffset - scrollTime) * minPxPerSec;
+    if (Math.abs(offsetX - metroX) <= HANDLE_HIT_PX) {
+      drag.current = { mode: "drag-metronome", anchorT: 0 };
+      setCursor("ew-resize");
+      return;
+    }
+
     const mode = modeForOffset(offsetX);
     const t = xToTime(offsetX);
 
@@ -175,6 +205,11 @@ export default function TimeRuler() {
 
     if (!mode) {
       // Hover: update cursor to signal draggable handles
+      const metroX = (metronomeOffset - scrollTime) * minPxPerSec;
+      if (Math.abs(offsetX - metroX) <= HANDLE_HIT_PX) {
+        setCursor("ew-resize");
+        return;
+      }
       if (!isRecording && punchIn !== null && punchOut !== null) {
         const m = modeForOffset(offsetX);
         setCursor(m !== "create" ? "ew-resize" : "crosshair");
@@ -182,7 +217,9 @@ export default function TimeRuler() {
       return;
     }
 
-    if (mode === "drag-in") {
+    if (mode === "drag-metronome") {
+      draw(undefined, undefined, t);
+    } else if (mode === "drag-in") {
       // In handle moves; out handle (anchorT) stays fixed
       const newIn = Math.min(t, anchorT - 0.1);
       draw(newIn, anchorT);
@@ -202,7 +239,9 @@ export default function TimeRuler() {
 
     const t = xToTime(e.nativeEvent.offsetX);
 
-    if (mode === "drag-in") {
+    if (mode === "drag-metronome") {
+      setMetronomeOffset(Math.round(t * 10) / 10);
+    } else if (mode === "drag-in") {
       setPunchIn(Math.round(Math.min(t, anchorT - 0.1) * 10) / 10);
     } else if (mode === "drag-out") {
       setPunchOut(Math.round(Math.max(t, anchorT + 0.1) * 10) / 10);
