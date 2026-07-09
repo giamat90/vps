@@ -48,6 +48,11 @@ export async function renameTakeApi(songId: string, takeId: string, name: string
   return invoke<Take>("rename_take", { songId, takeId, name });
 }
 
+/** Persist the metronome's downbeat anchor (song time, seconds) for this song; null clears it back to song start */
+export async function setMetronomeOffsetApi(songId: string, offset: number | null): Promise<Song> {
+  return invoke<Song>("set_metronome_offset", { songId, offset });
+}
+
 /** Load song analysis data (pitchData, onsets, dynamics, spectrogram) */
 export async function loadAnalysis(songId: string): Promise<{
   pitchData: import("./types").PitchData;

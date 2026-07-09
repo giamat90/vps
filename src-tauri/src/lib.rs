@@ -21,6 +21,7 @@ pub fn run() {
             commands::pitch_shift_song,
             commands::list_songs,
             commands::delete_song,
+            commands::set_metronome_offset,
             commands::save_take,
             commands::list_takes,
             commands::delete_take,
