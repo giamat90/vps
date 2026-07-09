@@ -30,6 +30,8 @@ export default function TimeRuler() {
   const setPunchOut = usePlayerStore((s) => s.setPunchOut);
   const clearPunch  = usePlayerStore((s) => s.clearPunch);
   const setPunchLoop = usePlayerStore((s) => s.setPunchLoop);
+  const minPxPerSec = usePlayerStore((s) => s.minPxPerSec);
+  const scrollTime  = usePlayerStore((s) => s.scrollTime);
 
   // anchorT: the fixed end when dragging a single handle
   const drag = useRef<{ mode: DragMode | null; anchorT: number }>({
@@ -42,14 +44,15 @@ export default function TimeRuler() {
   const draw = useCallback(
     (overrideIn?: number | null, overrideOut?: number | null) => {
       const canvas = canvasRef.current;
-      if (!canvas || duration <= 0) return;
+      if (!canvas || duration <= 0 || minPxPerSec <= 0) return;
       const W = canvas.width;
       const H = canvas.height;
       if (W === 0 || H === 0) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      const tX = (t: number) => (t / duration) * W;
+      const tX = (t: number) => (t - scrollTime) * minPxPerSec;
+      const visibleDuration = W / minPxPerSec;
 
       ctx.fillStyle = "#0d1b2e";
       ctx.fillRect(0, 0, W, H);
@@ -73,11 +76,14 @@ export default function TimeRuler() {
         ctx.fillRect(x2 - 3, 0, 6, 4);
       }
 
-      // Time ticks
-      const interval = tickInterval(duration, W);
+      // Time ticks — spaced from the visible window, not the whole song, so
+      // spacing gets finer as zoom increases, and only the visible range is drawn.
+      const interval = tickInterval(visibleDuration, W);
       const fontSize = Math.max(10, Math.round(H * 0.42));
       ctx.font = `${fontSize}px monospace`;
-      for (let t = 0; t <= duration + 0.001; t += interval) {
+      const visibleStart = Math.max(0, Math.floor(scrollTime / interval) * interval);
+      const visibleEnd = Math.min(duration, scrollTime + visibleDuration);
+      for (let t = visibleStart; t <= visibleEnd + 0.001; t += interval) {
         const x = Math.round(tX(t));
         ctx.strokeStyle = "#3a4a5e";
         ctx.lineWidth = 1;
@@ -99,7 +105,7 @@ export default function TimeRuler() {
       ctx.lineTo(W, H - 0.5);
       ctx.stroke();
     },
-    [duration, punchIn, punchOut],
+    [duration, punchIn, punchOut, minPxPerSec, scrollTime],
   );
 
   // ── resize observer ───────────────────────────────────────────────────────
@@ -123,9 +129,8 @@ export default function TimeRuler() {
   // ── helpers ──────────────────────────────────────────────────────────────
 
   const xToTime = (offsetX: number): number => {
-    const canvas = canvasRef.current;
-    if (!canvas || duration <= 0) return 0;
-    return Math.max(0, Math.min(duration, (offsetX / canvas.width) * duration));
+    if (duration <= 0 || minPxPerSec <= 0) return 0;
+    return Math.max(0, Math.min(duration, scrollTime + offsetX / minPxPerSec));
   };
 
   const setCursor = (c: string) => {
@@ -134,11 +139,9 @@ export default function TimeRuler() {
 
   // Determine which drag mode to start based on mouse position
   const modeForOffset = (offsetX: number): DragMode => {
-    const canvas = canvasRef.current;
-    if (!canvas || punchIn === null || punchOut === null) return "create";
-    const W = canvas.width;
-    const x1 = (punchIn  / duration) * W;
-    const x2 = (punchOut / duration) * W;
+    if (punchIn === null || punchOut === null) return "create";
+    const x1 = (punchIn  - scrollTime) * minPxPerSec;
+    const x2 = (punchOut - scrollTime) * minPxPerSec;
     if (Math.abs(offsetX - x1) <= HANDLE_HIT_PX) return "drag-in";
     if (Math.abs(offsetX - x2) <= HANDLE_HIT_PX) return "drag-out";
     return "create";

@@ -219,6 +219,9 @@ interface PlayerState {
   usedLatencyFallback: boolean;
   // Free exercise mode (no song loaded)
   exerciseMode: boolean;
+  // Timeline zoom/pan (ctrl+wheel / shift+wheel)
+  minPxPerSec: number;
+  scrollTime: number;
 }
 
 interface PlayerActions {
@@ -274,6 +277,9 @@ interface PlayerActions {
   stopExerciseRecording: () => Promise<ExerciseTake>;
   playExerciseTrack: () => void;
   pauseExerciseTrack: () => void;
+  // Timeline zoom/pan actions
+  setZoom: (minPxPerSec: number, scrollTime: number) => void;
+  setScrollTime: (scrollTime: number) => void;
 }
 
 function _loadOffsets(): Record<string, CalibrationEntry> {
@@ -340,6 +346,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   exerciseMode: false,
   recordingOffsets: _loadOffsets(),
   usedLatencyFallback: false,
+  minPxPerSec: 1,
+  scrollTime: 0,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -376,6 +384,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
         );
       }
     });
+    eng.onScrollChange((minPxPerSec, scrollTime) => set({ minPxPerSec, scrollTime }));
+    const baselinePxPerSec = eng.getMinPxPerSec();
+    eng.zoomAll(baselinePxPerSec, 0);
     set({
       song,
       duration: eng.getDuration(),
@@ -394,6 +405,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       // relabeled "Melody" track is audible (avoids doubled playback).
       mutedTracks: { vocals: false, instrumental: song.kind === "instrument", take: false },
       soloedTrack: null,
+      minPxPerSec: baselinePxPerSec,
+      scrollTime: 0,
     });
     applyEffectiveVolumes(get());
   },
@@ -1001,4 +1014,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     getEngine().pauseExerciseTrack();
     set({ isPlaying: false });
   },
+
+  setZoom: (minPxPerSec, scrollTime) => set({ minPxPerSec, scrollTime }),
+  setScrollTime: (scrollTime) => set({ scrollTime }),
 }));

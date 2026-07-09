@@ -661,9 +661,19 @@ body,
   transform: none;
 }
 
-/* Wrapper that gives position:relative context for the punch overlay */
+/* Wrapper that gives position:relative context for the punch overlay.
+   overflow:hidden clips the take rail and punch overlay when they extend
+   beyond the visible row under timeline zoom/pan. */
 .waveform__track-body {
   position: relative;
+  overflow: hidden;
+}
+
+/* Wraps the ruler + track rows; ctrl/shift+wheel listener attaches here. */
+.waveform__timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
 .waveform__container {

@@ -108,6 +108,8 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `selectedDeviceId` | `string \| null` | Selected mic device ID |
 | `outputDevices` | `MediaDeviceInfo[]` | Available audio outputs |
 | `selectedOutputDeviceId` | `string \| null` | Selected output device ID |
+| `minPxPerSec` | `number` | Timeline zoom level (WaveSurfer's own px-per-second unit); ctrl+wheel changes this |
+| `scrollTime` | `number` | Song time (seconds) at the left edge of the visible timeline window; shift+wheel changes this |
 
 ### Exercise Store (`src/stores/exercise.ts`)
 
@@ -185,17 +187,28 @@ Canvas strip above the waveform tracks (`2.8rem` tall). Shows time ticks at adap
 - **Click** (< 0.5 s drag) → clear punch region and reset loop toggle
 - **⟳ button** (appears at right edge when region is set) → toggle `punchLoop`; red when active
 
-The region is drawn as a red band on the canvas with I-beam caps at the handles. Each waveform track also shows a translucent `PunchOverlay` div (positioned via `left` / `width` percentages of the track).
+The region is drawn as a red band on the canvas with I-beam caps at the handles. Each waveform track also shows a translucent `PunchOverlay` div, now positioned in pixels (`left`/`width` derived from `minPxPerSec`/`scrollTime`, not the track's raw width — see [Timeline Zoom/Pan](#timeline-zoompan) below) so it stays aligned with the waveform under zoom/pan.
+
+All of `tX`/`xToTime` (coordinate mapping), `modeForOffset` (handle hit-testing), and the tick-drawing loop read `minPxPerSec`/`scrollTime` from the player store instead of assuming the whole song spans the full canvas width — tick spacing gets finer as zoom increases (`tickInterval` is computed from the *visible* duration, `canvasWidthPx / minPxPerSec`, not the song's total duration), and only the visible time range is drawn.
 
 ### Waveform
 
-Renders `TimeRuler` at the top, then up to three stacked tracks, each with a `.waveform__track-header` (label + `TrackControls`) above a `.waveform__track-body` (position: relative, wraps the WaveSurfer container so `PunchOverlay` can be absolutely positioned over it):
+Renders `TimeRuler` at the top, then up to three stacked tracks, each with a `.waveform__track-header` (label + `TrackControls`) above a `.waveform__track-body` (position: relative, `overflow: hidden`, wraps the WaveSurfer container so `PunchOverlay` and the take rail can be absolutely positioned over it without spilling out when off-screen under zoom/pan):
 
 1. **Vocals** — always visible; original vocals track
 2. **Instrumental** — always visible; backing track and time reference
 3. **Take** — conditionally rendered when `activeTakeId` is set; orange waveform positioned at the correct time offset and proportional width using `eng.loadTakeTrack()`
 
 **`TrackControls`** (local sub-component, one instance per row): mute button (`M`, amber `--on` state), solo button (`S`, green `--on` state), and a volume slider — wired to the player store's `toggleMute`, `toggleSolo`, and the relevant `set*Volume` action for that track. After a new take's WaveSurfer instance loads, the effect calls `syncTrackVolumes()` so the fresh instance picks up the stored effective volume instead of defaulting to full volume.
+
+#### Timeline Zoom/Pan
+
+`TimeRuler` and the three track rows are wrapped in a new `.waveform__timeline` element (`ref`'d as `timelineRef`), which owns two `useEffect`-mounted listeners:
+
+- A **non-passive `wheel` listener** (`addEventListener("wheel", handler, { passive: false })` — React's `onWheel` prop is passive since React 17 and can't `preventDefault()` native ctrl+wheel page-zoom). Ctrl+wheel calls `computeZoomToCursor()` (`src/lib/zoomPan.ts`) with the cursor's pixel offset within the wrapper, then `eng.zoomAll(newPx, newScroll)`; shift+wheel calls `computePan()` then `eng.setScrollAll(newScroll)`. Both cases call `eng.noteManualScrollInteraction()` first, suppressing the engine's playhead auto-follow (see [Audio Engine: Timeline Zoom/Pan](audio-engine.md#timeline-zoompan)) for 800ms. Wheel events without `ctrlKey`/`shiftKey` are ignored (not `preventDefault()`-ed), so ordinary page scroll/zoom over the timeline behaves normally.
+- A **`ResizeObserver`** that reclamps `scrollTime` into bounds and snaps `minPxPerSec` up to the new dynamic "whole song fits" floor if the container shrank, since both depend on live container width.
+
+`src/lib/zoomPan.ts` holds the pure math (byte-identical to SPS's copy): `computeZoomToCursor()` keeps the exact song-time under the mouse cursor fixed on screen while `minPxPerSec` changes by an exponential factor of wheel delta (`Math.exp(-deltaY * ZOOM_SENSITIVITY)` — proportional zoom feels consistent regardless of current zoom level, unlike a fixed additive step); `computePan()` shifts `scrollTime` by `deltaPx / minPxPerSec`. Both clamp `scrollTime` into `[0, max(0, duration - viewportWidthPx/minPxPerSec)]` and `minPxPerSec` into `[dynamicLowerBound, MAX_PX_PER_SEC]` — the lower bound comes from `eng.getMinPxPerSec()` (the "whole song fills the container" floor), so zooming out can never scroll past the song's edges.
 
 **Export Mix button** (`ExportMixButton.tsx`) and **Download All button** (`DownloadAllButton.tsx`, ported from SPS) both render in `PracticeRoom.tsx`'s `.practice-room__header`, next to the song title — not inside `Waveform.tsx` itself, since they act on the whole song rather than the waveform view specifically. Extracted out of `Waveform.tsx` (2026-07-08) so the header could host both as an "all whole-song actions live in one place" convention, matching SPS's `AnalyzerPage.tsx` header.
 

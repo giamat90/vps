@@ -127,7 +127,8 @@ VPS/
 │   ├── lib/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
 │   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
-│   │   └── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
+│   │   ├── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
+│   │   └── zoomPan.ts         pure zoom-to-cursor / pan math for timeline ctrl+wheel/shift+wheel (byte-identical to SPS)
 │   ├── stores/
 │   │   ├── player.ts          player + recording + punch + latency-calibration state (Zustand)
 │   │   ├── library.ts         song list + import flow (Zustand)
@@ -432,6 +433,8 @@ outputDevices: MediaDeviceInfo[]
 selectedOutputDeviceId: string | null
 recordingOffsets: Record<string, CalibrationEntry>  // per-mic latency calibration (localStorage-backed)
 usedLatencyFallback: boolean   // true when recording started with no usable calibration
+minPxPerSec: number       // timeline zoom level (px per second); ctrl+wheel changes this
+scrollTime: number        // song time (s) at the left edge of the visible timeline window
 ```
 
 `getEngine()` and `getRecorder()` are module-level singletons, not stored in Zustand.
@@ -443,7 +446,7 @@ usedLatencyFallback: boolean   // true when recording started with no usable cal
 - **Branch:** `master`
 - **Current version:** `0.1.30` (as of 2026-07-08)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
-- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer.
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing).
 
 ---
 
