@@ -36,20 +36,24 @@ class Metronome {
     this.timerId = window.setTimeout(this.tick, LOOKAHEAD_MS);
   };
 
-  start(bpm: number) {
+  /**
+   * (Re)starts the click scheduler, phase-locked so the next click lands
+   * `timeUntilNextBeat` seconds from now (wall-clock) at bar position
+   * `startBeat` (0 = accented downbeat) — lets the caller keep the click
+   * aligned to a specific song-time downbeat (see src/lib/metronomeSync.ts)
+   * instead of always resetting to beat 0 at whatever moment start() is
+   * called. Always resyncs, even if already running, since a stale
+   * scheduled phase is exactly the bug this is meant to fix.
+   */
+  start(bpm: number, timeUntilNextBeat = 0, startBeat = 0) {
     this.bpm = bpm;
-    if (this.timerId !== null) return; // already running — just retuned
     if (!this.ctx) this.ctx = new AudioContext();
     if (this.ctx.state === "suspended") {
       this.ctx.resume().catch((e) => console.warn("Metronome: failed to resume AudioContext", e));
     }
-    this.beat = 0;
-    this.nextNoteTime = this.ctx.currentTime + 0.05;
-    this.tick();
-  }
-
-  setBpm(bpm: number) {
-    this.bpm = bpm;
+    this.beat = ((startBeat % BEATS_PER_BAR) + BEATS_PER_BAR) % BEATS_PER_BAR;
+    this.nextNoteTime = this.ctx.currentTime + Math.max(0.05, timeUntilNextBeat);
+    if (this.timerId === null) this.tick();
   }
 
   stop() {
