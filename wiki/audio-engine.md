@@ -46,17 +46,20 @@ private _seekTake(instrTime: number): void {
 
 ## Take Track Visual Alignment
 
-`loadTakeTrack(filePath, container, startOffset, audioOffset)` positions the WaveSurfer container so it lines up visually with the other tracks. After the `"ready"` event:
+`loadTakeTrack(filePath, container, startOffset, audioOffset)` positions the WaveSurfer container so it lines up visually with the other tracks. The container is retained as `_takeContainer` and re-positioned by `_resizeTakeTrack()` (private) — called after load, and again from `zoomAll`/`setScrollAll` whenever zoom or scroll changes:
 
 ```ts
-const railWidth   = container.offsetWidth;
-const playableDur = this._takeDuration - audioOffset;    // exclude the silent prefix
-const widthPx     = Math.round((playableDur / this._duration) * railWidth);
-const marginPx    = Math.round((startOffset / this._duration) * railWidth);
-container.style.marginLeft = `${marginPx}px`;
-container.style.width      = `${widthPx}px`;
-this.take.setOptions({ width: widthPx });                // forces WaveSurfer to redraw
+private _resizeTakeTrack(): void {
+  const playableDur = this._takeDuration - this._takeAudioOffset;   // exclude the silent prefix
+  const widthPx  = Math.round(playableDur * this._minPxPerSec);
+  const marginPx = Math.round((this._takeOffset - this._scrollTime) * this._minPxPerSec);
+  this._takeContainer.style.marginLeft = `${marginPx}px`;
+  this._takeContainer.style.width      = `${widthPx}px`;
+  this.take.setOptions({ width: widthPx });                         // forces WaveSurfer to redraw
+}
 ```
+
+This used to compute `widthPx`/`marginPx` as a ratio of `container.offsetWidth` to `_duration`, which only worked because the whole song always filled the container width (no zoom existed). Once [timeline zoom/pan](#timeline-zoompan) made that untrue, the basis had to change to absolute pixels derived from `_minPxPerSec`/`_scrollTime` — the same formula naturally also handles panning, since scrolling the window is just a shift of `_scrollTime`.
 
 `setOptions({ width })` is required because WaveSurfer renders its canvas at creation time and does not reliably redraw via ResizeObserver when the container CSS is changed after the fact.
 
@@ -105,6 +108,46 @@ if (!inWindow && this._takeIsPlaying)  { this.take.pause(); this._takeIsPlaying 
 - **Loop detection** — checked every frame for accurate loop-point enforcement
 - **Take window sync** — transitions `_takeIsPlaying` on every frame (see above)
 - **UI notifications** — throttled to ~30 fps (33 ms gate) via `_lastNotifyTime`, halving React re-render rate
+
+## Timeline Zoom/Pan
+
+Ctrl+wheel zooms the waveform timeline continuously, centered on the mouse cursor's time position; shift+wheel pans the visible window without changing zoom. Neither WaveSurfer's zoom plugin nor its `interact`/`dragToSeek` options are involved — this is a custom `wheel` listener in `Waveform.tsx` (see [Components: Waveform](components.md#waveform)) driving WaveSurfer 7's own core zoom/scroll primitives (`ws.zoom()`, `ws.setScrollTime()`, `ws.getWidth()`), applied to every mounted instance at once.
+
+State lives in two engine fields, mirrored into the player store (`minPxPerSec`, `scrollTime`) so `TimeRuler` and `PunchOverlay` can stay aligned:
+
+| Field | Meaning |
+|-------|---------|
+| `_minPxPerSec` | Current zoom level, in WaveSurfer's own pixels-per-second unit |
+| `_scrollTime` | Song time (seconds) at the left edge of the visible window |
+
+```ts
+getMinPxPerSec(): number {              // dynamic lower zoom bound — "whole song fits"
+  const ref = this.instrumental ?? this.vocals;
+  return ref && this._duration > 0 ? ref.getWidth() / this._duration : 1;
+}
+
+zoomAll(minPxPerSec, scrollTime): void {       // ctrl+wheel
+  for (const ws of this._allInstances()) { ws.zoom(minPxPerSec); ws.setScrollTime(scrollTime); }
+  this._resizeTakeTrack();
+}
+
+setScrollAll(scrollTime): void {               // shift+wheel, resize reclamp, auto-follow
+  for (const ws of this._allInstances()) ws.setScrollTime(scrollTime);
+  this._resizeTakeTrack();
+}
+```
+
+The lower zoom bound is computed on demand from live container width rather than stored, since it changes across a window resize. `loadSong` calls `zoomAll(getMinPxPerSec(), 0)` once at load — this makes the pre-existing implicit "whole song fills the container" behavior an explicit zoom-level-1 baseline, so nothing changes visually for anyone who never touches ctrl/shift+wheel.
+
+**No new cross-instance sync event is needed** (unlike `"interaction"` for playhead sync above) — zoom/pan is driven top-down: the wheel handler computes `{minPxPerSec, scrollTime}` once and `zoomAll`/`setScrollAll` sets every instance synchronously, so there's no async race to guard against.
+
+**Lockstep prerequisites:** every `WaveSurfer.create()` call now passes `hideScrollbar: true, autoScroll: false, autoCenter: false`. `hideScrollbar` prevents a user from dragging one instance's own internal scrollbar directly (which would fire that instance's `"scroll"` event with nothing syncing it to the others, by design — see above). `autoScroll`/`autoCenter` default `true` in WaveSurfer and would let each instance auto-follow its own playhead independently; since per-instance `<audio>` clocks aren't frame-identical, that would visibly micro-desync the rows while zoomed in and playing.
+
+**Auto-follow while playing:** with per-instance auto-scroll disabled, something has to keep the playhead in view while zoomed in and playing — that's a block inside the existing `_startTimeUpdate()` rAF tick (see below), not a new loop. It nudges `_scrollTime` forward once the playhead crosses 85% of the visible window (`FOLLOW_MARGIN_RATIO`, in `src/lib/zoomPan.ts`), or snaps the window to include the playhead if a seek/loop jump lands it behind the window. A manual ctrl/shift+wheel action (`noteManualScrollInteraction()`, called from the wheel handler) suppresses auto-follow for 800ms (`FOLLOW_RESUME_SUPPRESS_MS`) afterward — otherwise a shift+wheel pan during playback would get overridden by auto-follow on the very next animation frame.
+
+`onScrollChange(cb)` registers a callback the player store uses to mirror engine-initiated scroll changes (auto-follow, resize reclamp) back into Zustand — the wheel handler updates the store directly since it already has the new values, but auto-follow runs inside the engine with no store access of its own.
+
+The zoom-to-cursor and pan math itself (exponential zoom factor, bounds clamping) is pure and lives in `src/lib/zoomPan.ts` — see [Components: Waveform](components.md#waveform) for the wheel-handler wiring and the exact formulas.
 
 ## Output Device Routing
 
