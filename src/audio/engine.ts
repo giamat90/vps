@@ -1,8 +1,10 @@
 import WaveSurfer from "wavesurfer.js";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { clamp, FOLLOW_MARGIN_RATIO, FOLLOW_RESUME_SUPPRESS_MS } from "../lib/zoomPan";
 
 export type TimeUpdateCallback = (currentTime: number) => void;
 export type FinishCallback = () => void;
+export type ScrollChangeCallback = (minPxPerSec: number, scrollTime: number) => void;
 
 export class AudioEngine {
   vocals: WaveSurfer | null = null;
@@ -27,6 +29,13 @@ export class AudioEngine {
   private _takeAudioOffset = 0;
   // Whether the take WaveSurfer is currently playing (managed by window sync)
   private _takeIsPlaying = false;
+  // Take rail container, retained so zoom/pan can re-resize it later
+  private _takeContainer: HTMLElement | null = null;
+  // Timeline zoom/pan
+  private _minPxPerSec = 1;
+  private _scrollTime = 0;
+  private _lastManualScrollAt = 0;
+  private _scrollUpdateCb: ScrollChangeCallback | null = null;
   // Exercise timer — used when no song is loaded (free exercise mode)
   private _exerciseMode = false;
   private _exerciseStartAt = 0;   // performance.now() at last resume
@@ -59,6 +68,9 @@ export class AudioEngine {
       barRadius: 2,
       normalize: true,
       interact: true,
+      hideScrollbar: true,
+      autoScroll: false,
+      autoCenter: false,
     };
 
     this.vocals = WaveSurfer.create({
@@ -270,6 +282,9 @@ export class AudioEngine {
       barRadius: 2,
       normalize: true,
       interact: true,
+      hideScrollbar: true,
+      autoScroll: false,
+      autoCenter: false,
       container,
       url,
     });
@@ -287,21 +302,14 @@ export class AudioEngine {
     this._takeOffset      = startOffset;
     this._takeDuration    = this.take.getDuration();
     this._takeAudioOffset = audioOffset;
+    this._takeContainer   = container;
 
     // Constrain the container to the correct time window so the waveform
-    // lines up visually with the other tracks (vocals, instrumental).
-    // Read railWidth BEFORE resizing so the ratio calculation uses the full width.
-    // setOptions({ width }) forces WaveSurfer to redraw — more reliable than
-    // relying on its ResizeObserver to pick up the CSS change.
-    if (this._duration > 0 && this._takeDuration > 0) {
-      const railWidth      = container.offsetWidth;
-      const playableDur    = this._takeDuration - audioOffset;
-      const widthPx        = Math.round((playableDur / this._duration) * railWidth);
-      const marginPx       = Math.round((startOffset / this._duration) * railWidth);
-      container.style.marginLeft = `${marginPx}px`;
-      container.style.width      = `${widthPx}px`;
-      this.take.setOptions({ width: widthPx });
-    }
+    // lines up visually with the other tracks (vocals, instrumental),
+    // in absolute pixels derived from the current zoom/scroll — not a
+    // fraction of the container, which only worked while zoom was fixed
+    // at "whole song fills the container".
+    this._resizeTakeTrack();
 
     this.take.on("interaction", (newTime) => {
       const instrTime = newTime - this._takeAudioOffset + this._takeOffset;
@@ -333,6 +341,60 @@ export class AudioEngine {
     this._takeDuration = 0;
     this._takeAudioOffset = 0;
     this._takeIsPlaying = false;
+    this._takeContainer = null;
+  }
+
+  // ─── Timeline zoom/pan ──────────────────────────────────────────────────
+
+  private _allInstances(): WaveSurfer[] {
+    return [this.vocals, this.instrumental, this.take].filter((ws): ws is WaveSurfer => ws !== null);
+  }
+
+  // Dynamic lower zoom bound: the minPxPerSec at which the whole song
+  // exactly fills the current container width (today's implicit
+  // fillParent-equivalent baseline).
+  getMinPxPerSec(): number {
+    const ref = this.instrumental ?? this.vocals;
+    if (!ref || this._duration <= 0) return 1;
+    const w = ref.getWidth();
+    return w > 0 ? w / this._duration : 1;
+  }
+
+  zoomAll(minPxPerSec: number, scrollTime: number): void {
+    this._minPxPerSec = minPxPerSec;
+    this._scrollTime = scrollTime;
+    for (const ws of this._allInstances()) {
+      ws.zoom(minPxPerSec);
+      ws.setScrollTime(scrollTime);
+    }
+    this._resizeTakeTrack();
+  }
+
+  setScrollAll(scrollTime: number): void {
+    this._scrollTime = scrollTime;
+    for (const ws of this._allInstances()) ws.setScrollTime(scrollTime);
+    this._resizeTakeTrack();
+  }
+
+  // Marks the moment of a user-driven wheel zoom/pan, so the auto-follow
+  // logic in the rAF tick doesn't immediately override a deliberate
+  // manual pan/zoom on the very next frame.
+  noteManualScrollInteraction(): void {
+    this._lastManualScrollAt = performance.now();
+  }
+
+  onScrollChange(cb: ScrollChangeCallback): void {
+    this._scrollUpdateCb = cb;
+  }
+
+  private _resizeTakeTrack(): void {
+    if (!this.take || !this._takeContainer || this._duration <= 0 || this._takeDuration <= 0) return;
+    const playableDur = this._takeDuration - this._takeAudioOffset;
+    const widthPx  = Math.round(playableDur * this._minPxPerSec);
+    const marginPx = Math.round((this._takeOffset - this._scrollTime) * this._minPxPerSec);
+    this._takeContainer.style.marginLeft = `${marginPx}px`;
+    this._takeContainer.style.width      = `${widthPx}px`;
+    this.take.setOptions({ width: widthPx });
   }
 
   // ─── Free Exercise: loaded-track playback (independent of vocals/instrumental/take) ───
@@ -540,6 +602,9 @@ export class AudioEngine {
     this._takeIsPlaying = false;
     this._exerciseMode = false;
     this._exerciseOffset = 0;
+    this._takeContainer = null;
+    this._minPxPerSec = 1;
+    this._scrollTime = 0;
   }
 
   private _startTimeUpdate(): void {
@@ -568,6 +633,29 @@ export class AudioEngine {
         } else if (!inWindow && this._takeIsPlaying) {
           this.take.pause();
           this._takeIsPlaying = false;
+        }
+      }
+
+      // Auto-follow: while zoomed in and playing, keep the playhead from
+      // scrolling out of view, without fighting a just-made manual pan/zoom.
+      const baseline = this.getMinPxPerSec();
+      if (
+        this._minPxPerSec > baseline + 1e-6 &&
+        performance.now() - this._lastManualScrollAt > FOLLOW_RESUME_SUPPRESS_MS
+      ) {
+        const ref = this.instrumental ?? this.vocals;
+        const viewportWidthPx = ref?.getWidth() ?? 0;
+        if (viewportWidthPx > 0) {
+          const visibleDur = viewportWidthPx / this._minPxPerSec;
+          const maxScroll = Math.max(0, this._duration - visibleDur);
+          const rightMargin = this._scrollTime + visibleDur * FOLLOW_MARGIN_RATIO;
+          if (time > rightMargin) {
+            this.setScrollAll(clamp(this._scrollTime + (time - rightMargin), 0, maxScroll));
+            this._scrollUpdateCb?.(this._minPxPerSec, this._scrollTime);
+          } else if (time < this._scrollTime) {
+            this.setScrollAll(clamp(time - visibleDur * (1 - FOLLOW_MARGIN_RATIO), 0, maxScroll));
+            this._scrollUpdateCb?.(this._minPxPerSec, this._scrollTime);
+          }
         }
       }
 
