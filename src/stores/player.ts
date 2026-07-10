@@ -5,6 +5,7 @@ import type { Song, Take } from "../lib/types";
 import { saveTake, listTakes, deleteTakeApi, renameTakeApi, pitchShiftSong, saveExerciseTake, setMetronomeOffsetApi } from "../lib/tauri";
 import type { ExerciseTake } from "../lib/types";
 import { useSettingsStore } from "./settings";
+import { useAnalysisStore } from "./analysis";
 
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
@@ -654,6 +655,11 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const s = get();
     if (s.isRecording || s.isMonitoring) return;
 
+    // Clear any live pitch trace left over from a previous monitor/recording
+    // session — DualTuner's own clear runs on its effect cleanup, which is
+    // skipped when it unmounts in the same render that stops monitoring.
+    useAnalysisStore.getState().clearLivePitch();
+
     const eng = getEngine();
     try {
       monitorStream = await navigator.mediaDevices.getUserMedia({
@@ -717,6 +723,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       console.warn("[monitor] setOutputDevice on stop failed:", e);
     }
     set({ isMonitoring: false });
+    useAnalysisStore.getState().clearLivePitch();
   },
 
   startRecording: async () => {
@@ -725,6 +732,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
     // Stop monitoring before opening the recorder's mic stream
     if (get().isMonitoring) await get().stopMonitoring();
+
+    // Clear any leftover live pitch trace (e.g. a monitor session that never
+    // mounted DualTuner) before this recording starts accumulating its own.
+    useAnalysisStore.getState().clearLivePitch();
 
     // Pause and capture position before getUserMedia — the audio session
     // reconfigures when the mic opens, which can stall already-playing elements.
