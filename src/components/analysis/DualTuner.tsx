@@ -22,6 +22,7 @@ function centsToX(c: number): number {
 export default function DualTuner() {
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
+  const isPlaying    = usePlayerStore((s) => s.isPlaying);
   const currentTime  = usePlayerStore((s) => s.currentTime);
   const songPitch    = useAnalysisStore((s) => s.songPitch);
   const takePitch    = useAnalysisStore((s) => s.takePitch);
@@ -42,7 +43,11 @@ export default function DualTuner() {
   useEffect(() => { clearLiveRef.current = clearLivePitch; },   [clearLivePitch]);
 
   useEffect(() => {
-    const isActive = isRecording || isMonitoring;
+    // Monitoring alone isn't enough — while paused, currentTime is frozen, so a
+    // running detector would keep appending points at the same time, painting a
+    // stale smear on the piano roll instead of a trace. Recording always implies
+    // isPlaying (see stores/player.ts), so this only changes monitor-only behavior.
+    const isActive = isRecording || (isMonitoring && isPlaying);
     if (!isActive) {
       if (detectorRef.current) { detectorRef.current.stop(); detectorRef.current = null; }
       cancelAnimationFrame(rafRef.current);
@@ -80,13 +85,13 @@ export default function DualTuner() {
     rafRef.current = requestAnimationFrame(tick);
 
     return () => { rafActive = false; cancelAnimationFrame(rafRef.current); };
-  }, [isRecording, isMonitoring]);
+  }, [isRecording, isMonitoring, isPlaying]);
 
   // ─── derive display values ────────────────────────────────────────────────
 
   let cents: number | null = null;
 
-  if (isRecording || isMonitoring) {
+  if (isRecording || (isMonitoring && isPlaying)) {
     cents = liveCents;
   } else if (takePitch.length > 0) {
     const tp = pitchAtTime(takePitch, currentTime);

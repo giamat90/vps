@@ -371,9 +371,12 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
           );
         } else if (s.isPlaying) {
           if (s.punchLoop && s.punchIn !== null) {
-            // Loop: jump back to punch-in and keep playing
+            // Loop: jump back to punch-in and keep playing. Clear the monitor
+            // trace so each pass through the loop starts a fresh ribbon instead
+            // of overlaying every previous pass on the piano roll.
             eng.seekTo(s.punchIn);
             set({ currentTime: s.punchIn });
+            useAnalysisStore.getState().clearLivePitch();
           } else {
             // Stop and rewind to punch-in
             eng.pause();
@@ -1047,3 +1050,15 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     );
   },
 }));
+
+// While monitoring (not recording), a paused playhead means currentTime is frozen —
+// DualTuner's detector would otherwise keep appending points at the same time,
+// painting a stale smear on the piano roll. isPlaying can flip to false via many
+// call sites (pause, stop, punch-out, onFinish, pauseExerciseTrack, …), so this is
+// centralized here rather than duplicated at each one; DualTuner's own effect
+// mirrors this for immediate UI reactivity while it's mounted.
+usePlayerStore.subscribe((state, prevState) => {
+  if (prevState.isPlaying && !state.isPlaying && state.isMonitoring) {
+    useAnalysisStore.getState().clearLivePitch();
+  }
+});

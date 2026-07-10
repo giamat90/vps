@@ -159,13 +159,16 @@ Starts recording via `startRecording()`. If recording is already active, clickin
 
 ### MonitorButton
 
-Toggles live mic monitoring via `startMonitoring()` / `stopMonitoring()`. Displays a pulsing blue circle while `isMonitoring` is true. Disabled (grayed out) while `isRecording` is true. Starting a recording automatically stops monitoring first.
+Toggles live mic monitoring via `startMonitoring()` / `stopMonitoring()`. Displays a pulsing blue circle while `isMonitoring` is true — this stays true across pause/play; the button reflects "mic session open", not "trace visible". Disabled (grayed out) while `isRecording` is true. Starting a recording automatically stops monitoring first.
 
-When monitoring is active:
+When monitoring is active **and the track is playing** (`isMonitoring && isPlaying`):
 - Microphone stream is opened (same `selectedDeviceId` as recording)
 - Windows WASAPI output routing is pinned (same fix as `startRecording`)
 - Live pitch flows into the piano roll orange ribbon, piano keyboard highlight, and DualTuner needle
-- Nothing is saved — the mic stream and live pitch data are cleared on stop
+
+While monitoring but **paused** (`isMonitoring && !isPlaying`), the mic stream stays open (button stays lit) but no pitch is captured or shown — `currentTime` is frozen while paused, so a still-running detector would otherwise keep appending points at that one frozen time, painting a stale smear instead of a trace. `DualTuner`'s effect is keyed on `isRecording || (isMonitoring && isPlaying)` (see [DualTuner](#dualtuner)) so it tears down its detector and clears `livePitch` the moment playback pauses, and starts a fresh trace when play resumes.
+
+Nothing is saved — `startMonitoring()`/`stopMonitoring()` in `stores/player.ts` call `useAnalysisStore.getState().clearLivePitch()` directly (start *and* stop), so the trace is wiped even if the analysis panel/DualTuner isn't mounted at the moment monitoring toggles; `startRecording()` does the same before opening its own stream. A third guard — a `usePlayerStore.subscribe()` at the bottom of `stores/player.ts` — clears `livePitch` on any `isPlaying: true → false` transition while `isMonitoring` is true, regardless of which of the many pause/stop call sites (`pause`, `stop`, punch-out, `onFinish`, `pauseExerciseTrack`, …) caused it. Don't rely on `DualTuner`'s effect alone for correctness — it only clears while it stays mounted across the transition; the store-level guards are what make clearing unconditional.
 
 ### TempoControl
 
@@ -274,7 +277,7 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 1. Lane backgrounds — black-key rows slightly darker, C-octave boundaries marked with a brighter rule
 2. Song pitch ribbon — `rgba(74,158,255,0.88)` thick polyline following SRH pitch data; line breaks on gaps > 80ms or confidence < 0.5
 3. Take pitch ribbon — `rgba(233,69,96,0.92)` same style, drawn over the song ribbon
-4. Live pitch ribbon — `rgba(255,140,30,0.9)` drawn during recording/monitoring from autocorrelation readings accumulated in `livePitch[]` (analysis store); disappears when mic goes inactive
+4. Live pitch ribbon — `rgba(255,140,30,0.9)` drawn while recording, or while monitoring *and playing*, from autocorrelation readings accumulated in `livePitch[]` (analysis store); disappears the instant recording/monitoring stops, or the track pauses while only monitoring (see [DualTuner](#dualtuner))
 5. Playhead — dashed vertical line at canvas center
 6. Note label — current note name(s) shown right-aligned at top-right of the roll (e.g. "A4 G#4")
 7. Piano key strip — drawn last so it sits on top of any ribbon that bleeds into the left column; key color priority: live (orange) > take (red) > song (blue)
@@ -338,7 +341,7 @@ Spectrum frames are coarse (~20 fps) relative to rAF, so the draw loop does a ne
 
 ### DualTuner
 
-Real-time pitch gauge. Active whenever `isRecording || isMonitoring`.
+Real-time pitch gauge. Active whenever `isRecording || (isMonitoring && isPlaying)` — monitoring alone isn't enough; the track must also be playing. While monitoring but paused, `currentTime` is frozen, so an active detector would keep appending points at that single time instead of tracing a moving pitch line. `isRecording` always implies `isPlaying` (see `stores/player.ts`), so this only changes behavior for the monitor-only case.
 
 **Form factor:** Thin SVG horizontal bar (`viewBox="0 0 300 8"`, `preserveAspectRatio="none"`) — stretches to full container width. No note labels, no ticks — pure color zones only. Range: ±50 cents. Zones: green ±0–15 ct, yellow ±15–30 ct, red >±30 ct. Needle is a 3 px rect; centre mark at x=150.
 
@@ -354,7 +357,11 @@ Real-time pitch gauge. Active whenever `isRecording || isMonitoring`.
 
 Opening a second `getUserMedia` to the same device caused silent failures on Windows WASAPI (exclusive-mode endpoints reject a second client). By reusing the existing stream there is no device conflict and no extra permission prompt.
 
-**Pitch detection:** A `PitchDetector` (autocorrelation, 2048-sample FFT) is created on each activation, connects the stream to a Web Audio `AnalyserNode`, and runs a `requestAnimationFrame` loop calling `getCurrentPitch()`. Detected frequencies are pushed into `livePitch[]` in the analysis store and shown on the needle gauge. On deactivation, the `AudioContext` is closed and `livePitch` is cleared; the underlying media stream is **not** stopped (it is owned externally).
+**Pitch detection:** A `PitchDetector` (autocorrelation, 2048-sample FFT) is created on each activation, connects the stream to a Web Audio `AnalyserNode`, and runs a `requestAnimationFrame` loop calling `getCurrentPitch()`. Detected frequencies are pushed into `livePitch[]` in the analysis store and shown on the needle gauge. On deactivation (recording/monitoring stops, *or* playback pauses while only monitoring), the `AudioContext` is closed and DualTuner's own effect also calls `clearLivePitch()` — but that only fires if DualTuner stays mounted through the transition. The authoritative clears live in `stores/player.ts`:
+- `startMonitoring`/`stopMonitoring`/`startRecording` call `clearLivePitch()` directly, so the trace is wiped even when the analysis panel (and DualTuner with it) unmounts in the same render that stops monitoring.
+- A `usePlayerStore.subscribe()` clears `livePitch` on every `isPlaying: true → false` transition while `isMonitoring` is true, regardless of which pause/stop call site triggered it — so a paused (not stopped) monitor session doesn't leave a frozen-time smear even if DualTuner is unmounted at that instant.
+
+Don't rely on DualTuner's own effect for correctness — it's a UI-reactivity convenience for while it's mounted, not the source of truth. The underlying media stream is **not** stopped by DualTuner (it is owned externally).
 
 ### PianoKeyboard
 

@@ -37,10 +37,12 @@ When `punchIn` is set, pressing **Play** always seeks to `punchIn` first (`toggl
 ```ts
 if (punchOut !== null && time >= punchOut) {
   if (isRecording)       → stopRecording()           // save take
-  else if (punchLoop)    → eng.seekTo(punchIn)        // loop: jump back
+  else if (punchLoop)    → eng.seekTo(punchIn) + clearLivePitch()  // loop: jump back
   else                   → pause + seekTo(punchIn)    // stop and rewind
 }
 ```
+
+**Monitor trace on loop:** the `punchLoop` branch also clears `useAnalysisStore`'s `livePitch` on every jump back to `punchIn`, so a monitored pitch trace on the piano roll restarts fresh each pass through the loop instead of overlaying every previous pass into one smear. This is on top of (not a replacement for) the pause/stop clearing described in `wiki/components.md`'s [DualTuner](components.md#dualtuner) section — looping keeps `isPlaying` continuously true so those guards don't fire on their own here.
 
 ## getUserMedia Constraints
 
