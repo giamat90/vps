@@ -1,7 +1,7 @@
 {
     "$schema":  "../node_modules/@tauri-apps/cli/config.schema.json",
     "productName":  "Vocal Practice Studio",
-    "version":  "0.1.35",
+    "version":  "0.1.36",
     "identifier":  "com.giacominomatzeu.vps",
     "build":  {
                   "frontendDist":  "../dist",
@@ -18,7 +18,8 @@
                                     "minWidth":  900,
                                     "minHeight":  600,
                                     "resizable":  true,
-                                    "fullscreen":  false
+                                    "fullscreen":  false,
+                                    "maximized":  true
                                 }
                             ],
                 "security":  {

@@ -153,6 +153,12 @@ Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
 
 Slimmed down to play/pause/stop + elapsed/total time — volume sliders were moved onto each waveform track's own row (see `Waveform` below). Sits inside the sticky `practice-room__topbar` (see `PracticeRoom` layout).
 
+### LoopButton
+
+Standalone component (`src/components/player/LoopButton.tsx`), self-contained like `RecordButton`/`MonitorButton` — reads `punchIn`/`punchOut`/`punchLoop`/`isRecording`/`setPunchLoop` directly from `usePlayerStore`, no props. Always rendered (unlike the old in-ruler buttons it replaced, which disappeared entirely with no region set) — a circular `⟳` toggle, red-tinted (`.loop-btn--active`, using the same `#e94560` accent as the punch-region highlight) when `punchLoop` is true, `disabled` (dimmed via `.loop-btn:disabled`, `opacity: 0.4`) whenever there's no punch region (`punchIn === null || punchOut === null`) or while recording — so the button stays put as a stable landmark in the topbar instead of shifting the row layout in and out.
+
+Rendered in `PracticeRoom.tsx`'s topbar directly after `<TransportControls />`, so it reads as part of the play/stop cluster rather than living on the ruler. Moved here (2026-07-10) from two separate in-ruler buttons — `TimeRuler.tsx` and `PianoRoll.tsx` each used to render their own absolutely-positioned `⟳` (`.time-ruler__loop-btn` / `.piano-roll__loop-btn`) tied to the same `punchLoop` state; both were removed since a single toggle next to the transport is more discoverable than a small button competing for space on the ruler, and de-duplicates the two copies into one. `.loop-btn` in `global.css` is a fresh rule (not a rename of the old ones) sized to match `.transport__btn` (`2.25rem` circular) since it now sits in that same flex row.
+
 ### RecordButton
 
 Starts recording via `startRecording()`. If recording is already active, clicking stops via `stopRecording()`. Displays a pulsing red indicator while `isRecording` is true.
@@ -197,8 +203,9 @@ Canvas strip above the waveform tracks (`2.8rem` tall). Shows time ticks at adap
 - **Click + drag** on empty space → draw a new punch region
 - **Hover / drag near In or Out handle** (±12 px) → cursor becomes `ew-resize`; drag moves only that boundary, the other stays fixed
 - **Click** (< 0.5 s drag) → clear punch region and reset loop toggle
-- **⟳ button** (appears at right edge when region is set) → toggle `punchLoop`; red when active
 - **Drag the blue downbeat marker** (dashed line + flag at the bottom edge) → move the metronome's phase-lock anchor; checked with priority over the punch-region modes above (see [Metronome: Downbeat offset](#tempocontrol))
+
+Toggling the loop itself is done from [LoopButton](#loopbutton) next to the transport controls, not from a button on this ruler (moved 2026-07-10; see that section for why).
 
 The region is drawn as a red band on the canvas with I-beam caps at the handles. Each waveform track also shows a translucent `PunchOverlay` div, now positioned in pixels (`left`/`width` derived from `minPxPerSec`/`scrollTime`, not the track's raw width — see [Timeline Zoom/Pan](#timeline-zoompan) below) so it stays aligned with the waveform under zoom/pan.
 
@@ -250,7 +257,7 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 
 ```
 ┌─ piano-roll__ruler-wrap (2.4rem) ──────────────────────┐
-│ [⟳] time ruler: ticks · punch region · center playhead │  ← ⟳ loop button at upper-left
+│     time ruler: ticks · punch region · center playhead │
 └────────────────────────────────────────────────────────┘
 ┌─ canvas (15rem) ───────────────────────────────────────┐
 │ |── 36px piano ──|──── scrolling pitch roll ───────── │
@@ -265,8 +272,9 @@ VoceVista-inspired scrolling pitch display. Renders at native frame rate via a `
 - Shows the current 8-second window with absolute time tick marks
 - Punch region overlay (same `punchIn`/`punchOut` store values as the waveform TimeRuler)
 - Drag on empty area → draw new punch region; drag near handle → move that boundary; click → clear
-- Loop toggle button (⟳) appears at the **upper-left** corner of the ruler (over the piano-key strip area) when a region is set; uses `.piano-roll__loop-btn` modifier to override the default right-aligned position
 - Coordinates use `capturedT0` from mousedown so the window stays stable during a drag
+
+Loop toggling for this region (and the waveform's identical one — same `punchIn`/`punchOut`/`punchLoop` store fields) is done from [LoopButton](#loopbutton) next to the transport controls; this ruler no longer renders its own `⟳` (moved 2026-07-10, deduplicating what used to be two separate loop buttons — one here, one on `TimeRuler` — into one).
 
 **Drag-to-seek (main canvas):**
 - Horizontal drag on the pitch roll area seeks the playhead and syncs all tracks

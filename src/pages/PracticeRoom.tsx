@@ -3,6 +3,7 @@ import Waveform from "../components/player/Waveform";
 import DownloadAllButton from "../components/player/DownloadAllButton";
 import ExportMixButton from "../components/player/ExportMixButton";
 import TransportControls from "../components/player/TransportControls";
+import LoopButton from "../components/player/LoopButton";
 import TempoControl from "../components/player/TempoControl";
 import KeyTranspose from "../components/player/KeyTranspose";
 import OutputSelector from "../components/player/OutputSelector";
@@ -93,6 +94,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
       <div className="practice-room__topbar">
         <TransportControls />
+        <LoopButton />
         <TempoControl detectedBpm={song.detectedBpm} />
         <div className="practice-room__topbar-devices">
           <div className="practice-room__io-group">

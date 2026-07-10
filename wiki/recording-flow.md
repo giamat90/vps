@@ -16,9 +16,10 @@ The `TimeRuler` (canvas strip above the waveforms) is the punch region selector:
 | **Click + drag on In handle** (±12 px) | Move only the In boundary; Out stays fixed |
 | **Click + drag on Out handle** (±12 px) | Move only the Out boundary; In stays fixed |
 | **Click** (drag < 0.5 s) | Clear the punch region and reset loop toggle |
-| **⟳ button** (right edge of ruler) | Toggle region loop on/off |
 
 The cursor changes to `ew-resize` when hovering over a handle and `crosshair` elsewhere. The ruler and track overlays are read-only during recording.
+
+The loop toggle itself is **not** a ruler button — it's `LoopButton.tsx` (`src/components/player/`), rendered next to `TransportControls` in `PracticeRoom.tsx`'s topbar (see `wiki/components.md#loopbutton`). It used to be an in-ruler `⟳` button (duplicated once more on `PianoRoll`'s own ruler); both were removed in favor of one button beside play/stop, 2026-07-10.
 
 Punch state in the player store (memory only, not persisted):
 

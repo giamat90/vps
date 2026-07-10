@@ -318,12 +318,10 @@ export default function PianoRoll() {
   const exerciseMode     = usePlayerStore((s) => s.exerciseMode);
   const punchIn          = usePlayerStore((s) => s.punchIn);
   const punchOut         = usePlayerStore((s) => s.punchOut);
-  const punchLoop        = usePlayerStore((s) => s.punchLoop);
   const duration         = usePlayerStore((s) => s.duration);
   const setPunchIn       = usePlayerStore((s) => s.setPunchIn);
   const setPunchOut      = usePlayerStore((s) => s.setPunchOut);
   const clearPunch       = usePlayerStore((s) => s.clearPunch);
-  const setPunchLoop     = usePlayerStore((s) => s.setPunchLoop);
   const seek             = usePlayerStore((s) => s.seek);
 
   const drawRef = useRef<() => void>(() => {});
@@ -599,15 +597,6 @@ export default function PianoRoll() {
           onMouseLeave={onRulerMouseLeave}
           style={{ cursor: isRecording ? "default" : "crosshair" }}
         />
-        {punchIn !== null && punchOut !== null && !isRecording && (
-          <button
-            className={`time-ruler__loop-btn piano-roll__loop-btn${punchLoop ? " time-ruler__loop-btn--active" : ""}`}
-            title={punchLoop ? "Disable loop" : "Loop region"}
-            onClick={() => setPunchLoop(!punchLoop)}
-          >
-            ⟳
-          </button>
-        )}
       </div>
       <canvas
         ref={canvasRef}

@@ -626,41 +626,6 @@ body,
   border-radius: 4px 4px 0 0;
 }
 
-.time-ruler__loop-btn {
-  position: absolute;
-  top: 50%;
-  right: 0.3rem;
-  transform: translateY(-50%);
-  background: transparent;
-  border: 1px solid var(--text-secondary);
-  border-radius: 0.2rem;
-  color: var(--text-secondary);
-  font-size: 0.75rem;
-  line-height: 1;
-  padding: 0.1rem 0.3rem;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s, background 0.15s;
-}
-
-.time-ruler__loop-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--text-primary);
-}
-
-.time-ruler__loop-btn--active {
-  color: #e94560;
-  border-color: #e94560;
-  background: rgba(233, 69, 96, 0.12);
-}
-
-/* Piano roll ruler: loop button sits in upper-left corner over the key strip */
-.piano-roll__loop-btn {
-  right: auto;
-  left: 0.3rem;
-  top: 0.25rem;
-  transform: none;
-}
-
 /* Wrapper that gives position:relative context for the punch overlay.
    overflow:hidden clips the take rail and punch overlay when they extend
    beyond the visible row under timeline zoom/pan. */
@@ -745,6 +710,44 @@ body,
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
   min-width: 90px;
+}
+
+/* Loop toggle — lives beside TransportControls, not the ruler; sized to match
+   .transport__btn so the two read as one cluster. */
+.loop-btn {
+  background: var(--bg-surface);
+  border: none;
+  color: var(--text-secondary);
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  line-height: 1;
+  transition: background 0.15s, color 0.15s;
+}
+
+.loop-btn:hover:not(:disabled) {
+  background: var(--accent);
+  color: var(--text-primary);
+}
+
+.loop-btn--active {
+  color: #e94560;
+  background: rgba(233, 69, 96, 0.16);
+}
+
+.loop-btn--active:hover:not(:disabled) {
+  background: rgba(233, 69, 96, 0.28);
+}
+
+.loop-btn:disabled {
+  color: var(--text-secondary);
+  opacity: 0.4;
+  cursor: default;
 }
 
 /* Tempo Control */
