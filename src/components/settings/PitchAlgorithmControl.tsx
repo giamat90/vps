@@ -2,11 +2,11 @@ import { useSettingsStore } from "../../stores/settings";
 import type { PitchAlgorithm } from "../../lib/types";
 
 const DESCRIPTIONS: Record<PitchAlgorithm, string> = {
-  srh: "Default — spectral, robust on strong chest voices.",
+  srh: "Spectral harmonic summation — robust on strong chest voices.",
   pyin: "Classic autocorrelation-based tracker.",
   hps: "Harmonic Product Spectrum — simple, can jitter on weak harmonics.",
   crepe: "Deep-learning tracker — smoother on sustained notes, slower to process.",
-  praat: "Praat autocorrelation (Boersma) — the voice-pedagogy standard, VoceVista-style fundamental preference.",
+  praat: "Default — Praat autocorrelation (Boersma), the voice-pedagogy standard with VoceVista-style fundamental preference.",
 };
 
 function PitchAlgorithmControl() {
@@ -24,11 +24,11 @@ function PitchAlgorithmControl() {
         value={pitchAlgorithm}
         onChange={(e) => setPitchAlgorithm(e.target.value as PitchAlgorithm)}
       >
+        <option value="praat">Praat</option>
         <option value="srh">SRH</option>
         <option value="pyin">pYIN</option>
         <option value="hps">HPS</option>
         <option value="crepe">CREPE</option>
-        <option value="praat">Praat</option>
       </select>
       <p className="pitch-algorithm-control__desc">{DESCRIPTIONS[pitchAlgorithm]}</p>
     </div>

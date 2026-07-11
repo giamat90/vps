@@ -452,10 +452,10 @@ PITCH_ALGORITHMS = {
 def get_pitch_fn(algorithm: str | None):
     """
     Look up the pitch-detection function for a user-selected algorithm.
-    Defaults to SRH for unknown/absent values, matching the previous
-    hardcoded behavior for any caller that doesn't pass `algorithm`.
+    Defaults to Praat for unknown/absent values — promoted over SRH after
+    the VoceVista-parity evaluation (see detect_pitch_praat's docstring).
     """
-    return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
+    return PITCH_ALGORITHMS.get(algorithm or "praat", detect_pitch_praat)
 
 
 def _detect_key(pitch_hz: np.ndarray, confidence: np.ndarray) -> str:
@@ -622,7 +622,7 @@ def process(
     on_progress=None,
     high_quality: bool = False,
     skip_separation: bool = False,
-    pitch_algorithm: str = "srh",
+    pitch_algorithm: str = "praat",
 ) -> dict:
     """Full processing pipeline for an uploaded song.
 
@@ -634,8 +634,8 @@ def process(
       and analyze the file directly. vocals.wav and instrumental.wav are
       written as identical copies of the input so the rest of the pipeline
       (AudioEngine, pitch_shift_song, Waveform) needs no special-casing.
-    pitch_algorithm: one of "srh" (default), "pyin", "hps", "crepe" — see
-      PITCH_ALGORITHMS / get_pitch_fn.
+    pitch_algorithm: one of "praat" (default), "srh", "pyin", "hps", "crepe" —
+      see PITCH_ALGORITHMS / get_pitch_fn.
     """
     if on_progress is None:
         on_progress = lambda v, s: None

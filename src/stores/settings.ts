@@ -7,7 +7,7 @@ interface SettingsState {
 }
 
 const VALID_ALGORITHMS: PitchAlgorithm[] = ["srh", "pyin", "hps", "crepe", "praat"];
-const DEFAULT_ALGORITHM: PitchAlgorithm = "srh";
+const DEFAULT_ALGORITHM: PitchAlgorithm = "praat";
 
 function _loadSettings(): { pitchAlgorithm: PitchAlgorithm } {
   try {
