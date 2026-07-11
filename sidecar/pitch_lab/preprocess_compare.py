@@ -19,7 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from algorithms import srh_production, pyin_production, first_peak_production
+from algorithms import srh_production, pyin_production, first_peak_production, praat_production
 from preprocess import apply_pipeline, DEFAULT_PIPELINE, STEPS
 
 LAB_DIR = Path(__file__).resolve().parent
@@ -29,6 +29,7 @@ ALGORITHMS = {
     "srh": ("SRH", srh_production),
     "pyin": ("pYIN", pyin_production),
     "firstpeak": ("First-Peak", first_peak_production),
+    "praat": ("Praat", praat_production),
 }
 
 

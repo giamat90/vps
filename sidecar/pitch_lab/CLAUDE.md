@@ -12,18 +12,26 @@ here is provisional until validated across multiple real tracks and manually por
 README's "Port confirmed fixes back manually" step. Don't skip straight to editing `processor.py`
 from something found only in one track's plot.
 
-## Current state (as of 2026-07-05)
+## Current state (as of 2026-07-11)
 
-- **Tools built:** `algorithms.py` (SRH/pYIN/HPS/CREPE production wrappers — all four are shipped,
-  user-selectable in the app's Settings panel — + `firstpeak` naive baseline + `srh_variant` for
-  parameter sweeps), `visualize.py`, `spectrogram_mpl.py` / `spectrogram_interactive.py`, `sonify.py`,
-  `compare.py`, `preprocess.py` / `preprocess_compare.py`, `postprocess.py` / `postprocess_compare.py`,
-  `batch_report.py`.
+- **Tools built:** `algorithms.py` (SRH/pYIN/HPS/CREPE/Praat production wrappers — all five are
+  shipped, user-selectable in the app's Settings panel — + `firstpeak` naive baseline +
+  `srh_variant`/`praat_variant` for parameter sweeps), `visualize.py`, `spectrogram_mpl.py` /
+  `spectrogram_interactive.py`, `sonify.py`, `compare.py`, `preprocess.py` / `preprocess_compare.py`,
+  `postprocess.py` / `postprocess_compare.py`, `batch_report.py`.
 - **Real tracks in `tracks/`** (gitignored, not in this listing but present on disk): "Alice In Chains
   – Them Bones – Vocals.wav" (66.6% SRH/pYIN disagreement — pYIN fails badly on this raspy vocal) and
   "like a stone voice.mp3" (21.7% — comparatively mild, cleaner Chris Cornell vocal).
-- **Convention:** always run/plot all three algorithms (SRH, pYIN, First-Peak), not just SRH/pYIN —
-  `compare.py` overlays all three now; don't silently drop First-Peak from new tools for convenience.
+- **Convention:** always run/plot all six algorithms (SRH, pYIN, First-Peak, HPS, CREPE, Praat), not
+  just SRH/pYIN — don't silently drop First-Peak (the zero-harmonic-logic floor) or any newer
+  algorithm from new tools for convenience.
+- **Praat (`detect_pitch_praat`, 2026-07-11):** added via `praat-parselmouth` on the
+  `feature/pitch-praat` branch because VoceVista out-tracks our detectors on Demucs-split vocals and
+  its documented behavior profile matches Praat's autocorrelation method (Boersma 1993, octave-cost =
+  "prefer harmonic fundamental" + Viterbi path finding). Praat defaults kept in production; sweeps go
+  through `praat_variant()` (`octave_cost` and `voicing_threshold` are the interesting knobs). Praat
+  output skips `_smooth_voiced` — its path finding is the smoothing pass (same reasoning as pYIN's
+  HMM).
 
 ## Key findings so far (see README for full tables/detail)
 

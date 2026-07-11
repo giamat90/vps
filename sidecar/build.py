@@ -42,6 +42,10 @@ args = [
     "--hidden-import=torch",
     "--hidden-import=torchaudio",
     "--hidden-import=torchcrepe",
+    # parselmouth is a single native extension (Praat embedded as a .pyd);
+    # collect-all grabs the binary since static analysis can't see into it.
+    "--hidden-import=parselmouth",
+    "--collect-all=parselmouth",
     "--collect-data=demucs",
     # torchcrepe ships its pretrained weights (tiny/full) as package data
     # (assets/*.pth) rather than a separate network download, so bundling

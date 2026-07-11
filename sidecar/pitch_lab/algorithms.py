@@ -1,13 +1,14 @@
 """
 Pitch-detection algorithms available for comparison in the lab.
 
-`srh_production`, `pyin_production`, `hps_production`, and `crepe_production`
-call the exact functions shipped in processor.py — no duplication, so
-results always reflect what's actually running in the app (all four are now
-user-selectable in the shipped Settings panel, not just SRH). `srh_variant`
-reimplements SRH with every constant exposed as a keyword argument, for A/B
-testing parameter changes before manually porting a winning combination back
-into processor.py.
+`srh_production`, `pyin_production`, `hps_production`, `crepe_production`,
+and `praat_production` call the exact functions shipped in processor.py — no
+duplication, so results always reflect what's actually running in the app
+(all five are user-selectable in the shipped Settings panel, not just SRH).
+`srh_variant` reimplements SRH with every constant exposed as a keyword
+argument, for A/B testing parameter changes before manually porting a winning
+combination back into processor.py; `praat_variant` does the same for every
+Boersma-algorithm knob parselmouth exposes.
 """
 import sys
 from pathlib import Path
@@ -19,7 +20,7 @@ import librosa
 from scipy.signal import find_peaks
 from scipy.signal.windows import chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
-from processor import detect_pitch_srh, detect_pitch, detect_pitch_hps, detect_pitch_crepe
+from processor import detect_pitch_srh, detect_pitch, detect_pitch_hps, detect_pitch_crepe, detect_pitch_praat
 
 
 def srh_production(audio: np.ndarray, sr: int) -> dict:
@@ -36,6 +37,61 @@ def hps_production(audio: np.ndarray, sr: int) -> dict:
 
 def crepe_production(audio: np.ndarray, sr: int) -> dict:
     return detect_pitch_crepe(audio, sr)
+
+
+def praat_production(audio: np.ndarray, sr: int) -> dict:
+    return detect_pitch_praat(audio, sr)
+
+
+def praat_variant(
+    audio: np.ndarray, sr: int, *,
+    time_step: float = 512 / 22050,
+    pitch_floor: float = 65.0,
+    pitch_ceiling: float = 1400.0,
+    max_number_of_candidates: int = 15,
+    very_accurate: bool = False,
+    silence_threshold: float = 0.03,
+    voicing_threshold: float = 0.45,
+    octave_cost: float = 0.01,
+    octave_jump_cost: float = 0.35,
+    voiced_unvoiced_cost: float = 0.14,
+) -> dict:
+    """
+    Parametrized wrapper over parselmouth's full Boersma-algorithm signature
+    (processor.py's detect_pitch_praat keeps Praat defaults). The interesting
+    knobs for the VoceVista comparison: `octave_cost` (raising it strengthens
+    the "prefer harmonic fundamental" pull toward lower candidates) and
+    `voicing_threshold` (raising it trades voiced coverage for confidence).
+    """
+    import parselmouth
+
+    snd = parselmouth.Sound(audio.astype(np.float64), sampling_frequency=sr)
+    pitch = snd.to_pitch_ac(
+        time_step=time_step,
+        pitch_floor=pitch_floor,
+        max_number_of_candidates=max_number_of_candidates,
+        very_accurate=very_accurate,
+        silence_threshold=silence_threshold,
+        voicing_threshold=voicing_threshold,
+        octave_cost=octave_cost,
+        octave_jump_cost=octave_jump_cost,
+        voiced_unvoiced_cost=voiced_unvoiced_cost,
+        pitch_ceiling=pitch_ceiling,
+    )
+
+    times = np.asarray(pitch.xs())
+    f0 = pitch.selected_array["frequency"].copy()
+    confidence = np.clip(pitch.selected_array["strength"], 0.0, 1.0)
+    voiced = f0 > 0
+    f0[~voiced] = 0.0
+    confidence[~voiced] = 0.0
+
+    return {
+        "times": times.tolist(),
+        "f0": f0.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": confidence.tolist(),
+    }
 
 
 def srh_variant(

@@ -1,5 +1,5 @@
 /** Pitch-extraction algorithm choice for the vocals stem (settings, global) */
-export type PitchAlgorithm = "srh" | "pyin" | "hps" | "crepe";
+export type PitchAlgorithm = "srh" | "pyin" | "hps" | "crepe" | "praat";
 
 /** Song in the library */
 export interface Song {

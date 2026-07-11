@@ -6,6 +6,7 @@ const DESCRIPTIONS: Record<PitchAlgorithm, string> = {
   pyin: "Classic autocorrelation-based tracker.",
   hps: "Harmonic Product Spectrum — simple, can jitter on weak harmonics.",
   crepe: "Deep-learning tracker — smoother on sustained notes, slower to process.",
+  praat: "Praat autocorrelation (Boersma) — the voice-pedagogy standard, VoceVista-style fundamental preference.",
 };
 
 function PitchAlgorithmControl() {
@@ -27,6 +28,7 @@ function PitchAlgorithmControl() {
         <option value="pyin">pYIN</option>
         <option value="hps">HPS</option>
         <option value="crepe">CREPE</option>
+        <option value="praat">Praat</option>
       </select>
       <p className="pitch-algorithm-control__desc">{DESCRIPTIONS[pitchAlgorithm]}</p>
     </div>

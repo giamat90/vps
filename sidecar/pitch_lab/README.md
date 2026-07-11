@@ -37,7 +37,7 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    ```powershell
    python pitch_lab\batch_report.py
    ```
-   Runs SRH + pYIN + First-Peak + HPS + CREPE on every track in `tracks/`, writes plots and
+   Runs SRH + pYIN + First-Peak + HPS + CREPE + Praat on every track in `tracks/`, writes plots and
    sonified audio to `results/`, and ranks tracks in `results/index.md` by how
    often SRH and pYIN disagree. High disagreement is a pointer to look
    closer, not a verdict — SRH was adopted specifically because pYIN loses
@@ -53,22 +53,23 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    python pitch_lab\compare.py pitch_lab\tracks\<name>.wav                # SRH vs pYIN overlaid on one axis
    ```
    `visualize.py` writes `<name>-spectrum-srh.png`, `<name>-spectrum-pyin.png`,
-   `<name>-spectrum-firstpeak.png`, `<name>-spectrum-hps.png`, and `<name>-spectrum-crepe.png` — each
-   shows that algorithm's F0 curve against the actual spectrogram, so you can see directly whether it's
-   sitting on the sung harmonic or has drifted onto a neighbor. `compare.py`'s `_compare.png` overlays
-   all five (SRH, pYIN, First-Peak, HPS, CREPE) on one axis, better for spotting *where* they diverge
-   rather than *why* — though its disagreement metric stays SRH-vs-pYIN specifically, since those two
-   were the original production candidates the metric was built to compare.
+   `<name>-spectrum-firstpeak.png`, `<name>-spectrum-hps.png`, `<name>-spectrum-crepe.png`, and
+   `<name>-spectrum-praat.png` — each shows that algorithm's F0 curve against the actual spectrogram,
+   so you can see directly whether it's sitting on the sung harmonic or has drifted onto a neighbor.
+   `compare.py`'s `_compare.png` overlays all six (SRH, pYIN, First-Peak, HPS, CREPE, Praat) on one
+   axis, better for spotting *where* they diverge rather than *why* — though its disagreement metric
+   stays SRH-vs-pYIN specifically, since those two were the original production candidates the metric
+   was built to compare.
 
    `sonify.py` writes `<name>-srh.wav`, `<name>-pyin.wav`, `<name>-firstpeak.wav`, `<name>-hps.wav`,
-   `<name>-crepe.wav`: original vocals in the left channel, a sine tone following that algorithm's
-   detected F0 in the right channel. Pan hard to compare — an octave error, a jump to the wrong
+   `<name>-crepe.wav`, `<name>-praat.wav`: original vocals in the left channel, a sine tone following
+   that algorithm's detected F0 in the right channel. Pan hard to compare — an octave error, a jump to the wrong
    harmonic, or pitch tracking through a breath/consonant will all be audible as the tone visibly
    disagreeing with what you hear.
 
-   **Available algorithms — all five are now user-selectable in the shipped app's Settings panel
-   (SRH/pYIN/HPS/CREPE) except First-Peak:** `srh` (default), `pyin`, `hps`, `crepe` (all production —
-   see `processor.py`'s `PITCH_ALGORITHMS` registry), plus `firstpeak` — a deliberately naive baseline
+   **Available algorithms — all six are now user-selectable in the shipped app's Settings panel
+   (SRH/pYIN/HPS/CREPE/Praat) except First-Peak:** `srh` (default), `pyin`, `hps`, `crepe`, `praat`
+   (all production — see `processor.py`'s `PITCH_ALGORITHMS` registry), plus `firstpeak` — a deliberately naive baseline
    that picks the first spectral peak above a threshold scanning up from `fmin`, with no harmonic
    reasoning at all. It's not a real candidate, but it's cheap to include everywhere and gives a "zero
    harmonic logic" floor to judge the others against, so every comparison tool in this lab
@@ -81,7 +82,11 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    voicing threshold, smoothing) exposed as a keyword argument. Write a
    throwaway script that calls `srh_variant(audio, sr, voicing_threshold=0.35)`
    etc. and re-run `visualize.py`-style plotting against it to see the effect
-   before committing to a change.
+   before committing to a change. `praat_variant()` is the same idea for the
+   Praat detector, exposing parselmouth's full Boersma signature — the two
+   knobs most relevant to the VoceVista comparison are `octave_cost` (higher =
+   stronger "prefer harmonic fundamental" pull toward lower candidates) and
+   `voicing_threshold`.
 
 4. **Try cleaning the track before detection (`preprocess.py` / `preprocess_compare.py`).**
    Aimed at Demucs separation artifacts (instrument/drum bleed), not generic denoising — see
@@ -96,7 +101,7 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
 
 5. **Clean up the detected pitch curve itself (`postprocess.py` / `postprocess_compare.py`).**
    This operates on the {times, f0, voiced, confidence} output, not the audio — detector-agnostic,
-   works the same on SRH/pYIN/First-Peak output.
+   works the same on SRH/pYIN/First-Peak/Praat output.
    ```powershell
    python pitch_lab\postprocess_compare.py pitch_lab\tracks\<name>.wav --algo pyin
    ```
@@ -180,7 +185,7 @@ can't tell a wrong-but-structured detection from a real one on its own.
 
 | File | Purpose |
 |---|---|
-| `algorithms.py` | Imports the real `detect_pitch_srh`/`detect_pitch` from `processor.py`, plus `srh_variant()` for parameter experiments and the `firstpeak` naive baseline |
+| `algorithms.py` | Imports the real `detect_pitch_srh`/`detect_pitch`/`detect_pitch_hps`/`detect_pitch_crepe`/`detect_pitch_praat` from `processor.py`, plus `srh_variant()`/`praat_variant()` for parameter experiments and the `firstpeak` naive baseline |
 | `preprocess.py` | Composable pre-detection cleaning steps (`trim`, `highpass`, `hpss`, `denoise`, `normalize`) aimed at Demucs bleed artifacts |
 | `preprocess_compare.py` | A/B: runs an algorithm before/after the cleaning pipeline, writes the cleaned wav + a comparison plot |
 | `postprocess.py` | Detector-agnostic pitch-curve cleanup: Hampel-filter outlier rejection + short-gap interpolation in cents space |
@@ -204,9 +209,22 @@ can't tell a wrong-but-structured detection from a real one on its own.
 - Only informal validation exists so far (VoceVista comparison on one
   Chris Cornell track) — there's no accuracy dataset. This lab is meant to
   start closing that gap across a wider range of voice types/timbres.
+- **Praat provenance (2026-07-11):** `praat` (`detect_pitch_praat`, via
+  `praat-parselmouth`) was added after concluding VoceVista tracks split
+  vocals better than our detectors. VoceVista's algorithm is unpublished, but
+  its documented behavior (time-domain detector separate from the FFT, a
+  "prefer harmonic fundamental" option, pitch floor/ceiling, averaging
+  window) matches Praat's autocorrelation method (Boersma 1993) — octave-cost
+  candidate weighting + Viterbi path finding — and `Researches/1912.12609v1`
+  found Praat gives the best voicing determination on singing voice. Praat
+  output is NOT run through `_smooth_voiced` (its path finding is already the
+  smoothing pass, same reasoning as pYIN's HMM).
 - An unmerged branch `feature/algorithm-improvements` has a pending
   `preferHarmonicFundamental` evaluation — check whether findings from this
-  lab overlap with it before starting from scratch.
+  lab overlap with it before starting from scratch. The unmerged
+  `feature/pitch-autocorr-ab` branch holds earlier SRH candidate-selection /
+  Viterbi experiments on the same problem — related prior art, different
+  approach from the Praat port.
 - `analysis.py` (take/recording analysis) actually calls `detect_pitch_srh`
   too, not pYIN — `VPS/CLAUDE.md`'s tech-stack table saying "Take pitch
   detection: pYIN" is stale. `detect_pitch` (pYIN) exists in `processor.py`

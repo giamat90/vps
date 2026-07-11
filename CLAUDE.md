@@ -32,7 +32,7 @@ Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log wi
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | `htdemucs` (default) / `htdemucs_ft` (high-quality opt-in) |
-| Pitch detection (song + take) | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / pYIN / HPS / CREPE (`torchcrepe`) | — |
+| Pitch detection (song + take) | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / pYIN / HPS / CREPE (`torchcrepe`) / Praat (`praat-parselmouth`) | — |
 | Pitch shifting | librosa phase vocoder | — |
 
 **Platform:** Windows 11, x86_64. WebView2 is pre-installed.
@@ -396,12 +396,13 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices
-- **User-selectable, single global setting** — `src/stores/settings.ts`'s `pitchAlgorithm` (`"srh" | "pyin" | "hps" | "crepe"`), chosen via `PitchAlgorithmControl` in the library-page Settings panel, applies identically to song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s `analyze_recording()`) so the two pitch ribbons stay comparable. Dispatch is a small registry in `processor.py` (`PITCH_ALGORITHMS` / `get_pitch_fn`); defaults to `"srh"` when absent.
+- **User-selectable, single global setting** — `src/stores/settings.ts`'s `pitchAlgorithm` (`"srh" | "pyin" | "hps" | "crepe" | "praat"`), chosen via `PitchAlgorithmControl` in the library-page Settings panel, applies identically to song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s `analyze_recording()`) so the two pitch ribbons stay comparable. Dispatch is a small registry in `processor.py` (`PITCH_ALGORITHMS` / `get_pitch_fn`); defaults to `"srh"` when absent.
 - **SRH** (Summation of Residual Harmonics, Drugman & Dutoit 2011) — the default. Chosen because pYIN and CREPE both tracked upper harmonics instead of the fundamental on strong chest-voice singers. SRH sums harmonic energy and subtracts inter-harmonic energy — structurally immune to dominant upper harmonics. Validated on Chris Cornell vocals vs VoceVista.
   - Resamples to 22050 Hz, `frame_length=2756` (125 ms, per Babacan et al. 2019), 0.5 Hz candidate grid, `n_harmonics=5`, parabolic interpolation, median + Gaussian smoothing on voiced frames.
 - **pYIN** (`detect_pitch` in `processor.py`) — was unused dead code for a period (comparison baseline only in `sidecar/pitch_lab/`), now selectable again as a live option.
 - **HPS** (`detect_pitch_hps`) — new; Harmonic Product Spectrum, no new dependency, more octave-jitter-prone than SRH by design (multiplicative harmonic combination).
 - **CREPE** (`detect_pitch_crepe`) — new; deep-learning tracker via `torchcrepe` (`"tiny"` model, reuses the `torch` dependency Demucs already needs), slower than the DSP algorithms on full-song audio.
+- **Praat** (`detect_pitch_praat`) — autocorrelation method (Boersma 1993) via `praat-parselmouth`. Added because VoceVista tracks Demucs-split vocals better than our detectors; VoceVista's algorithm is unpublished, but its documented behavior (time-domain detector separate from the FFT, "prefer harmonic fundamental" option, pitch floor/ceiling) matches Praat's octave-cost + Viterbi-path design, and the singing-voice comparative study in `Researches/1912.12609v1` found Praat best at voicing determination. Praat defaults kept; skips `_smooth_voiced` (its path finding already smooths, same reasoning as pYIN's HMM). Parameter sweeps: `pitch_lab`'s `praat_variant()`.
 - **Algorithm validation workspace:** `sidecar/pitch_lab/` — reuses the production SRH/pYIN/HPS/CREPE functions to visualize, sonify, and cross-compare pitch detection on real Demucs-split tracks. See `sidecar/pitch_lab/README.md`.
 
 ---

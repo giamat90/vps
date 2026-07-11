@@ -18,7 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from algorithms import srh_production, pyin_production, first_peak_production, hps_production, crepe_production
+from algorithms import srh_production, pyin_production, first_peak_production, hps_production, crepe_production, praat_production
 
 LAB_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = LAB_DIR / "results"
@@ -29,6 +29,7 @@ ALGORITHMS = {
     "firstpeak": ("First-Peak", first_peak_production),
     "hps": ("HPS", hps_production),
     "crepe": ("CREPE", crepe_production),
+    "praat": ("Praat", praat_production),
 }
 
 

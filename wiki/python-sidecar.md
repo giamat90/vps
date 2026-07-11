@@ -66,7 +66,7 @@ Separates a mixed audio file and extracts analysis data.
 
 `skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage.
 
-`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"pyin"`, `"hps"`, `"crepe"`; user-selectable in the Settings panel. See [Pitch Detection](#pitch-detection-user-selectable).
+`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"pyin"`, `"hps"`, `"crepe"`, `"praat"`; user-selectable in the Settings panel. See [Pitch Detection](#pitch-detection-user-selectable).
 
 Steps (in `processor.py`):
 1. Demucs `htdemucs` (or `htdemucs_ft` if `highQuality`) — produces `vocals.wav` and `instrumental.wav`; **or**, if `skipSeparation`, load the input directly and duplicate it to both paths
@@ -177,7 +177,7 @@ used for song vocals (`processor.py`'s `process()`) and recorded takes (`analysi
 `processor.py` holds a small dispatch registry:
 
 ```python
-PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect_pitch_hps, "crepe": detect_pitch_crepe}
+PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect_pitch_hps, "crepe": detect_pitch_crepe, "praat": detect_pitch_praat}
 def get_pitch_fn(algorithm): return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
 ```
 
@@ -251,11 +251,28 @@ specifically to avoid bundling a second ML framework). Uses the `"tiny"` model c
 bundled model small and CPU inference tractable for a desktop app with no GPU assumed. Runs on 16 kHz
 audio (its native/trained rate) rather than SRH/HPS's 22050 Hz. Noticeably slower than the DSP-based
 algorithms on full-song audio — `torchcrepe.predict`'s own `batch_size` keeps this from being
-prohibitive, but this is still the slowest of the four options. `torch`/`torchcrepe` are imported lazily
+prohibitive, but this is still the slowest of the five options. `torch`/`torchcrepe` are imported lazily
 inside the function so a sidecar run that never selects CREPE doesn't pay the import cost.
 
-All four algorithms (SRH, pYIN, HPS, CREPE) share a `_smooth_voiced()` helper (median filter `size=6` +
-Gaussian `sigma=1.5` on voiced frames only) for consistent post-processing behavior.
+### Praat — selectable alternative
+
+`detect_pitch_praat` in `processor.py`: Praat's autocorrelation method (Boersma 1993) via
+`praat-parselmouth` (`Sound.to_pitch_ac`), imported lazily like torchcrepe. Added on the
+`feature/pitch-praat` branch after concluding that VoceVista tracks Demucs-split vocals better than the
+existing detectors: VoceVista's algorithm is unpublished, but its documented behavior — a
+fundamental-pitch detector "completely separate from the FFT" (time-domain), a "prefer harmonic
+fundamental" option, configurable pitch floor/ceiling, and an averaging window — matches Praat's design
+(octave-cost candidate weighting + Viterbi path finding across frames), and the singing-voice
+comparative study in `Researches/1912.12609v1` found Praat best at voicing determination. Uses
+`time_step=512/22050` (~23.2 ms, matching the SRH/HPS/CREPE cadence), floor/ceiling 65–1400 Hz, and
+Praat's default costs; parameter sweeps go through `pitch_lab`'s `praat_variant()` (most interesting
+knobs: `octave_cost`, `voicing_threshold`). Confidence is Praat's candidate `strength` (autocorrelation
+peak height) clipped to [0, 1].
+
+`_smooth_voiced()` (median filter `size=6` + Gaussian `sigma=1.5` on voiced frames only) is shared by
+SRH, HPS, and CREPE. pYIN and Praat deliberately skip it: pYIN's HMM and Praat's Viterbi path finding
+are already temporal-smoothing passes of their own. (This section previously claimed all algorithms
+shared `_smooth_voiced` — that was never true for pYIN; fixed 2026-07-11.)
 
 ### Recording takes
 
@@ -272,6 +289,7 @@ hops, `step_ms` is now derived per-call from the actual returned `pitch_result["
 | Demucs | Stem separation (htdemucs model, CPU or GPU) |
 | librosa | SRH/HPS pitch detection, pYIN, pitch shifting, onset detection, RMS |
 | torchcrepe | CREPE pitch detection (selectable alternative), `"tiny"` model capacity |
+| praat-parselmouth | Praat autocorrelation pitch detection (selectable alternative) |
 | soundfile | Audio file I/O |
 | numpy / scipy | Numerical operations, filters |
 | torch | Required by Demucs; also backs `torchcrepe` |

@@ -16,7 +16,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from algorithms import srh_production, pyin_production, first_peak_production
+from algorithms import srh_production, pyin_production, first_peak_production, praat_production
 from postprocess import smooth_pitch
 from sonify import sonify_pitch
 
@@ -27,6 +27,7 @@ ALGORITHMS = {
     "srh": ("SRH", srh_production),
     "pyin": ("pYIN", pyin_production),
     "firstpeak": ("First-Peak", first_peak_production),
+    "praat": ("Praat", praat_production),
 }
 
 
