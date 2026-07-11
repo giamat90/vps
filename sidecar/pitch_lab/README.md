@@ -68,8 +68,8 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    disagreeing with what you hear.
 
    **Available algorithms — all six are now user-selectable in the shipped app's Settings panel
-   (SRH/pYIN/HPS/CREPE/Praat) except First-Peak:** `srh` (default), `pyin`, `hps`, `crepe`, `praat`
-   (all production — see `processor.py`'s `PITCH_ALGORITHMS` registry), plus `firstpeak` — a deliberately naive baseline
+   (SRH/pYIN/HPS/CREPE/Praat) except First-Peak:** `praat` (default), `srh` (former default), `pyin`,
+   `hps`, `crepe` (all production — see `processor.py`'s `PITCH_ALGORITHMS` registry), plus `firstpeak` — a deliberately naive baseline
    that picks the first spectral peak above a threshold scanning up from `fmin`, with no harmonic
    reasoning at all. It's not a real candidate, but it's cheap to include everywhere and gives a "zero
    harmonic logic" floor to judge the others against, so every comparison tool in this lab
