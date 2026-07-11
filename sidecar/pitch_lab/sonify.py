@@ -14,7 +14,7 @@ import numpy as np
 import librosa
 import soundfile as sf
 
-from algorithms import srh_production, pyin_production, first_peak_production, hps_production, crepe_production
+from algorithms import srh_production, pyin_production, first_peak_production, hps_production, crepe_production, praat_production
 
 LAB_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = LAB_DIR / "results"
@@ -25,6 +25,7 @@ ALGORITHMS = {
     "firstpeak": first_peak_production,
     "hps": hps_production,
     "crepe": crepe_production,
+    "praat": praat_production,
 }
 
 

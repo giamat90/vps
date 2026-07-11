@@ -5,9 +5,9 @@ Disagreement doesn't prove either algorithm is wrong (both can be wrong
 together, or agree on the same octave error) — treat this as a pointer to
 where to look with visualize.py / sonify.py, not a verdict.
 
-First-Peak, HPS, and CREPE are overlaid too for reference (First-Peak is the
-naive no-harmonic-logic baseline; HPS/CREPE are the other two shipped,
-user-selectable algorithms), but the disagreement metric itself stays
+First-Peak, HPS, CREPE, and Praat are overlaid too for reference (First-Peak
+is the naive no-harmonic-logic baseline; HPS/CREPE/Praat are the other three
+shipped, user-selectable algorithms), but the disagreement metric itself stays
 SRH vs pYIN — those are the two detectors this metric was built to compare.
 
 Usage:
@@ -21,7 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from algorithms import srh_production, pyin_production, first_peak_production, hps_production, crepe_production
+from algorithms import srh_production, pyin_production, first_peak_production, hps_production, crepe_production, praat_production
 
 LAB_DIR = Path(__file__).resolve().parent
 RESULTS_DIR = LAB_DIR / "results"
@@ -37,6 +37,7 @@ def compare_track(wav_path: Path, out_dir: Path = RESULTS_DIR) -> Path:
     firstpeak = first_peak_production(audio, sr)
     hps = hps_production(audio, sr)
     crepe = crepe_production(audio, sr)
+    praat = praat_production(audio, sr)
 
     times = np.array(srh["times"])
     f0_srh = np.array(srh["f0"])
@@ -53,6 +54,9 @@ def compare_track(wav_path: Path, out_dir: Path = RESULTS_DIR) -> Path:
 
     f0_crepe = np.interp(times, crepe["times"], crepe["f0"])
     voiced_crepe = np.interp(times, crepe["times"], np.array(crepe["voiced"], dtype=float)) > 0.5
+
+    f0_praat = np.interp(times, praat["times"], praat["f0"])
+    voiced_praat = np.interp(times, praat["times"], np.array(praat["voiced"], dtype=float)) > 0.5
 
     both_voiced = voiced_srh & voiced_pyin & (f0_srh > 0) & (f0_pyin > 0)
     cents_diff = np.zeros_like(f0_srh)
@@ -75,6 +79,8 @@ def compare_track(wav_path: Path, out_dir: Path = RESULTS_DIR) -> Path:
               color="lime", linewidth=0.8, alpha=0.5, zorder=1)
     ax1.plot(times, np.where(voiced_crepe, f0_crepe, np.nan), label="CREPE",
               color="orange", linewidth=0.8, alpha=0.6, zorder=2)
+    ax1.plot(times, np.where(voiced_praat, f0_praat, np.nan), label="Praat",
+              color="black", linewidth=0.9, alpha=0.7, zorder=2)
     ax1.plot(times, np.where(voiced_srh, f0_srh, np.nan), label="SRH", color="cyan", linewidth=1.2, zorder=3)
     ax1.plot(times, np.where(voiced_pyin, f0_pyin, np.nan), label="pYIN", color="magenta", linewidth=1, alpha=0.7, zorder=2)
     ax1.scatter(times[flagged], f0_srh[flagged], color="red", s=10, zorder=5,

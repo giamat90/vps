@@ -402,11 +402,50 @@ def detect_pitch_crepe(audio: np.ndarray, sr: int, model_capacity: str = "tiny",
     }
 
 
+def detect_pitch_praat(audio: np.ndarray, sr: int, fmin: float = 65.0, fmax: float = 1400.0) -> dict:
+    """
+    Praat autocorrelation pitch detection (Boersma 1993) via parselmouth.
+
+    Ported after comparing VPS against VoceVista on Demucs-split vocals:
+    VoceVista's (unpublished) tracker behaves like Praat's — a time-domain
+    detector with octave-cost candidate weighting ("prefer harmonic
+    fundamental") and path finding across frames. Praat's defaults for
+    voicing/octave/jump costs are kept; sweeps live in pitch_lab's
+    praat_variant(). Imported lazily like torchcrepe so runs that never
+    select it don't pay the import cost.
+    """
+    import parselmouth
+
+    snd = parselmouth.Sound(audio.astype(np.float64), sampling_frequency=sr)
+    pitch = snd.to_pitch_ac(
+        time_step=512 / 22050,  # ~23ms hop, matches SRH/HPS/CREPE cadence
+        pitch_floor=fmin,
+        pitch_ceiling=fmax,
+    )
+
+    times = np.asarray(pitch.xs())
+    f0 = pitch.selected_array["frequency"].copy()
+    confidence = np.clip(pitch.selected_array["strength"], 0.0, 1.0)
+    voiced = f0 > 0
+    f0[~voiced] = 0.0
+    confidence[~voiced] = 0.0
+
+    # No _smooth_voiced: Praat's Viterbi path finding is already the
+    # temporal smoothing pass (same reasoning as pYIN's HMM).
+    return {
+        "times": times.tolist(),
+        "f0": f0.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": confidence.tolist(),
+    }
+
+
 PITCH_ALGORITHMS = {
     "srh": detect_pitch_srh,
     "pyin": detect_pitch,
     "hps": detect_pitch_hps,
     "crepe": detect_pitch_crepe,
+    "praat": detect_pitch_praat,
 }
 
 
