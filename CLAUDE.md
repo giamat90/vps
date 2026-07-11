@@ -448,9 +448,9 @@ metronomeOffset: number   // song time (s) where the metronome's beat 1 lands; p
 ## Current git state
 
 - **Branch:** `master`
-- **Current version:** `0.1.36` (as of 2026-07-10)
+- **Current version:** `0.1.37` (as of 2026-07-11)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
-- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence).
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE/Praat), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence).
 
 ---
 
