@@ -10,7 +10,7 @@ import {
   computePianoWindowTarget,
   stepPianoWindow,
 } from "../../lib/constants";
-import { startPreviewNote, type PreviewVoice } from "../../audio/notePreview";
+import { startPreviewNote, startPreview, endPreview, getPreviewState, type PreviewVoice } from "../../audio/notePreview";
 import type { PitchPoint } from "../../lib/types";
 
 const CONF_MIN  = 0.3;
@@ -230,7 +230,7 @@ export default function PianoKeyboard() {
 
       const layout = buildLayout(W, Math.round(windowMinRef.current));
       layoutRef.current = layout;
-      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi, pressRef.current.midi);
+      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi, getPreviewState().midi);
       drawPitchReadout(ctx, W, songPitch, takePitch, livePitch, t);
     };
 
@@ -263,6 +263,7 @@ export default function PianoKeyboard() {
     pressRef.current.voice?.release();
     pressRef.current.midi = midi;
     pressRef.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
+    startPreview(midi, getEngine().getCurrentTime());
   };
 
   const onKeyboardMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -272,12 +273,14 @@ export default function PianoKeyboard() {
     pressRef.current.voice?.release();
     pressRef.current.midi = midi;
     pressRef.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
+    startPreview(midi, getEngine().getCurrentTime());
   };
 
   const onKeyboardMouseUp = () => {
     pressRef.current.voice?.release();
     pressRef.current.midi = null;
     pressRef.current.voice = null;
+    endPreview(getEngine().getCurrentTime());
   };
 
   return (

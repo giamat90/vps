@@ -11,7 +11,7 @@ import {
 } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
-import { startPreviewNote, type PreviewVoice } from "../../audio/notePreview";
+import { startPreviewNote, startPreview, endPreview, getPreviewState, type PreviewVoice } from "../../audio/notePreview";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ const HANDLE_HIT = 12;
 
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);   // pitch classes that are black keys
 const COLOR_PREVIEW = "rgba(255, 255, 255, 0.5)";
+const COLOR_PREVIEW_VOICE = "rgba(255, 255, 255, 0.9)";
 
 // ─── geometry helpers ────────────────────────────────────────────────────────
 // midiMin is the (float, smoothly-animated) lower bound of the currently
@@ -70,6 +71,31 @@ function drawLanes(ctx: CanvasRenderingContext2D, W: number, H: number, midiMin:
       ctx.fillRect(PIANO_W, top, W - PIANO_W, 1);
     }
   }
+}
+
+// Flat pitch trace for a held preview key — a 4th "voice" alongside the
+// song/take/live ribbons, running from when the key was pressed (or the
+// window's left edge, whichever is later) to the playhead.
+function drawPreviewVoice(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  midiMin: number,
+  midi: number,
+  x0: number,
+  x1: number,
+): void {
+  if (x1 <= x0) return;
+  const nh = noteH(H);
+  const y = midiToY(midi, H, midiMin);
+  ctx.save();
+  ctx.strokeStyle = COLOR_PREVIEW_VOICE;
+  ctx.lineWidth   = Math.max(2.5, nh * 0.72);
+  ctx.lineCap     = "round";
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x1, y);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawPlayhead(ctx: CanvasRenderingContext2D, W: number, H: number): void {
@@ -360,10 +386,16 @@ export default function PianoRoll() {
     startTime: 0,
   });
 
-  const stripDrag = useRef<{ active: boolean; lastMidi: number | null; voice: PreviewVoice | null }>({
+  const stripDrag = useRef<{
+    active: boolean;
+    lastMidi: number | null;
+    voice: PreviewVoice | null;
+    startTime: number;
+  }>({
     active: false,
     lastMidi: null,
     voice: null,
+    startTime: 0,
   });
 
   useEffect(() => {
@@ -407,22 +439,29 @@ export default function PianoRoll() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      if (!isLoaded && livePitch.length === 0 && takePitch.length === 0) {
-        ctx.fillStyle    = "#a0a0b060";
-        ctx.font         = "11px sans-serif";
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("No pitch data", (PIANO_W + W) / 2, H / 2);
-        drawPianoStrip(ctx, H, windowMinRef.current, null, null, null, stripDrag.current.active ? stripDrag.current.lastMidi : null);
-        return;
-      }
-
       const currentTime = getEngine().getCurrentTime();
       const t0 = currentTime - WINDOW_S / 2;
       const t1 = currentTime + WINDOW_S / 2;
       const rollW = W - PIANO_W;
       const timeToX = (t: number) =>
         PIANO_W + ((t - currentTime + WINDOW_S / 2) / WINDOW_S) * rollW;
+
+      if (!isLoaded && livePitch.length === 0 && takePitch.length === 0) {
+        ctx.fillStyle    = "#a0a0b060";
+        ctx.font         = "11px sans-serif";
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("No pitch data", (PIANO_W + W) / 2, H / 2);
+        const preview = getPreviewState();
+        if (preview.midi !== null) {
+          drawPreviewVoice(
+            ctx, H, windowMinRef.current, preview.midi,
+            timeToX(Math.max(preview.startTime, t0)), timeToX(preview.endTime ?? currentTime),
+          );
+        }
+        drawPianoStrip(ctx, H, windowMinRef.current, null, null, null, preview.midi);
+        return;
+      }
 
       const songMidi = getCurrentMidi(songPitch, currentTime);
       const takeMidi = getCurrentMidi(takePitch, currentTime);
@@ -443,9 +482,16 @@ export default function PianoRoll() {
       if (livePitch.length > 0) {
         drawRibbon(ctx, livePitch, COLOR_LIVE, t0, t1, H, midiMin, timeToX);
       }
+      const preview = getPreviewState();
+      if (preview.midi !== null) {
+        drawPreviewVoice(
+          ctx, H, midiMin, preview.midi,
+          timeToX(Math.max(preview.startTime, t0)), timeToX(preview.endTime ?? currentTime),
+        );
+      }
       drawPlayhead(ctx, W, H);
       drawNoteLabel(ctx, W, songPitch, takePitch, livePitch, currentTime);
-      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi, stripDrag.current.active ? stripDrag.current.lastMidi : null);
+      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi, preview.midi);
     };
 
     drawRef.current();
@@ -576,8 +622,15 @@ export default function PianoRoll() {
       const canvas = canvasRef.current;
       const H = canvas?.offsetHeight ?? 0;
       const midi = midiFromY(e.nativeEvent.offsetY, H, windowMinRef.current);
+      const now = getEngine().getCurrentTime();
       stripDrag.current.voice?.release();
-      stripDrag.current = { active: true, lastMidi: midi, voice: startPreviewNote(midi, selectedOutputDeviceId) };
+      stripDrag.current = {
+        active: true,
+        lastMidi: midi,
+        voice: startPreviewNote(midi, selectedOutputDeviceId),
+        startTime: now,
+      };
+      startPreview(midi, now);
       return;
     }
     rollDrag.current = {
@@ -593,9 +646,12 @@ export default function PianoRoll() {
       const H = canvas?.offsetHeight ?? 0;
       const midi = midiFromY(e.nativeEvent.offsetY, H, windowMinRef.current);
       if (midi !== stripDrag.current.lastMidi) {
+        const now = getEngine().getCurrentTime();
         stripDrag.current.voice?.release();
         stripDrag.current.lastMidi = midi;
         stripDrag.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
+        stripDrag.current.startTime = now;
+        startPreview(midi, now);
       }
       return;
     }
@@ -611,9 +667,12 @@ export default function PianoRoll() {
 
   const onCanvasMouseUp = () => {
     rollDrag.current.active = false;
-    stripDrag.current.voice?.release();
-    stripDrag.current.active = false;
-    stripDrag.current.voice = null;
+    if (stripDrag.current.active) {
+      stripDrag.current.voice?.release();
+      stripDrag.current.active = false;
+      stripDrag.current.voice = null;
+      endPreview(getEngine().getCurrentTime());
+    }
   };
 
   return (

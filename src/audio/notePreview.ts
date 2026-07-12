@@ -74,3 +74,33 @@ export function startPreviewNote(midi: number, sinkId: string | null): PreviewVo
 
   return { release };
 }
+
+export interface PreviewState {
+  midi: number | null;
+  startTime: number;
+  // null while the key is held (the drawn line extends live to the playhead);
+  // frozen to a fixed time once released, so the line stays put until the
+  // next press overwrites this state rather than disappearing on release.
+  endTime: number | null;
+}
+
+// Cross-component "currently previewed key" — PianoKeyboard and PianoRoll
+// each have their own hit-testing and voice/oscillator bookkeeping, but both
+// report into this single shared state so PianoRoll's pitch ribbon can draw
+// the preview voice line regardless of which widget the press originated on.
+// Plain mutable singleton (not a store) since both readers are rAF draw
+// loops that already poll every frame rather than needing React reactivity.
+let previewState: PreviewState = { midi: null, startTime: 0, endTime: null };
+
+export function startPreview(midi: number, time: number): void {
+  previewState = { midi, startTime: time, endTime: null };
+}
+
+export function endPreview(time: number): void {
+  if (previewState.midi === null || previewState.endTime !== null) return;
+  previewState = { ...previewState, endTime: time };
+}
+
+export function getPreviewState(): PreviewState {
+  return previewState;
+}
