@@ -35,6 +35,21 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const isRecording = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const song = songs.find((s) => s.id === songId);
+  const renameSong = useLibraryStore((s) => s.renameSong);
+
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState("");
+
+  const startEditingTitle = () => {
+    setTitleValue(song?.title ?? "");
+    setIsEditingTitle(true);
+  };
+
+  const commitTitle = () => {
+    setIsEditingTitle(false);
+    const trimmed = titleValue.trim();
+    if (song && trimmed && trimmed !== song.title) renameSong(song.id, trimmed);
+  };
 
   const loadSongAnalysis = useAnalysisStore((s) => s.loadSongAnalysis);
   const loadTakeAnalysis = useAnalysisStore((s) => s.loadTakeAnalysis);
@@ -80,7 +95,34 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
           &larr; Back
         </button>
         <div className="practice-room__song-info">
-          <h1 className="practice-room__title">{song.title}</h1>
+          {isEditingTitle ? (
+            <input
+              className="practice-room__title-input"
+              value={titleValue}
+              autoFocus
+              onChange={(e) => setTitleValue(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitTitle();
+                else if (e.key === "Escape") setIsEditingTitle(false);
+              }}
+            />
+          ) : (
+            <h1
+              className="practice-room__title"
+              onDoubleClick={startEditingTitle}
+              title="Double-click to rename"
+            >
+              {song.title}
+              <button
+                className="practice-room__rename"
+                onClick={startEditingTitle}
+                title="Rename song"
+              >
+                &#9998;
+              </button>
+            </h1>
+          )}
           <div className="practice-room__meta">
             {song.detectedBpm && (
               <span>{Math.round(song.detectedBpm)} BPM</span>

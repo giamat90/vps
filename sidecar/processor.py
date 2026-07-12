@@ -794,6 +794,7 @@ def process(
     full_mix, sr_full = librosa.load(input_path, sr=SAMPLE_RATE, mono=True)
     tempo = librosa.beat.tempo(y=full_mix, sr=sr_full)
     detected_bpm = round(float(tempo[0]), 1) if len(tempo) > 0 else None
+    duration = round(len(full_mix) / sr_full, 4)
     on_progress(0.95, "bpm-detection")
 
     del full_mix, vocals_lr
@@ -819,6 +820,7 @@ def process(
     return {
         "vocals": vocals_path,
         "instrumental": instrumental_path,
+        "duration": duration,
         "pitchData": pitch_result,
         "onsets": onsets,
         "dynamics": dynamics,

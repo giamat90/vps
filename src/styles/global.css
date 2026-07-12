@@ -235,6 +235,35 @@ body,
   text-overflow: ellipsis;
 }
 
+.song-card__title-input {
+  font-size: 0.95rem;
+  font-weight: 500;
+  font-family: inherit;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  width: 100%;
+  max-width: 16rem;
+}
+
+.song-card__rename {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: color 0.15s;
+}
+
+.song-card__rename:hover {
+  color: var(--accent);
+}
+
 .song-card__badge {
   display: inline-block;
   margin-left: 0.5rem;
@@ -443,6 +472,38 @@ body,
 .practice-room__title {
   font-size: 1.2rem;
   font-weight: 600;
+}
+
+.practice-room__title-input {
+  font-size: 1.2rem;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+  width: 100%;
+  max-width: 24rem;
+}
+
+.practice-room__rename {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  font-weight: 400;
+  cursor: pointer;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: color 0.15s;
+  vertical-align: middle;
+}
+
+.practice-room__rename:hover {
+  color: var(--accent);
 }
 
 .practice-room__meta {
