@@ -11,7 +11,7 @@ from processor import process
 _BROWSERS = ["chrome", "firefox", "edge", "brave", "opera"]
 
 
-def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = False, algorithm: str = "praat") -> dict:
+def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = False, algorithm: str = "srh") -> dict:
     """
     Progress: download occupies 0.0–0.15, existing pipeline fills 0.15–1.0.
     Returns the same dict as processor.process(), with 'title' added.

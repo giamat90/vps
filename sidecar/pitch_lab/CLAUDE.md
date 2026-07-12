@@ -12,7 +12,7 @@ here is provisional until validated across multiple real tracks and manually por
 README's "Port confirmed fixes back manually" step. Don't skip straight to editing `processor.py`
 from something found only in one track's plot.
 
-## Current state (as of 2026-07-11)
+## Current state (as of 2026-07-12)
 
 - **Tools built:** `algorithms.py` (SRH/pYIN/HPS/CREPE/Praat production wrappers — all five are
   shipped, user-selectable in the app's Settings panel — + `firstpeak` naive baseline +
@@ -25,14 +25,15 @@ from something found only in one track's plot.
 - **Convention:** always run/plot all six algorithms (SRH, pYIN, First-Peak, HPS, CREPE, Praat), not
   just SRH/pYIN — don't silently drop First-Peak (the zero-harmonic-logic floor) or any newer
   algorithm from new tools for convenience.
-- **Praat (`detect_pitch_praat`, 2026-07-11) — now the production default** (promoted over SRH the
-  same day, after winning the two-track A/B and an in-app listening test): added via
-  `praat-parselmouth` because VoceVista out-tracks our detectors on Demucs-split vocals and
-  its documented behavior profile matches Praat's autocorrelation method (Boersma 1993, octave-cost =
-  "prefer harmonic fundamental" + Viterbi path finding). Praat defaults kept in production; sweeps go
-  through `praat_variant()` (`octave_cost` and `voicing_threshold` are the interesting knobs). Praat
-  output skips `_smooth_voiced` — its path finding is the smoothing pass (same reasoning as pYIN's
-  HMM).
+- **SRH (`detect_pitch_srh`) — the production default again as of 2026-07-12.** Praat
+  (`detect_pitch_praat`, added 2026-07-11 via `praat-parselmouth`) briefly held the default slot after
+  winning the two-track pitch_lab A/B and an in-app listening test on those two tracks; a broader
+  in-app A/B across all five algorithms on 2026-07-12 rated SRH clearly best (CREPE second), reverting
+  the default back to SRH. Praat remains a selectable alternative — its documented VoceVista-parity
+  rationale (octave-cost = "prefer harmonic fundamental" + Viterbi path finding) still stands, it just
+  isn't the default. Praat defaults kept as-is; sweeps go through `praat_variant()` (`octave_cost` and
+  `voicing_threshold` are the interesting knobs). Praat output skips `_smooth_voiced` — its path finding
+  is the smoothing pass (same reasoning as pYIN's HMM).
 
 ## Key findings so far (see README for full tables/detail)
 

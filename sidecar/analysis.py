@@ -235,14 +235,14 @@ def analyze_recording(
     on_progress=None,
     audio_offset_s: float = 0.0,
     reference_path: str | None = None,
-    pitch_algorithm: str = "praat",
+    pitch_algorithm: str = "srh",
 ) -> dict:
     """
     Analyze a vocal recording (user take).
 
     audio_offset_s: seconds to skip at the start of the file (latency compensation).
     reference_path: optional loudness reference (e.g. vocals.wav) to RMS-match the take against.
-    pitch_algorithm: one of "praat" (default), "srh", "pyin", "hps", "crepe" —
+    pitch_algorithm: one of "srh" (default), "praat", "pyin", "hps", "crepe" —
       see processor.PITCH_ALGORITHMS / get_pitch_fn. Must match whatever was used
       for the song's own pitch data for song/take pitch curves to compare
       meaningfully.

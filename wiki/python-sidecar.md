@@ -59,14 +59,14 @@ Rust sends one command at a time (the sidecar processes synchronously):
 Separates a mixed audio file and extracts analysis data.
 
 ```json
-{"cmd": "process", "filePath": "/path/to/song.mp3", "outputDir": "/path/to/output/", "highQuality": false, "skipSeparation": false, "algorithm": "praat"}
+{"cmd": "process", "filePath": "/path/to/song.mp3", "outputDir": "/path/to/output/", "highQuality": false, "skipSeparation": false, "algorithm": "srh"}
 ```
 
 `highQuality` (optional, default `false`) — selects the Demucs model: `htdemucs_ft` (fine-tuned, ~2-3x slower, better isolation) instead of `htdemucs` (fast, standard quality). Only affects model selection in `processor.process()`; no other stage changes. Ignored when `skipSeparation` is set.
 
 `skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage.
 
-`algorithm` (optional, default `"praat"`) — one of `"praat"`, `"srh"`, `"pyin"`, `"hps"`, `"crepe"`; user-selectable in the Settings panel. See [Pitch Detection](#pitch-detection-user-selectable).
+`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"praat"`, `"pyin"`, `"hps"`, `"crepe"`; user-selectable in the Settings panel. See [Pitch Detection](#pitch-detection-user-selectable).
 
 Steps (in `processor.py`):
 1. Demucs `htdemucs` (or `htdemucs_ft` if `highQuality`) — produces `vocals.wav` and `instrumental.wav`; **or**, if `skipSeparation`, load the input directly and duplicate it to both paths
@@ -83,14 +83,14 @@ Returns Song metadata as `data`.
 Analyzes a recorded take (after the singer finishes recording).
 
 ```json
-{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/takes/", "audioOffset": 0.256, "referencePath": "/path/to/song/vocals.wav", "algorithm": "praat"}
+{"cmd": "analyze", "recordingPath": "/path/to/take.webm", "outputDir": "/path/to/song/takes/", "audioOffset": 0.256, "referencePath": "/path/to/song/vocals.wav", "algorithm": "srh"}
 ```
 
 `audioOffset` (optional, default `0.0`) — seconds to skip at the start of the audio file before processing. Non-zero when latency compensation shifted the take's `startPosition` below 0 and the engine skips a silent prefix on playback. Both `librosa.load()` calls in `analysis.py` pass `offset=audio_offset_s`, so all output times (pitch, onsets, dynamics) are 0-based from the audible content start and correctly align with the song.
 
 `referencePath` (optional) — loudness reference stem, in practice always `vocals.wav`. When present, the take is **RMS-normalized** against it: gain = reference RMS / take RMS, peak-capped so nothing clips, written as a `{takeId}.wav` next to the raw recording and returned as `normalizedPath`. Rust's `save_take` then keeps the normalized WAV and deletes the raw `.webm` (falling back to the `.webm` if normalization failed). This is why recorded takes no longer sound quiet next to mastered Demucs stems.
 
-`algorithm` (optional, default `"praat"`) — same selectable pitch algorithm as `process`; should match whatever was used for the song so take/song pitch curves compare meaningfully.
+`algorithm` (optional, default `"srh"`) — same selectable pitch algorithm as `process`; should match whatever was used for the song so take/song pitch curves compare meaningfully.
 
 Steps (in `analysis.py`):
 1. Pitch detection via `get_pitch_fn(algorithm)` (same dispatch as song processing) — resampled to 22050 Hz
@@ -178,19 +178,19 @@ used for song vocals (`processor.py`'s `process()`) and recorded takes (`analysi
 
 ```python
 PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect_pitch_hps, "crepe": detect_pitch_crepe, "praat": detect_pitch_praat}
-def get_pitch_fn(algorithm): return PITCH_ALGORITHMS.get(algorithm or "praat", detect_pitch_praat)
+def get_pitch_fn(algorithm): return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
 ```
 
 The `algorithm` field flows: Settings UI → `useSettingsStore` → `processSong`/`saveTake`/`importYoutube`/
 `saveExerciseTake` (`src/lib/tauri.ts`) → Rust `commands.rs` → JSON `"algorithm"` field on the `process`/
-`analyze`/`import_yt` sidecar commands → `main.py` dispatch (defaults to `"praat"` if absent) →
+`analyze`/`import_yt` sidecar commands → `main.py` dispatch (defaults to `"srh"` if absent) →
 `get_pitch_fn(...)`.
 
-### SRH (Summation of Residual Harmonics) — selectable alternative, former default
+### SRH (Summation of Residual Harmonics) — the default
 
 `processor.py` uses a custom SRH implementation (Drugman & Dutoit 2011) for pitch detection on separated vocals.
 
-CREPE and pYIN were tried first and both failed on singers with strong upper harmonics (e.g. chest-voice tenors/baritones where the 2nd harmonic has more energy than the fundamental — CREPE tracked the 2nd formant, pYIN tracked the 2nd harmonic). HPS was tried next and gave the correct octave but was too jittery due to coarse FFT bin resolution. SRH was chosen as the **original default** because it sums harmonic energy and subtracts inter-harmonic energy, making it structurally immune to dominant upper harmonics. Validated against VoceVista on Chris Cornell vocals. It held the default slot through `v0.1.37`, when Praat (below) beat it in the pitch_lab A/B and an in-app listening test; its residual failure mode is jumping *up* to an upper harmonic on raspy chest-voice passages — the mirror image of Praat's occasional fry-region dive.
+CREPE and pYIN were tried first and both failed on singers with strong upper harmonics (e.g. chest-voice tenors/baritones where the 2nd harmonic has more energy than the fundamental — CREPE tracked the 2nd formant, pYIN tracked the 2nd harmonic). HPS was tried next and gave the correct octave but was too jittery due to coarse FFT bin resolution. SRH was chosen as the **original default** because it sums harmonic energy and subtracts inter-harmonic energy, making it structurally immune to dominant upper harmonics. Validated against VoceVista on Chris Cornell vocals. Praat (below) briefly took the default slot after beating it in the `v0.1.37` pitch_lab A/B and an in-app listening test on two test tracks; **SRH was reinstated as the default on 2026-07-12** after the user ran their own in-app A/B across all five algorithms and rated SRH clearly best, with CREPE second. Its residual failure mode is jumping *up* to an upper harmonic on raspy chest-voice passages — the mirror image of Praat's occasional fry-region dive.
 
 **Parameters are aligned with VoceVista "Singing - Narrowband" profile:**
 
@@ -233,7 +233,7 @@ SRH evaluates ~2670 candidates per frame; acceptable for synchronous sidecar exe
 correction pass (`_correct_octave_errors_spectral`). Was dead code in the live pipeline for some time
 (pitch_lab-only baseline) before becoming user-selectable again — see `sidecar/pitch_lab/CLAUDE.md` for
 that history. Known failure mode: locks onto the 2nd harmonic on strong chest-voice singers, which is
-why it never held the default slot.
+why it has never held the default slot.
 
 ### HPS (Harmonic Product Spectrum) — selectable alternative
 
@@ -254,14 +254,16 @@ algorithms on full-song audio — `torchcrepe.predict`'s own `batch_size` keeps 
 prohibitive, but this is still the slowest of the five options. `torch`/`torchcrepe` are imported lazily
 inside the function so a sidecar run that never selects CREPE doesn't pay the import cost.
 
-### Praat — the default
+### Praat — selectable alternative, former default
 
 `detect_pitch_praat` in `processor.py`: Praat's autocorrelation method (Boersma 1993) via
 `praat-parselmouth` (`Sound.to_pitch_ac`), imported lazily like torchcrepe. Added in `v0.1.37` after
 concluding that VoceVista tracks Demucs-split vocals better than the existing detectors, and promoted
 to **default** immediately after: it beat SRH in the pitch_lab A/B on both test tracks (fundamental
 held end-to-end with near-1.0 confidence on the clean vocal; sustained passages steady and the real
-glide preserved on the raspy one) and in an in-app listening test. Provenance: VoceVista's algorithm is unpublished, but its documented behavior — a
+glide preserved on the raspy one) and in an in-app listening test. It held the default slot only briefly:
+a broader in-app A/B across all five algorithms on 2026-07-12 rated SRH clearly best (CREPE second),
+and the default reverted to SRH. Still a reasonable alternative — just no longer the default. Provenance: VoceVista's algorithm is unpublished, but its documented behavior — a
 fundamental-pitch detector "completely separate from the FFT" (time-domain), a "prefer harmonic
 fundamental" option, configurable pitch floor/ceiling, and an averaging window — matches Praat's design
 (octave-cost candidate weighting + Viterbi path finding across frames), and the singing-voice
