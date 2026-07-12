@@ -10,6 +10,7 @@ import {
   computePianoWindowTarget,
   stepPianoWindow,
 } from "../../lib/constants";
+import { startPreviewNote, type PreviewVoice } from "../../audio/notePreview";
 import type { PitchPoint } from "../../lib/types";
 
 const CONF_MIN  = 0.3;
@@ -18,6 +19,7 @@ const BLACK_PC  = new Set([1, 3, 6, 8, 10]);
 export const COLOR_SONG = "rgba(74, 158, 255, 0.88)";
 export const COLOR_TAKE = "rgba(233, 69, 96,  0.92)";
 export const COLOR_LIVE = "rgba(255, 140, 30,  0.9)";
+const COLOR_PREVIEW = "rgba(255, 255, 255, 0.5)";
 
 function isBlack(midi: number): boolean {
   return BLACK_PC.has(((midi % 12) + 12) % 12);
@@ -56,6 +58,18 @@ function buildLayout(W: number, midiMin: number): KeyLayout {
     }
   }
   return layout;
+}
+
+// Black keys are drawn on top of white keys (see drawKeyboard), so a click
+// must hit-test black keys first to correctly win overlapping regions.
+function midiFromLayout(layout: KeyLayout, x: number): number | null {
+  for (const [midi, key] of layout) {
+    if (key.isBlack && x >= key.x && x < key.x + key.w) return midi;
+  }
+  for (const [midi, key] of layout) {
+    if (!key.isBlack && x >= key.x && x < key.x + key.w) return midi;
+  }
+  return null;
 }
 
 export function getCurrentMidi(points: PitchPoint[], currentTime: number): number | null {
@@ -127,6 +141,7 @@ function drawKeyboard(
   songMidi: number | null,
   takeMidi: number | null,
   liveMidi: number | null,
+  previewMidi: number | null,
 ): void {
   const blackH = H * 0.62;
   const fontSize = Math.max(8, H * 0.18);
@@ -139,6 +154,10 @@ function drawKeyboard(
     const isLive = midi === liveMidi;
     ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
     ctx.fillRect(key.x + 0.5, 0, key.w - 1, H);
+    if (midi === previewMidi) {
+      ctx.fillStyle = COLOR_PREVIEW;
+      ctx.fillRect(key.x + 0.5, 0, key.w - 1, H);
+    }
     // Divider
     ctx.fillStyle = "#33334a";
     ctx.fillRect(key.x + key.w - 0.5, 0, 1, H);
@@ -160,6 +179,10 @@ function drawKeyboard(
     const isLive = midi === liveMidi;
     ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1a1a2e";
     ctx.fillRect(key.x, 0, key.w, blackH);
+    if (midi === previewMidi) {
+      ctx.fillStyle = COLOR_PREVIEW;
+      ctx.fillRect(key.x, 0, key.w, blackH);
+    }
   }
 }
 
@@ -171,8 +194,11 @@ export default function PianoKeyboard() {
   const isLoaded    = useAnalysisStore((s) => s.isLoaded);
   const isRecording = usePlayerStore((s) => s.isRecording);
   const exerciseMode = usePlayerStore((s) => s.exerciseMode);
+  const selectedOutputDeviceId = usePlayerStore((s) => s.selectedOutputDeviceId);
   const drawRef     = useRef<() => void>(() => {});
   const windowMinRef = useRef<number>(PIANO_WINDOW_DEFAULT_MIN);
+  const layoutRef   = useRef<KeyLayout>(new Map());
+  const pressRef    = useRef<{ midi: number | null; voice: PreviewVoice | null }>({ midi: null, voice: null });
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -203,7 +229,8 @@ export default function PianoKeyboard() {
       windowMinRef.current = stepPianoWindow(windowMinRef.current, target);
 
       const layout = buildLayout(W, Math.round(windowMinRef.current));
-      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi);
+      layoutRef.current = layout;
+      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi, pressRef.current.midi);
       drawPitchReadout(ctx, W, songPitch, takePitch, livePitch, t);
     };
 
@@ -228,6 +255,30 @@ export default function PianoKeyboard() {
     ro.observe(canvas);
     return () => ro.disconnect();
   }, []);
+
+  const onKeyboardMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (isRecording) return;
+    const midi = midiFromLayout(layoutRef.current, e.nativeEvent.offsetX);
+    if (midi === null) return;
+    pressRef.current.voice?.release();
+    pressRef.current.midi = midi;
+    pressRef.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
+  };
+
+  const onKeyboardMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (pressRef.current.midi === null) return;
+    const midi = midiFromLayout(layoutRef.current, e.nativeEvent.offsetX);
+    if (midi === null || midi === pressRef.current.midi) return;
+    pressRef.current.voice?.release();
+    pressRef.current.midi = midi;
+    pressRef.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
+  };
+
+  const onKeyboardMouseUp = () => {
+    pressRef.current.voice?.release();
+    pressRef.current.midi = null;
+    pressRef.current.voice = null;
+  };
 
   return (
     <div className="analysis-panel">
@@ -254,6 +305,11 @@ export default function PianoKeyboard() {
       <canvas
         ref={canvasRef}
         className="analysis-panel__canvas analysis-panel__canvas--keyboard"
+        style={{ cursor: isRecording ? "default" : "pointer" }}
+        onMouseDown={onKeyboardMouseDown}
+        onMouseMove={onKeyboardMouseMove}
+        onMouseUp={onKeyboardMouseUp}
+        onMouseLeave={onKeyboardMouseUp}
       />
     </div>
   );
