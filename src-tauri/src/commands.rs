@@ -153,13 +153,7 @@ pub async fn process_song(
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
 
-                let duration = data
-                    .get("pitchData")
-                    .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.last())
-                    .and_then(|p| p.get("time"))
-                    .and_then(|t| t.as_f64())
-                    .unwrap_or(0.0);
+                let duration = data.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
                 let now = chrono::Utc::now().to_rfc3339();
 
@@ -280,6 +274,11 @@ pub async fn delete_song(song_id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_metronome_offset(song_id: String, offset: Option<f64>) -> Result<Song, String> {
     library::update_metronome_offset(&song_id, offset)
+}
+
+#[tauri::command]
+pub async fn rename_song(song_id: String, title: String) -> Result<Song, String> {
+    library::rename(&song_id, &title)
 }
 
 // --- Take commands ---
@@ -825,13 +824,7 @@ pub async fn import_youtube(
                     .get("detectedKey")
                     .and_then(|v| v.as_str())
                     .map(|s| s.to_string());
-                let duration = data
-                    .get("pitchData")
-                    .and_then(|v| v.as_array())
-                    .and_then(|arr| arr.last())
-                    .and_then(|p| p.get("time"))
-                    .and_then(|t| t.as_f64())
-                    .unwrap_or(0.0);
+                let duration = data.get("duration").and_then(|v| v.as_f64()).unwrap_or(0.0);
 
                 let song = Song {
                     id: song_id,

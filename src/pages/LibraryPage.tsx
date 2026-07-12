@@ -24,11 +24,26 @@ interface SongCardProps {
   song: Song;
   onSelect: () => void;
   onDelete: () => void;
+  onRename: (title: string) => void;
 }
 
-function SongCard({ song, onSelect, onDelete }: SongCardProps) {
+function SongCard({ song, onSelect, onDelete, onRename }: SongCardProps) {
   const [pitch, setPitch] = useState(0);
   const [isShifting, setIsShifting] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleValue, setTitleValue] = useState(song.title);
+
+  const startEditingTitle = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setTitleValue(song.title);
+    setIsEditingTitle(true);
+  };
+
+  const commitTitle = () => {
+    setIsEditingTitle(false);
+    const trimmed = titleValue.trim();
+    if (trimmed && trimmed !== song.title) onRename(trimmed);
+  };
 
   const handleExport = async (stem: "vocals" | "instrumental") => {
     const baseName = stem === "vocals" ? "Vocals" : "Instrumental";
@@ -56,10 +71,37 @@ function SongCard({ song, onSelect, onDelete }: SongCardProps) {
     <div className="song-card" onClick={onSelect}>
       <div className="song-card__info">
         <div className="song-card__title">
-          {song.title}
+          {isEditingTitle ? (
+            <input
+              className="song-card__title-input"
+              value={titleValue}
+              autoFocus
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setTitleValue(e.target.value)}
+              onBlur={commitTitle}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitTitle();
+                else if (e.key === "Escape") setIsEditingTitle(false);
+              }}
+            />
+          ) : (
+            <span
+              onDoubleClick={startEditingTitle}
+              title="Double-click to rename"
+            >
+              {song.title}
+            </span>
+          )}
           {isInstrument && (
             <span className="song-card__badge">Instrument</span>
           )}
+          <button
+            className="song-card__rename"
+            onClick={startEditingTitle}
+            title="Rename song"
+          >
+            &#9998;
+          </button>
         </div>
         <div className="song-card__meta">
           {song.detectedBpm && (
@@ -151,6 +193,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const error = useLibraryStore((s) => s.error);
   const fetchSongs = useLibraryStore((s) => s.fetchSongs);
   const deleteSong = useLibraryStore((s) => s.deleteSong);
+  const renameSong = useLibraryStore((s) => s.renameSong);
   const clearError = useLibraryStore((s) => s.clearError);
   const initProgressListener = useLibraryStore((s) => s.initProgressListener);
 
@@ -292,6 +335,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
             song={song}
             onSelect={() => onSelectSong(song.id)}
             onDelete={() => deleteSong(song.id)}
+            onRename={(title) => renameSong(song.id, title)}
           />
         ))}
       </section>

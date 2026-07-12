@@ -53,6 +53,11 @@ export async function setMetronomeOffsetApi(songId: string, offset: number | nul
   return invoke<Song>("set_metronome_offset", { songId, offset });
 }
 
+/** Rename a song's library title (e.g. to tell apart reprocessed variants using a different pitch algorithm). Empty/whitespace is rejected. */
+export async function renameSongApi(songId: string, title: string): Promise<Song> {
+  return invoke<Song>("rename_song", { songId, title });
+}
+
 /** Load song analysis data (pitchData, onsets, dynamics, spectrogram) */
 export async function loadAnalysis(songId: string): Promise<{
   pitchData: import("./types").PitchData;

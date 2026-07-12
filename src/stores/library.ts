@@ -6,6 +6,7 @@ import {
   listSongs,
   onProcessingProgress,
   processSong,
+  renameSongApi,
 } from "../lib/tauri";
 
 interface LibraryState {
@@ -18,6 +19,7 @@ interface LibraryState {
   uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument", algorithm?: PitchAlgorithm) => Promise<void>;
   importYoutube: (url: string, highQuality?: boolean, algorithm?: PitchAlgorithm) => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
+  renameSong: (songId: string, title: string) => Promise<void>;
   clearError: () => void;
   initProgressListener: () => Promise<() => void>;
 }
@@ -114,6 +116,18 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       }));
     } catch (e) {
       console.error("Failed to delete song:", e);
+    }
+  },
+
+  renameSong: async (songId: string, title: string) => {
+    try {
+      const updated = await renameSongApi(songId, title);
+      set((state) => ({
+        songs: state.songs.map((s) => (s.id === songId ? updated : s)),
+      }));
+    } catch (e) {
+      console.error("Failed to rename song:", e);
+      set({ error: String(e) });
     }
   },
 
