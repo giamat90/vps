@@ -240,6 +240,8 @@ interface PlayerActions {
   togglePlay: () => void;
   stop: () => void;
   seek: (time: number) => void;
+  skipToStart: () => void;
+  skipToEnd: () => void;
   setPlaybackRate: (rate: number) => void;
   setVocalsVolume: (v: number) => void;
   setInstrumentalVolume: (v: number) => void;
@@ -456,6 +458,17 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     if (get().isRecording) return;
     getEngine().seekTo(time);
     set({ currentTime: time });
+  },
+
+  skipToStart: () => get().seek(0),
+
+  skipToEnd: () => {
+    // Landing exactly on `duration` would push the instrumental WaveSurfer's
+    // underlying <audio> element into "ended", firing the engine's "finish"
+    // handler (which reports playback as complete) even though this is a
+    // seek, not actual end-of-song playback.
+    const { duration } = get();
+    get().seek(Math.max(0, duration - 0.05));
   },
 
   setPlaybackRate: (rate) => {

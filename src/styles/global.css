@@ -766,6 +766,12 @@ body,
   background: var(--accent-hover);
 }
 
+.transport__btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
 .transport__time {
   font-size: 0.85rem;
   color: var(--text-secondary);
