@@ -11,6 +11,7 @@ import {
 } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
 import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
+import { startPreviewNote, startPreview, endPreview, getPreviewState, type PreviewVoice } from "../../audio/notePreview";
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
@@ -22,6 +23,8 @@ const GAP_S     = 0.08;     // gap threshold: breaks the ribbon
 const HANDLE_HIT = 12;
 
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);   // pitch classes that are black keys
+const COLOR_PREVIEW = "rgba(255, 255, 255, 0.5)";
+const COLOR_PREVIEW_VOICE = "rgba(255, 255, 255, 0.9)";
 
 // ─── geometry helpers ────────────────────────────────────────────────────────
 // midiMin is the (float, smoothly-animated) lower bound of the currently
@@ -38,6 +41,13 @@ function midiToY(midi: number, H: number, midiMin: number): number {
 
 function isBlack(midi: number): boolean {
   return BLACK_PC.has(((midi % 12) + 12) % 12);
+}
+
+// Inverse of midiToY — rounds to the nearest semitone lane, matching how
+// drawPianoStrip assigns one lane per integer MIDI note.
+function midiFromY(y: number, H: number, midiMin: number): number {
+  const midiMax = midiMin + N_NOTES - 1;
+  return Math.round(midiMax - ((y - noteH(H) / 2) / H) * N_NOTES);
 }
 
 // ─── draw passes ─────────────────────────────────────────────────────────────
@@ -61,6 +71,31 @@ function drawLanes(ctx: CanvasRenderingContext2D, W: number, H: number, midiMin:
       ctx.fillRect(PIANO_W, top, W - PIANO_W, 1);
     }
   }
+}
+
+// Flat pitch trace for a held preview key — a 4th "voice" alongside the
+// song/take/live ribbons, running from when the key was pressed (or the
+// window's left edge, whichever is later) to the playhead.
+function drawPreviewVoice(
+  ctx: CanvasRenderingContext2D,
+  H: number,
+  midiMin: number,
+  midi: number,
+  x0: number,
+  x1: number,
+): void {
+  if (x1 <= x0) return;
+  const nh = noteH(H);
+  const y = midiToY(midi, H, midiMin);
+  ctx.save();
+  ctx.strokeStyle = COLOR_PREVIEW_VOICE;
+  ctx.lineWidth   = Math.max(2.5, nh * 0.72);
+  ctx.lineCap     = "round";
+  ctx.beginPath();
+  ctx.moveTo(x0, y);
+  ctx.lineTo(x1, y);
+  ctx.stroke();
+  ctx.restore();
 }
 
 function drawPlayhead(ctx: CanvasRenderingContext2D, W: number, H: number): void {
@@ -137,6 +172,7 @@ function drawPianoStrip(
   songMidi: number | null,
   takeMidi: number | null,
   liveMidi: number | null,
+  previewMidi: number | null,
 ): void {
   const nh = noteH(H);
   const midiMax = midiMin + N_NOTES - 1;
@@ -155,9 +191,17 @@ function drawPianoStrip(
     if (blk) {
       ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1c1c1c";
       ctx.fillRect(1, top + 0.5, PIANO_W * 0.60, nh - 1);
+      if (m === previewMidi) {
+        ctx.fillStyle = COLOR_PREVIEW;
+        ctx.fillRect(1, top + 0.5, PIANO_W * 0.60, nh - 1);
+      }
     } else {
       ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
       ctx.fillRect(1, top + 0.5, PIANO_W - 3, nh - 1);
+      if (m === previewMidi) {
+        ctx.fillStyle = COLOR_PREVIEW;
+        ctx.fillRect(1, top + 0.5, PIANO_W - 3, nh - 1);
+      }
 
       if ((m % 12) === 0) {
         const octave = Math.floor(m / 12) - 1;
@@ -323,6 +367,7 @@ export default function PianoRoll() {
   const setPunchOut      = usePlayerStore((s) => s.setPunchOut);
   const clearPunch       = usePlayerStore((s) => s.clearPunch);
   const seek             = usePlayerStore((s) => s.seek);
+  const selectedOutputDeviceId = usePlayerStore((s) => s.selectedOutputDeviceId);
 
   const drawRef = useRef<() => void>(() => {});
   const windowMinRef = useRef<number>(PIANO_WINDOW_DEFAULT_MIN);
@@ -338,6 +383,18 @@ export default function PianoRoll() {
   const rollDrag = useRef<{ active: boolean; startX: number; startTime: number }>({
     active: false,
     startX: 0,
+    startTime: 0,
+  });
+
+  const stripDrag = useRef<{
+    active: boolean;
+    lastMidi: number | null;
+    voice: PreviewVoice | null;
+    startTime: number;
+  }>({
+    active: false,
+    lastMidi: null,
+    voice: null,
     startTime: 0,
   });
 
@@ -382,22 +439,29 @@ export default function PianoRoll() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      if (!isLoaded && livePitch.length === 0 && takePitch.length === 0) {
-        ctx.fillStyle    = "#a0a0b060";
-        ctx.font         = "11px sans-serif";
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("No pitch data", (PIANO_W + W) / 2, H / 2);
-        drawPianoStrip(ctx, H, windowMinRef.current, null, null, null);
-        return;
-      }
-
       const currentTime = getEngine().getCurrentTime();
       const t0 = currentTime - WINDOW_S / 2;
       const t1 = currentTime + WINDOW_S / 2;
       const rollW = W - PIANO_W;
       const timeToX = (t: number) =>
         PIANO_W + ((t - currentTime + WINDOW_S / 2) / WINDOW_S) * rollW;
+
+      if (!isLoaded && livePitch.length === 0 && takePitch.length === 0) {
+        ctx.fillStyle    = "#a0a0b060";
+        ctx.font         = "11px sans-serif";
+        ctx.textAlign    = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("No pitch data", (PIANO_W + W) / 2, H / 2);
+        const preview = getPreviewState();
+        if (preview.midi !== null) {
+          drawPreviewVoice(
+            ctx, H, windowMinRef.current, preview.midi,
+            timeToX(Math.max(preview.startTime, t0)), timeToX(preview.endTime ?? currentTime),
+          );
+        }
+        drawPianoStrip(ctx, H, windowMinRef.current, null, null, null, preview.midi);
+        return;
+      }
 
       const songMidi = getCurrentMidi(songPitch, currentTime);
       const takeMidi = getCurrentMidi(takePitch, currentTime);
@@ -418,9 +482,16 @@ export default function PianoRoll() {
       if (livePitch.length > 0) {
         drawRibbon(ctx, livePitch, COLOR_LIVE, t0, t1, H, midiMin, timeToX);
       }
+      const preview = getPreviewState();
+      if (preview.midi !== null) {
+        drawPreviewVoice(
+          ctx, H, midiMin, preview.midi,
+          timeToX(Math.max(preview.startTime, t0)), timeToX(preview.endTime ?? currentTime),
+        );
+      }
       drawPlayhead(ctx, W, H);
       drawNoteLabel(ctx, W, songPitch, takePitch, livePitch, currentTime);
-      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi);
+      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi, preview.midi);
     };
 
     drawRef.current();
@@ -546,6 +617,22 @@ export default function PianoRoll() {
 
   const onCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isRecording) return;
+    const x = e.nativeEvent.offsetX;
+    if (x < PIANO_W) {
+      const canvas = canvasRef.current;
+      const H = canvas?.offsetHeight ?? 0;
+      const midi = midiFromY(e.nativeEvent.offsetY, H, windowMinRef.current);
+      const now = getEngine().getCurrentTime();
+      stripDrag.current.voice?.release();
+      stripDrag.current = {
+        active: true,
+        lastMidi: midi,
+        voice: startPreviewNote(midi, selectedOutputDeviceId),
+        startTime: now,
+      };
+      startPreview(midi, now);
+      return;
+    }
     rollDrag.current = {
       active: true,
       startX: e.nativeEvent.offsetX,
@@ -554,6 +641,20 @@ export default function PianoRoll() {
   };
 
   const onCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (stripDrag.current.active) {
+      const canvas = canvasRef.current;
+      const H = canvas?.offsetHeight ?? 0;
+      const midi = midiFromY(e.nativeEvent.offsetY, H, windowMinRef.current);
+      if (midi !== stripDrag.current.lastMidi) {
+        const now = getEngine().getCurrentTime();
+        stripDrag.current.voice?.release();
+        stripDrag.current.lastMidi = midi;
+        stripDrag.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
+        stripDrag.current.startTime = now;
+        startPreview(midi, now);
+      }
+      return;
+    }
     if (!rollDrag.current.active) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -564,7 +665,15 @@ export default function PianoRoll() {
     seek(Math.max(0, Math.min(duration, startTime + deltaT)));
   };
 
-  const onCanvasMouseUp = () => { rollDrag.current.active = false; };
+  const onCanvasMouseUp = () => {
+    rollDrag.current.active = false;
+    if (stripDrag.current.active) {
+      stripDrag.current.voice?.release();
+      stripDrag.current.active = false;
+      stripDrag.current.voice = null;
+      endPreview(getEngine().getCurrentTime());
+    }
+  };
 
   return (
     <div className="analysis-panel">
