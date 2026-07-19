@@ -31,13 +31,14 @@ Both the vocals and take WaveSurfer instances may start at a non-zero point in t
 | `_takeOffset` | Song time (seconds) where the take file begins |
 | `_takeDuration` | Duration of the take file |
 | `_takeAudioOffset` | Seconds to skip into the audio file before the audible content starts (latency compensation) |
+| `_takeManualOffset` | Seconds, signed; user drag nudge on top of `_takeOffset` (see [Manual Take Sync](#manual-take-sync)) |
 
-`_seekVocals` / `_seekTake` convert a song-time to a file-time before calling `seekTo`:
+`_seekVocals` / `_seekTake` convert a song-time to a file-time before calling `seekTo`. `_seekTake` folds `_takeManualOffset` into the anchor alongside `_takeOffset`:
 
 ```ts
 private _seekTake(instrTime: number): void {
   const dur = this._takeDuration > 0 ? this._takeDuration : this._duration;
-  const takeTime = this._takeAudioOffset + Math.max(0, instrTime - this._takeOffset);
+  const takeTime = this._takeAudioOffset + Math.max(0, instrTime - (this._takeOffset + this._takeManualOffset));
   this.take.seekTo(Math.min(1, takeTime / dur));
 }
 ```
@@ -52,7 +53,7 @@ private _seekTake(instrTime: number): void {
 private _resizeTakeTrack(): void {
   const playableDur = this._takeDuration - this._takeAudioOffset;   // exclude the silent prefix
   const widthPx  = Math.round(playableDur * this._minPxPerSec);
-  const marginPx = Math.round((this._takeOffset - this._scrollTime) * this._minPxPerSec);
+  const marginPx = Math.round((this._takeOffset + this._takeManualOffset - this._scrollTime) * this._minPxPerSec);
   this._takeContainer.style.marginLeft = `${marginPx}px`;
   this._takeContainer.style.width      = `${widthPx}px`;
   this.take.setOptions({ width: widthPx });                         // forces WaveSurfer to redraw
@@ -91,8 +92,9 @@ seek: (time) => {
 The take WaveSurfer instance is started and stopped automatically as the playhead enters and exits its audible window. The window end accounts for `_takeAudioOffset` — the silent prefix is not part of the audible content:
 
 ```ts
-const takeEnd  = this._takeOffset + this._takeDuration - this._takeAudioOffset;
-const inWindow = time >= this._takeOffset && time < takeEnd;
+const takeStart = this._takeOffset + this._takeManualOffset;
+const takeEnd   = takeStart + this._takeDuration - this._takeAudioOffset;
+const inWindow  = time >= takeStart && time < takeEnd;
 if (inWindow && !this._takeIsPlaying)  { this.take.play();  this._takeIsPlaying = true;  }
 if (!inWindow && this._takeIsPlaying)  { this.take.pause(); this._takeIsPlaying = false; }
 ```
@@ -100,6 +102,16 @@ if (!inWindow && this._takeIsPlaying)  { this.take.pause(); this._takeIsPlaying 
 `play()` applies the same check before calling `take.play()` — so pressing Play from time 0 when the take starts at e.g. 30 s will not start the take immediately; the rAF tick starts it when the playhead reaches 30 s.
 
 `pause()` and `clearTakeTrack()` always reset `_takeIsPlaying = false`.
+
+## Manual Take Sync
+
+`setTakeManualOffset(offset: number)` sets `_takeManualOffset` and immediately re-runs `_resizeTakeTrack()` + `_seekTake(getCurrentTime())` — no store write. This is both the live-drag-preview mechanism (called on every `mousemove` from the drag handle in `Waveform.tsx`, see [Components: Take Sync Controls](components.md#take-sync-controls)) and the commit path (the player store's `setTakeManualOffset` action calls it once more with the final, `0.1s`-rounded value after persisting via `set_take_manual_offset`).
+
+This mutates real DOM/WaveSurfer state directly (`marginLeft`/`width`/seek position) rather than following `TimeRuler.tsx`'s canvas-`draw(override)` pattern — closer to how `zoomAll`/`setScrollAll` already work (imperative engine call, store synced separately), since the take rail's position is DOM state owned by the engine, not a canvas redraw.
+
+`manualOffset` is **unclamped in both directions**, including left of song time 0 — dragging the take to start before the song does not disrupt the recorded file in any way: `_seekTake`'s existing `Math.max(0, …)` guard just means the portion of the take before song time 0 is never reachable during playback (song time never goes negative), while the file on disk is untouched. There is likewise no upper-bound clamp, consistent with a take already being allowed to run past the song's duration.
+
+**Live analysis tracking while dragging.** The waveform position isn't the only thing that needs to track a drag in real time — the whole point of a manual sync control is comparing the take's *pitch contour and spectral envelope* against the song's, so PianoRoll and ShortTermSpectrumComparisonPanel must move with the drag too, not just snap into place after release. See `useAnalysisStore`'s `previewTakeManualOffset` in [Components: Take Sync Controls](components.md#take-sync-controls).
 
 ## Time Update Loop
 
@@ -155,7 +167,7 @@ The zoom-to-cursor and pan math itself (exponential zoom factor, bounds clamping
 
 ## `loadTakeTrack` / `clearTakeTrack`
 
-`loadTakeTrack(filePath, container, startOffset, audioOffset)` creates the take WaveSurfer instance inside a given DOM container, waits for `"ready"`, then sizes and positions the container proportionally. `clearTakeTrack()` destroys the instance and resets all four take fields (`_takeOffset`, `_takeDuration`, `_takeAudioOffset`, `_takeIsPlaying`). Called from `Waveform.tsx` whenever `activeTakeId` changes.
+`loadTakeTrack(filePath, container, startOffset, audioOffset, manualOffset)` creates the take WaveSurfer instance inside a given DOM container, waits for `"ready"`, then sizes and positions the container proportionally. `clearTakeTrack()` destroys the instance and resets all five take fields (`_takeOffset`, `_takeDuration`, `_takeAudioOffset`, `_takeManualOffset`, `_takeIsPlaying`). Called from `Waveform.tsx` whenever `activeTakeId` changes.
 
 ## `loadVocalsFromPath`
 

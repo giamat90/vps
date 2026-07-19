@@ -36,6 +36,7 @@ interface Take {
   name?: string;          // user-assigned; UI falls back to "Take N"
   startPosition: number;  // song time (seconds) where recording began; 0 for full-song takes
   audioOffset?: number;   // seconds to skip into the audio file on playback (see Latency Compensation)
+  manualOffset?: number;  // seconds, signed; user drag nudge on top of startPosition (see Manual Take Sync)
   pitchData?: PitchData;  // raw SRH output (parallel arrays)
   onsets?: number[];
   dynamics?: DynamicsPoint[];
@@ -48,6 +49,8 @@ interface Take {
   stSpectrumMaxDb?: number;
 }
 ```
+
+**`manualOffset`** — set via `set_take_manual_offset(songId, takeId, offset)` (mirrors `rename_take`'s "find by id, mutate one field, re-save takes.json" shape), a post-recording user adjustment layered additively on top of `startPosition`, distinct from and independent of `audioOffset`'s one-time auto-latency-compensation. `0`/absent means the take sits at its auto-detected position. See [Audio Engine: Manual Take Sync](audio-engine.md#manual-take-sync) and [Components: Take Sync Controls](components.md#take-sync-controls).
 
 ### PitchData
 
@@ -165,6 +168,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `list_takes` | `songId: string` | `Take[]` (backfills missing `stSpectrum*` via sidecar) |
 | `delete_take` | `songId, takeId: string` | `void` |
 | `rename_take` | `songId, takeId, name: string` | `Take` (empty/whitespace name resets to default) |
+| `set_take_manual_offset` | `songId, takeId, offset: f64` | `Take` (`0` resets to the auto-detected position) |
 | `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics, stSpectrum… }` (backfills the song spectrum via sidecar) |
 | `pitch_shift_song` | `songDir: string, nSteps: number` | `{ vocalsPath, instrumentalPath }` |
 | `save_exercise_take` | `audioData: number[], duration: f64, algorithm?: string` | `ExerciseTake` |
