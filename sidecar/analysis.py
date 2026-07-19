@@ -135,11 +135,13 @@ def _load_source_slice(source: dict, start_sec: float, end_sec: float) -> tuple:
     window_len = end_sec - start_sec
 
     if source.get("isTake"):
-        # fileTime = projectTime - startPosition + audioOffset (see player.ts).
+        # fileTime = projectTime - (startPosition + manualOffset) + audioOffset (see player.ts).
         start_position = float(source.get("startPosition", 0.0))
+        manual_offset = float(source.get("manualOffset", 0.0))
         audio_offset = float(source.get("audioOffset", 0.0))
-        file_start = start_sec - start_position + audio_offset
-        file_end = end_sec - start_position + audio_offset
+        effective_start = start_position + manual_offset
+        file_start = start_sec - effective_start + audio_offset
+        file_end = end_sec - effective_start + audio_offset
     else:
         file_start = start_sec
         file_end = end_sec

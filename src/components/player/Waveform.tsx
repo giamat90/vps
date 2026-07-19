@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore, getEngine, type TrackKey } from "../../stores/player";
+import { useAnalysisStore } from "../../stores/analysis";
 import TimeRuler from "./TimeRuler";
-import type { Song } from "../../lib/types";
+import type { Song, Take } from "../../lib/types";
 import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "../../lib/zoomPan";
+
+// Live-preview analysis updates during a take drag are throttled to the same
+// ~30fps notification rate the audio engine's rAF tick already uses, since
+// each call re-derives PitchPoint/onset/dynamics arrays and would otherwise
+// fire on every raw pointermove (which can exceed 60/s on a high-poll mouse).
+const TAKE_PREVIEW_THROTTLE_MS = 33;
 
 interface WaveformProps {
   song: Song;
@@ -67,6 +74,82 @@ function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
   );
 }
 
+// Drag handle for manually nudging the take's sync position; commits a
+// 0.1s-rounded offset on release. Uses pointer capture (not plain mouse
+// events, unlike TimeRuler's full-width canvas) since this is a small
+// element and the drag needs to keep tracking even once the cursor leaves it.
+// Unclamped in both directions — dragging left of song time 0 is allowed
+// (the leading part of the take before song time 0 just isn't reachable
+// during playback; the recorded file itself is never trimmed or modified).
+function TakeSyncControls({ take }: { take: Take }) {
+  const minPxPerSec = usePlayerStore((s) => s.minPxPerSec);
+  const setTakeManualOffset = usePlayerStore((s) => s.setTakeManualOffset);
+  const previewTakeManualOffset = useAnalysisStore((s) => s.previewTakeManualOffset);
+  const dragRef = useRef<{ startX: number; startOffset: number; dragging: boolean } | null>(null);
+  const lastPreviewAt = useRef(0);
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    dragRef.current = { startX: e.clientX, startOffset: take.manualOffset ?? 0, dragging: false };
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const deltaPx = e.clientX - d.startX;
+    if (!d.dragging) {
+      if (Math.abs(deltaPx) < 3) return;
+      d.dragging = true;
+      setDragging(true);
+    }
+    const newOffset = d.startOffset + deltaPx / minPxPerSec;
+    getEngine().setTakeManualOffset(newOffset);
+    // Live-track PianoRoll/ShortTermSpectrumComparisonPanel so the user can
+    // eyeball pitch/spectral alignment while still dragging, not just after
+    // release — throttled since each call re-derives point arrays.
+    const now = performance.now();
+    if (now - lastPreviewAt.current >= TAKE_PREVIEW_THROTTLE_MS) {
+      lastPreviewAt.current = now;
+      previewTakeManualOffset(take, newOffset);
+    }
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const d = dragRef.current;
+    dragRef.current = null;
+    setDragging(false);
+    if (!d || !d.dragging) return;
+    const deltaPx = e.clientX - d.startX;
+    const newOffset = d.startOffset + deltaPx / minPxPerSec;
+    setTakeManualOffset(take.id, newOffset);
+  };
+
+  return (
+    <div className="waveform__take-sync">
+      <button
+        type="button"
+        className={`waveform__take-drag${dragging ? " waveform__take-drag--active" : ""}`}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        title="Drag to nudge take into sync with the other tracks"
+      >
+        ⠿
+      </button>
+      <button
+        type="button"
+        className="waveform__take-reset"
+        disabled={!take.manualOffset}
+        onClick={() => setTakeManualOffset(take.id, 0)}
+        title="Reset to auto-detected position"
+      >
+        ↺
+      </button>
+    </div>
+  );
+}
+
 function Waveform({ song }: WaveformProps) {
   const timelineRef      = useRef<HTMLDivElement>(null);
   const vocalsRef        = useRef<HTMLDivElement>(null);
@@ -86,6 +169,7 @@ function Waveform({ song }: WaveformProps) {
   const loadedTakeId     = useRef<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const isInstrument = song.kind === "instrument";
+  const activeTake = takes.find((t) => t.id === activeTakeId) ?? null;
 
   useEffect(() => {
     if (!vocalsRef.current || !instrumentalRef.current || isLoading.current) return;
@@ -115,7 +199,7 @@ function Waveform({ song }: WaveformProps) {
     const take = takes.find((t) => t.id === activeTakeId);
     if (!take || !takeRef.current) return;
     loadedTakeId.current = activeTakeId;
-    eng.loadTakeTrack(take.filepath, takeRef.current, take.startPosition, take.audioOffset ?? 0)
+    eng.loadTakeTrack(take.filepath, takeRef.current, take.startPosition, take.audioOffset ?? 0, take.manualOffset ?? 0)
       .then(() => syncTrackVolumes())
       .catch((e: unknown) => console.error("[Waveform] loadTakeTrack failed:", e));
   }, [activeTakeId, takes]);
@@ -211,10 +295,11 @@ function Waveform({ song }: WaveformProps) {
           </div>
         </div>
 
-        {activeTakeId && (
+        {activeTakeId && activeTake && (
           <div className="waveform__track">
             <div className="waveform__track-header">
               <span className="waveform__label waveform__label--take">Take</span>
+              <TakeSyncControls take={activeTake} />
               <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
             </div>
             <div className="waveform__track-body">

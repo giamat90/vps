@@ -27,6 +27,8 @@ export class AudioEngine {
   private _takeOffset = 0;
   private _takeDuration = 0;
   private _takeAudioOffset = 0;
+  // User drag nudge on top of _takeOffset, for manual sync correction after recording
+  private _takeManualOffset = 0;
   // Whether the take WaveSurfer is currently playing (managed by window sync)
   private _takeIsPlaying = false;
   // Take rail container, retained so zoom/pan can re-resize it later
@@ -143,8 +145,9 @@ export class AudioEngine {
     this.instrumental.play();
     if (this.take && this._takeDuration > 0) {
       const time = this.getCurrentTime();
-      const takeEnd = this._takeOffset + this._takeDuration - this._takeAudioOffset;
-      if (time >= this._takeOffset && time < takeEnd) {
+      const takeStart = this._takeOffset + this._takeManualOffset;
+      const takeEnd = takeStart + this._takeDuration - this._takeAudioOffset;
+      if (time >= takeStart && time < takeEnd) {
         this.take.play();
         this._takeIsPlaying = true;
       }
@@ -204,7 +207,7 @@ export class AudioEngine {
   private _seekTake(instrTime: number): void {
     if (!this.take) return;
     const dur = this._takeDuration > 0 ? this._takeDuration : this._duration;
-    const takeTime = this._takeAudioOffset + Math.max(0, instrTime - this._takeOffset);
+    const takeTime = this._takeAudioOffset + Math.max(0, instrTime - (this._takeOffset + this._takeManualOffset));
     this.take.seekTo(Math.min(1, takeTime / dur));
   }
 
@@ -264,7 +267,7 @@ export class AudioEngine {
     }
   }
 
-  async loadTakeTrack(filePath: string, container: HTMLElement, startOffset = 0, audioOffset = 0): Promise<void> {
+  async loadTakeTrack(filePath: string, container: HTMLElement, startOffset = 0, audioOffset = 0, manualOffset = 0): Promise<void> {
     this.take?.destroy();
     this.take = null;
 
@@ -299,10 +302,11 @@ export class AudioEngine {
       });
     });
 
-    this._takeOffset      = startOffset;
-    this._takeDuration    = this.take.getDuration();
-    this._takeAudioOffset = audioOffset;
-    this._takeContainer   = container;
+    this._takeOffset       = startOffset;
+    this._takeDuration     = this.take.getDuration();
+    this._takeAudioOffset  = audioOffset;
+    this._takeManualOffset = manualOffset;
+    this._takeContainer    = container;
 
     // Constrain the container to the correct time window so the waveform
     // lines up visually with the other tracks (vocals, instrumental),
@@ -312,7 +316,7 @@ export class AudioEngine {
     this._resizeTakeTrack();
 
     this.take.on("interaction", (newTime) => {
-      const instrTime = newTime - this._takeAudioOffset + this._takeOffset;
+      const instrTime = newTime - this._takeAudioOffset + this._takeOffset + this._takeManualOffset;
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
       this.instrumental?.seekTo(instrProgress);
       this._seekVocals(instrTime);
@@ -322,12 +326,21 @@ export class AudioEngine {
     if (this.instrumental) {
       const instrTime = this.instrumental.getCurrentTime();
       this._seekTake(instrTime);
-      const takeEnd = this._takeOffset + this._takeDuration - this._takeAudioOffset;
-      if (wasPlaying && instrTime >= this._takeOffset && instrTime < takeEnd) {
+      const takeStart = this._takeOffset + this._takeManualOffset;
+      const takeEnd = takeStart + this._takeDuration - this._takeAudioOffset;
+      if (wasPlaying && instrTime >= takeStart && instrTime < takeEnd) {
         this.take.play();
         this._takeIsPlaying = true;
       }
     }
+  }
+
+  // Live drag preview and commit: repositions the take track visually and
+  // keeps playback/seek aligned, without touching the Zustand store.
+  setTakeManualOffset(offset: number): void {
+    this._takeManualOffset = offset;
+    this._resizeTakeTrack();
+    this._seekTake(this.getCurrentTime());
   }
 
   setTakeVolume(volume: number): void {
@@ -340,6 +353,7 @@ export class AudioEngine {
     this._takeOffset = 0;
     this._takeDuration = 0;
     this._takeAudioOffset = 0;
+    this._takeManualOffset = 0;
     this._takeIsPlaying = false;
     this._takeContainer = null;
   }
@@ -391,7 +405,7 @@ export class AudioEngine {
     if (!this.take || !this._takeContainer || this._duration <= 0 || this._takeDuration <= 0) return;
     const playableDur = this._takeDuration - this._takeAudioOffset;
     const widthPx  = Math.round(playableDur * this._minPxPerSec);
-    const marginPx = Math.round((this._takeOffset - this._scrollTime) * this._minPxPerSec);
+    const marginPx = Math.round((this._takeOffset + this._takeManualOffset - this._scrollTime) * this._minPxPerSec);
     this._takeContainer.style.marginLeft = `${marginPx}px`;
     this._takeContainer.style.width      = `${widthPx}px`;
     this.take.setOptions({ width: widthPx });
@@ -625,8 +639,9 @@ export class AudioEngine {
 
       // Take window sync: start/stop the take as the playhead enters/exits its time window
       if (this.take && this._takeDuration > 0) {
-        const takeEnd = this._takeOffset + this._takeDuration - this._takeAudioOffset;
-        const inWindow = time >= this._takeOffset && time < takeEnd;
+        const takeStart = this._takeOffset + this._takeManualOffset;
+        const takeEnd = takeStart + this._takeDuration - this._takeAudioOffset;
+        const inWindow = time >= takeStart && time < takeEnd;
         if (inWindow && !this._takeIsPlaying) {
           this.take.play();
           this._takeIsPlaying = true;

@@ -81,6 +81,7 @@ interface AnalysisState {
 interface AnalysisActions {
   loadSongAnalysis: (songId: string) => Promise<void>;
   loadTakeAnalysis: (take: Take) => void;
+  previewTakeManualOffset: (take: Take, offset: number) => void;
   loadExerciseTakeAnalysis: (take: ExerciseTake) => void;
   appendLivePitch: (point: PitchPoint) => void;
   clearLivePitch: () => void;
@@ -149,7 +150,7 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
       // librosa (see sidecar analysis.py / wiki/python-sidecar.md), so pd.times is
       // already 0-based from the audible-content start — which is exactly song time
       // `startPosition`. audioOffset must NOT be subtracted again here.
-      const toSongTime = (t: number) => t + take.startPosition;
+      const toSongTime = (t: number) => t + take.startPosition + (take.manualOffset ?? 0);
 
       const takePitch = take.pitchData ? pitchDataToPoints(take.pitchData, toSongTime) : [];
       const takeOnsets = (take.onsets ?? []).map(toSongTime);
@@ -162,6 +163,28 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
       );
 
       set({ takePitch, takeOnsets, takeDynamics, takeVibrato, takeSTSpectrum, timingDeviations, livePitch: [] });
+    },
+
+    // Live-drag variant of loadTakeAnalysis, called on every throttled pointermove
+    // while the user drags a take's sync handle (see Waveform.tsx's TakeSyncControls)
+    // so PianoRoll/ShortTermSpectrumComparisonPanel track the drag in real time —
+    // otherwise the user has to release, look, and re-grab to eyeball alignment.
+    // Reuses the already-decoded spectrum bytes from state instead of re-running
+    // decodeSTSpectrumFrames' base64 decode on every call — only the time axis
+    // shifts during a drag, the byte content never does.
+    previewTakeManualOffset: (take, offset) => {
+      const { songOnsets, takeSTSpectrum } = get();
+      const toSongTime = (t: number) => t + take.startPosition + offset;
+
+      const takePitch = take.pitchData ? pitchDataToPoints(take.pitchData, toSongTime) : [];
+      const takeOnsets = (take.onsets ?? []).map(toSongTime);
+      const takeDynamics = (take.dynamics ?? []).map((d) => ({ ...d, time: toSongTime(d.time) }));
+      const timingDeviations = computeTimingDeviations(songOnsets, takeOnsets);
+      const shiftedSTSpectrum = takeSTSpectrum && take.stSpectrumTimes
+        ? { ...takeSTSpectrum, times: take.stSpectrumTimes.map(toSongTime) }
+        : takeSTSpectrum;
+
+      set({ takePitch, takeOnsets, takeDynamics, takeSTSpectrum: shiftedSTSpectrum, timingDeviations });
     },
 
     loadExerciseTakeAnalysis: (take) => {

@@ -2,7 +2,7 @@ import { create } from "zustand";
 import { AudioEngine } from "../audio/engine";
 import { VocalRecorder } from "../audio/recorder";
 import type { Song, Take } from "../lib/types";
-import { saveTake, listTakes, deleteTakeApi, renameTakeApi, pitchShiftSong, saveExerciseTake, setMetronomeOffsetApi } from "../lib/tauri";
+import { saveTake, listTakes, deleteTakeApi, renameTakeApi, setTakeManualOffsetApi, pitchShiftSong, saveExerciseTake, setMetronomeOffsetApi } from "../lib/tauri";
 import type { ExerciseTake } from "../lib/types";
 import { useSettingsStore } from "./settings";
 import { useAnalysisStore } from "./analysis";
@@ -153,6 +153,7 @@ export function buildMixSources(state: PlayerState): {
         isTake: true,
         startPosition: take.startPosition,
         audioOffset: take.audioOffset ?? 0,
+        manualOffset: take.manualOffset ?? 0,
       });
     }
   }
@@ -270,6 +271,7 @@ interface PlayerActions {
   fetchTakes: () => Promise<void>;
   deleteTake: (takeId: string) => Promise<void>;
   renameTake: (takeId: string, name: string) => Promise<void>;
+  setTakeManualOffset: (takeId: string, offset: number) => void;
   setActiveTake: (takeId: string) => void;
   setTakeVolume: (v: number) => void;
   // Punch region actions
@@ -946,6 +948,24 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set((state) => ({
       takes: state.takes.map((t) => (t.id === takeId ? updated : t)),
     }));
+  },
+
+  setTakeManualOffset: (takeId, offset) => {
+    const { song, takes } = get();
+    if (!song) return;
+    const take = takes.find((t) => t.id === takeId);
+    if (!take) return;
+    // Unclamped — a take can be dragged to start before song time 0. Its
+    // leading edge just becomes unreachable during playback; the recorded
+    // file itself is never trimmed or otherwise modified.
+    const rounded = Math.round(offset * 10) / 10;
+    const updated = { ...take, manualOffset: rounded || undefined };
+    set({ takes: takes.map((t) => (t.id === takeId ? updated : t)) });
+    getEngine().setTakeManualOffset(rounded);
+    useAnalysisStore.getState().loadTakeAnalysis(updated);
+    setTakeManualOffsetApi(song.id, takeId, rounded).catch((e: unknown) =>
+      console.error("[player] failed to persist take manual offset:", e)
+    );
   },
 
   setActiveTake: (takeId) => {

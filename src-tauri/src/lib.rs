@@ -27,6 +27,7 @@ pub fn run() {
             commands::list_takes,
             commands::delete_take,
             commands::rename_take,
+            commands::set_take_manual_offset,
             commands::load_analysis,
             commands::save_exercise_take,
             commands::import_exercise_file,
