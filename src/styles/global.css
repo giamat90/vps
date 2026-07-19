@@ -620,6 +620,48 @@ body,
   gap: 0.6rem;
 }
 
+.waveform__take-sync {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.waveform__take-drag,
+.waveform__take-reset {
+  padding: 0 0.5rem;
+  height: 1.6rem;
+  border-radius: 4px;
+  border: 1px solid var(--bg-surface);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: grab;
+  touch-action: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.waveform__take-drag:hover,
+.waveform__take-reset:hover:not(:disabled) {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+
+.waveform__take-drag--active {
+  cursor: grabbing;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.waveform__take-reset {
+  cursor: pointer;
+}
+
+.waveform__take-reset:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 .waveform__volume {
   width: 7rem;
   accent-color: var(--accent);

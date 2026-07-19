@@ -233,6 +233,8 @@ On stop, takes longer than 90 s log `[drift-check] takeDuration=…s input=… o
 
 When recording begins at a non-zero position, `recordingStartPos` is saved. After latency compensation it is passed to `saveTake` as `startPosition`. The audio engine uses this offset when playing back the take to align it with the instrumental — see `_takeOffset` and `_takeAudioOffset` in [Audio Engine](audio-engine.md).
 
+If the auto-detected alignment above is still slightly off, the user can drag the take into sync manually afterward — see [Audio Engine: Manual Take Sync](audio-engine.md#manual-take-sync) and [Components: Take Sync Controls](components.md#take-sync-controls). This is a **separate, post-recording adjustment** (`manualOffset`), layered additively on top of `startPosition`/`audioOffset` rather than part of this recording pipeline — nothing in `startRecording`/`stopRecording` reads or writes it.
+
 ## MediaRecorder Codec Fallback
 
 WebView2 may not support `audio/webm;codecs=opus`. The recorder tries codecs in order:

@@ -48,6 +48,11 @@ export async function renameTakeApi(songId: string, takeId: string, name: string
   return invoke<Take>("rename_take", { songId, takeId, name });
 }
 
+/** Persist a manual drag nudge (seconds, signed) on top of a take's auto-detected startPosition; 0 clears it back to that position */
+export async function setTakeManualOffsetApi(songId: string, takeId: string, offset: number): Promise<Take> {
+  return invoke<Take>("set_take_manual_offset", { songId, takeId, offset });
+}
+
 /** Persist the metronome's downbeat anchor (song time, seconds) for this song; null clears it back to song start */
 export async function setMetronomeOffsetApi(songId: string, offset: number | null): Promise<Song> {
   return invoke<Song>("set_metronome_offset", { songId, offset });
@@ -126,6 +131,7 @@ export interface MixSource {
   isTake: boolean;
   startPosition?: number;
   audioOffset?: number;
+  manualOffset?: number;
 }
 
 /**

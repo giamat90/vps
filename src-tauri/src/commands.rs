@@ -301,6 +301,10 @@ pub struct Take {
     /// compensation exceeds startPosition).
     #[serde(default, skip_serializing_if = "crate::commands::is_zero_f64")]
     pub audio_offset: f64,
+    /// Seconds, signed; user drag nudge applied on top of start_position to fine-tune
+    /// sync after the fact. 0 means untouched.
+    #[serde(default, skip_serializing_if = "crate::commands::is_zero_f64")]
+    pub manual_offset: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pitch_data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -437,6 +441,7 @@ pub async fn save_take(
         name: None,
         start_position,
         audio_offset,
+        manual_offset: 0.0,
         pitch_data,
         onsets,
         dynamics,
@@ -565,6 +570,19 @@ pub async fn rename_take(song_id: String, take_id: String, name: String) -> Resu
         .find(|t| t.id == take_id)
         .ok_or_else(|| format!("Take not found: {take_id}"))?;
     take.name = if trimmed.is_empty() { None } else { Some(trimmed.to_string()) };
+    let updated = take.clone();
+    save_takes(&song_id, &takes)?;
+    Ok(updated)
+}
+
+#[tauri::command]
+pub async fn set_take_manual_offset(song_id: String, take_id: String, offset: f64) -> Result<Take, String> {
+    let mut takes = load_takes(&song_id)?;
+    let take = takes
+        .iter_mut()
+        .find(|t| t.id == take_id)
+        .ok_or_else(|| format!("Take not found: {take_id}"))?;
+    take.manual_offset = offset;
     let updated = take.clone();
     save_takes(&song_id, &takes)?;
     Ok(updated)
@@ -1050,6 +1068,7 @@ pub struct MixSource {
     pub is_take: bool,
     pub start_position: Option<f64>,
     pub audio_offset: Option<f64>,
+    pub manual_offset: Option<f64>,
 }
 
 #[tauri::command]
