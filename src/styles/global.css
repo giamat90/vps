@@ -1169,6 +1169,50 @@ body,
   gap: 0.5rem;
 }
 
+.count-in-btn {
+  min-width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 0.3rem;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0 0.35rem;
+  flex-shrink: 0;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.count-in-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.count-in-btn--active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.count-in-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.record-btn--counting-in {
+  border-color: var(--warning);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.record-btn__countdown {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--warning);
+}
+
 .record-btn__saving-label {
   font-size: 0.75rem;
   color: var(--warning);

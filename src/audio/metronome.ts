@@ -9,6 +9,13 @@ class Metronome {
   private nextNoteTime = 0;
   private beat = 0;
   private bpm = 120;
+  // Output device to route clicks to. Recording opens the mic via getUserMedia,
+  // which on Windows silently reroutes the system default output to the
+  // Communications device — the same issue AudioEngine.setOutputDevice() works
+  // around for the WaveSurfer tracks. Without this, clicks scheduled during/after
+  // a recording's mic-open (e.g. count-in) can play to a device the user isn't
+  // listening on, sounding like nothing happened.
+  private sinkId: string | null = null;
 
   private scheduleClick(beat: number, time: number) {
     const ctx = this.ctx;
@@ -47,7 +54,9 @@ class Metronome {
    */
   start(bpm: number, timeUntilNextBeat = 0, startBeat = 0) {
     this.bpm = bpm;
-    if (!this.ctx) this.ctx = new AudioContext();
+    if (!this.ctx) {
+      this.ctx = new AudioContext(this.sinkId ? ({ sinkId: this.sinkId } as AudioContextOptions) : undefined);
+    }
     if (this.ctx.state === "suspended") {
       this.ctx.resume().catch((e) => console.warn("Metronome: failed to resume AudioContext", e));
     }
@@ -62,6 +71,20 @@ class Metronome {
       this.timerId = null;
     }
     this.ctx?.suspend().catch((e) => console.warn("Metronome: failed to suspend AudioContext", e));
+  }
+
+  /**
+   * Pins clicks to a specific output device (see the `sinkId` field comment).
+   * If the context already exists, re-routes it live via the modern
+   * AudioContext.setSinkId() API where available; otherwise the id is applied
+   * the next time start() lazily creates a context.
+   */
+  setOutputDevice(deviceId: string) {
+    this.sinkId = deviceId;
+    const ctx = this.ctx as (AudioContext & { setSinkId?: (id: string) => Promise<void> }) | null;
+    if (ctx?.setSinkId) {
+      ctx.setSinkId(deviceId).catch((e) => console.warn("Metronome: setSinkId failed", e));
+    }
   }
 }
 

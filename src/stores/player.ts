@@ -6,6 +6,8 @@ import { saveTake, listTakes, deleteTakeApi, renameTakeApi, setTakeManualOffsetA
 import type { ExerciseTake } from "../lib/types";
 import { useSettingsStore } from "./settings";
 import { useAnalysisStore } from "./analysis";
+import { metronome } from "../audio/metronome";
+import { countInDurationSeconds } from "../lib/metronomeSync";
 
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
@@ -19,6 +21,12 @@ let _recordingLatencyS = 0;
 let _recordingOutputId = "";
 // Takes shorter than this carry too little accumulated drift to be worth logging.
 const DRIFT_CHECK_MIN_TAKE_S = 90;
+// Count-in scheduling handles — module-level so cancelCountIn (a separate
+// store action) can reach across and abort the setTimeout/interval that
+// startRecording's in-flight promise is awaiting.
+let _countInTimeoutId: number | null = null;
+let _countInIntervalId: number | null = null;
+let _countInResolve: ((completed: boolean) => void) | null = null;
 
 export interface CalibrationEntry {
   offset: number; // ms
@@ -228,6 +236,11 @@ interface PlayerState {
   // click track can be aligned past any silence/pickup before the song's
   // actual downbeat. Persisted per song.
   metronomeOffset: number;
+  // Count-in: bars of click played before startRecording actually starts
+  // capturing (0 = off). Session-only, not persisted per song.
+  countInBars: 0 | 1 | 2;
+  isCountingIn: boolean;
+  countInBeatsRemaining: number;
 }
 
 interface PlayerActions {
@@ -291,6 +304,9 @@ interface PlayerActions {
   setScrollTime: (scrollTime: number) => void;
   // Metronome downbeat anchor action
   setMetronomeOffset: (t: number) => void;
+  // Count-in actions
+  setCountInBars: (bars: 0 | 1 | 2) => void;
+  cancelCountIn: () => void;
 }
 
 function _loadOffsets(): Record<string, CalibrationEntry> {
@@ -360,6 +376,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   minPxPerSec: 1,
   scrollTime: 0,
   metronomeOffset: 0,
+  countInBars: 0,
+  isCountingIn: false,
+  countInBeatsRemaining: 0,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
@@ -762,6 +781,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     // Honour punch-in: start recording from the punch point, not the playhead
     recordingStartPos = get().punchIn ?? eng.getCurrentTime();
     eng.pause();
+    // eng.pause() only touches the engine, not the store — flip isPlaying
+    // synchronously so TempoControl's metronome effect releases the shared
+    // `metronome` singleton before the count-in below claims it.
+    set({ isPlaying: false });
 
     const rec = getRecorder();
     let inputLatencyS = 0;
@@ -811,6 +834,57 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       await eng.setOutputDevice(outputId);
     } catch (e) {
       console.warn("[recording] setOutputDevice failed:", e);
+    }
+    // Pin the count-in click to the same repinned output — otherwise it plays
+    // through whatever Windows silently rerouted the default device to after
+    // getUserMedia (see the comment above), sounding like the count-in never fired.
+    if (outputId) metronome.setOutputDevice(outputId);
+
+    // Count-in: play N bars of click at the song's tempo before capture
+    // actually begins, so the performer can settle into the beat (tap or
+    // mute-strum along) before the take starts — which also means the take
+    // lands beat-aligned by construction, making the manual take-repositioning
+    // drag afterward a simple constant shift instead of an arbitrary one.
+    // Click stops the instant recording starts; a second Record click during
+    // the countdown aborts it via cancelCountIn().
+    const countInBars = get().countInBars;
+    if (countInBars > 0) {
+      const bpm = (song.detectedBpm ?? 120) * get().playbackRate;
+      const totalBeats = countInBars * 4;
+      const beatIntervalMs = (60 / bpm) * 1000;
+      const completed = await new Promise<boolean>((resolve) => {
+        let remaining = totalBeats;
+        _countInResolve = resolve;
+        set({ isCountingIn: true, countInBeatsRemaining: remaining });
+        metronome.start(bpm, 0.05, 0);
+        _countInIntervalId = window.setInterval(() => {
+          remaining -= 1;
+          set({ countInBeatsRemaining: Math.max(0, remaining) });
+        }, beatIntervalMs);
+        _countInTimeoutId = window.setTimeout(() => {
+          _countInTimeoutId = null;
+          if (_countInIntervalId !== null) {
+            window.clearInterval(_countInIntervalId);
+            _countInIntervalId = null;
+          }
+          metronome.stop();
+          set({ isCountingIn: false, countInBeatsRemaining: 0 });
+          _countInResolve = null;
+          resolve(true);
+        }, countInDurationSeconds(bpm, countInBars) * 1000);
+      });
+      if (!completed) {
+        // Cancelled mid-count — abandon this recording attempt, releasing
+        // the mic already opened above and restoring normal output routing
+        // (mirrors the restore in stopRecording).
+        rec.releaseStream();
+        eng.setInteract(true);
+        await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) =>
+          console.warn("[recording] setOutputDevice on count-in cancel failed:", e)
+        );
+        metronome.setOutputDevice(get().selectedOutputDeviceId ?? "");
+        return;
+      }
     }
 
     eng.setInteract(false);
@@ -880,6 +954,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       rec.releaseStream();
       // Restore output routing to the user's selection (or system default).
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) => console.warn("[recording] setOutputDevice on stop failed:", e));
+      metronome.setOutputDevice(get().selectedOutputDeviceId ?? "");
 
       // Convert blob to byte array for Tauri
       const arrayBuffer = await blob.arrayBuffer();
@@ -1081,6 +1156,28 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     setMetronomeOffsetApi(song.id, clamped).catch((e: unknown) =>
       console.error("[player] failed to persist metronome offset:", e)
     );
+  },
+
+  setCountInBars: (bars) => {
+    if (get().isCountingIn || get().isRecording) return;
+    set({ countInBars: bars });
+  },
+
+  cancelCountIn: () => {
+    if (_countInResolve === null) return;
+    if (_countInTimeoutId !== null) {
+      window.clearTimeout(_countInTimeoutId);
+      _countInTimeoutId = null;
+    }
+    if (_countInIntervalId !== null) {
+      window.clearInterval(_countInIntervalId);
+      _countInIntervalId = null;
+    }
+    metronome.stop();
+    set({ isCountingIn: false, countInBeatsRemaining: 0 });
+    const resolve = _countInResolve;
+    _countInResolve = null;
+    resolve(false);
   },
 }));
 

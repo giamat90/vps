@@ -37,3 +37,9 @@ export function computeMetronomePhase(args: {
 
   return { timeUntilNextBeat, beatIndex };
 }
+
+/** Wall-clock duration of a count-in of `bars` bars at `bpm`, in seconds. */
+export function countInDurationSeconds(bpm: number, bars: number, beatsPerBar = 4): number {
+  if (!(bpm > 0) || bars <= 0) return 0;
+  return (bars * beatsPerBar * 60) / bpm;
+}
