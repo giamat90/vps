@@ -27,6 +27,9 @@ interface LibraryState {
 function friendlyError(raw: unknown, context: "youtube" | "upload"): string {
   const msg = String(raw ?? "").toLowerCase();
 
+  if (msg.includes("known-good floor")) {
+    return "The YouTube downloader (yt-dlp) is out of date and YouTube has changed something it can't handle. Update it: `pip install -U -r requirements.txt` in the sidecar venv (dev), or reinstall the app (installed build).";
+  }
   if (msg.includes("sign in to confirm") || msg.includes("not a bot") || msg.includes("bot")) {
     return "YouTube blocked the download (bot detection). Try disabling your VPN, then retry.";
   }

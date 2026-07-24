@@ -10,6 +10,40 @@ from processor import process
 
 _BROWSERS = ["chrome", "firefox", "edge", "brave", "opera"]
 
+# Keep in sync with the yt-dlp floor in requirements.txt — bump both together
+# whenever YouTube import starts failing in production. This lets a failed
+# import self-diagnose "yt-dlp is stale" instead of surfacing only as a
+# generic bot-detection/DownloadError with no clue why.
+_MIN_YT_DLP_VERSION = "2026.7.4"
+
+
+def _version_tuple(v: str) -> tuple:
+    parts = []
+    for p in v.split("."):
+        digits = "".join(ch for ch in p if ch.isdigit())
+        parts.append(int(digits) if digits else 0)
+    return tuple(parts)
+
+
+def _yt_dlp_is_outdated() -> bool:
+    try:
+        return _version_tuple(yt_dlp.version.__version__) < _version_tuple(_MIN_YT_DLP_VERSION)
+    except Exception:
+        return False
+
+
+def _raise_import_error(exc: Exception):
+    if isinstance(exc, yt_dlp.utils.DownloadError) and _yt_dlp_is_outdated():
+        raise RuntimeError(
+            f"yt-dlp {yt_dlp.version.__version__} is older than the known-good floor "
+            f"{_MIN_YT_DLP_VERSION} pinned in requirements.txt. YouTube periodically "
+            "breaks compatibility with older yt-dlp clients, which is the likely cause "
+            "here, not a bad URL or network issue. Fix: `pip install -U -r "
+            "requirements.txt` in the dev venv, or rebuild the sidecar for an installed "
+            f"build. Original error: {exc}"
+        ) from exc
+    raise exc
+
 
 def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = False, algorithm: str = "srh") -> dict:
     """
@@ -66,7 +100,7 @@ def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = 
                 "Sign in to confirm" in str(exc) or "bot" in str(exc).lower()
             )
             if not is_cookie_attempt and not is_bot_detection:
-                raise
+                _raise_import_error(exc)
             # Clean up any partial file before next attempt.
             for f in os.listdir(output_dir):
                 if f.startswith("source."):
@@ -76,7 +110,7 @@ def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = 
                         pass
 
     if last_error is not None:
-        raise last_error
+        _raise_import_error(last_error)
 
     source_wav = os.path.join(output_dir, "source.wav")
     if not os.path.exists(source_wav):
