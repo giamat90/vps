@@ -21,6 +21,7 @@ if getattr(sys, "frozen", False):
 
 from processor import process, compute_st_spectrum_from_file
 from analysis import analyze_recording, convert_take_to_wav, mix_export
+from version_check import check_yt_dlp_freshness
 
 
 def send(msg: dict):
@@ -35,7 +36,11 @@ def make_progress_callback(cmd_name: str):
 
 
 def main():
-    send({"type": "ready"})
+    try:
+        advisory = check_yt_dlp_freshness()
+    except Exception:
+        advisory = None
+    send({"type": "ready", "advisory": advisory})
 
     for line in sys.stdin:
         line = line.strip()

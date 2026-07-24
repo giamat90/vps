@@ -10,7 +10,10 @@ use std::time::Duration;
 #[serde(tag = "type")]
 pub enum SidecarMessage {
     #[serde(rename = "ready")]
-    Ready,
+    Ready {
+        #[serde(default)]
+        advisory: Option<String>,
+    },
     #[serde(rename = "progress")]
     Progress {
         cmd: Option<String>,
@@ -128,8 +131,11 @@ impl SidecarManager {
             .map_err(|e| format!("Sidecar did not send ready: {e}"))?;
 
         match msg {
-            SidecarMessage::Ready => {
+            SidecarMessage::Ready { advisory } => {
                 log::info!("Sidecar is ready");
+                if let Some(advisory) = advisory {
+                    log::warn!("{advisory}");
+                }
                 Ok(manager)
             }
             other => Err(format!("Expected ready, got: {other:?}")),

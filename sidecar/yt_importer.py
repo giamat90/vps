@@ -7,14 +7,9 @@ Requires ffmpeg on PATH for the WAV post-processing step.
 import os
 import yt_dlp
 from processor import process
+from version_check import MIN_YT_DLP_VERSION as _MIN_YT_DLP_VERSION
 
 _BROWSERS = ["chrome", "firefox", "edge", "brave", "opera"]
-
-# Keep in sync with the yt-dlp floor in requirements.txt — bump both together
-# whenever YouTube import starts failing in production. This lets a failed
-# import self-diagnose "yt-dlp is stale" instead of surfacing only as a
-# generic bot-detection/DownloadError with no clue why.
-_MIN_YT_DLP_VERSION = "2026.7.4"
 
 
 def _version_tuple(v: str) -> tuple:
