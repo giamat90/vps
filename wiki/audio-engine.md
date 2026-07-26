@@ -105,7 +105,7 @@ if (!inWindow && this._takeIsPlaying)  { this.take.pause(); this._takeIsPlaying 
 
 ## Manual Take Sync
 
-`setTakeManualOffset(offset: number)` sets `_takeManualOffset` and immediately re-runs `_resizeTakeTrack()` + `_seekTake(getCurrentTime())` — no store write. This is both the live-drag-preview mechanism (called on every `mousemove` from the drag handle in `Waveform.tsx`, see [Components: Take Sync Controls](components.md#take-sync-controls)) and the commit path (the player store's `setTakeManualOffset` action calls it once more with the final, `0.1s`-rounded value after persisting via `set_take_manual_offset`).
+`setTakeManualOffset(offset: number)` sets `_takeManualOffset` and immediately re-runs `_resizeTakeTrack()` + `_seekTake(getCurrentTime())` — no store write. This is both the live-drag-preview mechanism (called on every `mousemove` from the drag handle in `Waveform.tsx`, see [Components: Take Sync Controls](components.md#take-sync-controls)) and the commit path — the player store's `setTakeManualOffset` action calls it once more with the final, `0.01s`-rounded value (tightened from `0.1s` to support the 10ms nudge buttons/arrow keys — same component, same commit path) after persisting via `set_take_manual_offset`.
 
 This mutates real DOM/WaveSurfer state directly (`marginLeft`/`width`/seek position) rather than following `TimeRuler.tsx`'s canvas-`draw(override)` pattern — closer to how `zoomAll`/`setScrollAll` already work (imperative engine call, store synced separately), since the take rail's position is DOM state owned by the engine, not a canvas redraw.
 
@@ -163,7 +163,9 @@ The zoom-to-cursor and pan math itself (exponential zoom factor, bounds clamping
 
 ## Output Device Routing
 
-`setOutputDevice(deviceId)` calls WaveSurfer's `setSinkId()` on all three instances (vocals, instrumental, take). On Windows with WebView2, specifying `""` routes audio to the current Windows default output device (which may change when a microphone is opened — see [Recording Flow](recording-flow.md)).
+`setOutputDevice(deviceId)` calls WaveSurfer's `setSinkId()` on `vocals`/`instrumental`/`take`/`exerciseTrack` (whichever currently exist) and remembers `deviceId` in `_lastOutputDeviceId`. On Windows with WebView2, specifying `""` routes audio to the current Windows default output device (which may change when a microphone is opened — see [Recording Flow](recording-flow.md)).
+
+**Fixed bug (2026-07-26):** `vocals`/`instrumental`/`take`/`exerciseTrack` are all destroyed and recreated from scratch — `load()` on every song load, `loadTakeTrack()`/`loadExerciseTrack()` on every take/exercise-track load — so a `setOutputDevice()` call only ever reached whichever instances existed *at that moment*. A freshly created instance never inherited the previously selected device and silently fell back to the system default output, even though the Zustand store's `selectedOutputDeviceId` (and the `OutputSelector` UI) still showed the correct device selected — the frontend "remembered" the choice, the engine's actual audio elements didn't. Fixed by re-applying `_lastOutputDeviceId` via `setSinkId()` right after each new instance becomes ready, in `load()`, `loadTakeTrack()`, and `loadExerciseTrack()`.
 
 ## `loadTakeTrack` / `clearTakeTrack`
 

@@ -11,6 +11,12 @@ import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "../../
 // fire on every raw pointermove (which can exceed 60/s on a high-poll mouse).
 const TAKE_PREVIEW_THROTTLE_MS = 33;
 
+// Chunk-based alternative to dragging: fine enough to correct residual sync
+// error left after latency calibration (perceptible misalignment starts
+// around 20-30ms), without needing many presses for larger corrections.
+const TAKE_NUDGE_STEP_S = 0.01;
+const TAKE_NUDGE_COARSE_MULTIPLIER = 5; // Shift+Arrow = 50ms
+
 interface WaveformProps {
   song: Song;
 }
@@ -125,8 +131,30 @@ function TakeSyncControls({ take }: { take: Take }) {
     setTakeManualOffset(take.id, newOffset);
   };
 
+  const nudge = (direction: 1 | -1, coarse: boolean) => {
+    const step = TAKE_NUDGE_STEP_S * (coarse ? TAKE_NUDGE_COARSE_MULTIPLIER : 1) * direction;
+    setTakeManualOffset(take.id, (take.manualOffset ?? 0) + step);
+  };
+
+  // Scoped (not global) so arrow keys only nudge while this control has
+  // focus — click it or Tab to it. Avoids claiming the arrow keys app-wide
+  // since there's no other keyboard shortcut in the app yet to coordinate with.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    nudge(e.key === "ArrowLeft" ? -1 : 1, e.shiftKey);
+  };
+
+  const offsetMs = Math.round((take.manualOffset ?? 0) * 1000);
+
   return (
-    <div className="waveform__take-sync">
+    <div
+      className="waveform__take-sync"
+      tabIndex={0}
+      role="group"
+      aria-label="Take sync offset"
+      onKeyDown={onKeyDown}
+    >
       <button
         type="button"
         className={`waveform__take-drag${dragging ? " waveform__take-drag--active" : ""}`}
@@ -136,6 +164,23 @@ function TakeSyncControls({ take }: { take: Take }) {
         title="Drag to nudge take into sync with the other tracks"
       >
         ⠿
+      </button>
+      <button
+        type="button"
+        className="waveform__take-nudge"
+        onClick={() => nudge(-1, false)}
+        title="Nudge 10ms earlier (Shift: 50ms). Click here first, then use ←/→ arrow keys."
+      >
+        ◀
+      </button>
+      <span className="waveform__take-offset">{offsetMs === 0 ? "0ms" : `${offsetMs > 0 ? "+" : ""}${offsetMs}ms`}</span>
+      <button
+        type="button"
+        className="waveform__take-nudge"
+        onClick={() => nudge(1, false)}
+        title="Nudge 10ms later (Shift: 50ms). Click here first, then use ←/→ arrow keys."
+      >
+        ▶
       </button>
       <button
         type="button"

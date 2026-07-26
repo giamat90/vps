@@ -1033,7 +1033,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     // Unclamped — a take can be dragged to start before song time 0. Its
     // leading edge just becomes unreachable during playback; the recorded
     // file itself is never trimmed or otherwise modified.
-    const rounded = Math.round(offset * 10) / 10;
+    const rounded = Math.round(offset * 100) / 100;
     const updated = { ...take, manualOffset: rounded || undefined };
     set({ takes: takes.map((t) => (t.id === takeId ? updated : t)) });
     getEngine().setTakeManualOffset(rounded);

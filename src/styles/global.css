@@ -624,9 +624,24 @@ body,
   display: flex;
   align-items: center;
   gap: 0.3rem;
+  border-radius: 4px;
+}
+
+.waveform__take-sync:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.waveform__take-offset {
+  min-width: 3.5rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
 }
 
 .waveform__take-drag,
+.waveform__take-nudge,
 .waveform__take-reset {
   padding: 0 0.5rem;
   height: 1.6rem;
@@ -642,6 +657,7 @@ body,
 }
 
 .waveform__take-drag:hover,
+.waveform__take-nudge:hover,
 .waveform__take-reset:hover:not(:disabled) {
   border-color: var(--text-secondary);
   color: var(--text-primary);
@@ -653,6 +669,7 @@ body,
   border-color: var(--accent);
 }
 
+.waveform__take-nudge,
 .waveform__take-reset {
   cursor: pointer;
 }

@@ -46,6 +46,10 @@ export class AudioEngine {
   // of the vocals/instrumental/take trio (which requires a song). Ungated —
   // does not participate in play()/pause()/seekTo()'s vocals&&instrumental guard.
   exerciseTrack: WaveSurfer | null = null;
+  // Output device last applied via setOutputDevice — re-applied to take/exerciseTrack
+  // WaveSurfer instances, which are destroyed and recreated on each load and would
+  // otherwise fall back to the system default sink.
+  private _lastOutputDeviceId = "";
 
   async load(
     songDir: string,
@@ -105,6 +109,17 @@ export class AudioEngine {
 
     // Guard: destroy() may have been called (e.g. by React StrictMode cleanup) during the await.
     if (!this.vocals || !this.instrumental) return;
+
+    if (this._lastOutputDeviceId) {
+      await Promise.all([
+        this.vocals.setSinkId(this._lastOutputDeviceId).catch((e) =>
+          console.warn("[engine] setSinkId on vocals failed:", e)
+        ),
+        this.instrumental.setSinkId(this._lastOutputDeviceId).catch((e) =>
+          console.warn("[engine] setSinkId on instrumental failed:", e)
+        ),
+      ]);
+    }
 
     // Duration is always based on the instrumental (the reference track).
     // Vocals/take may be shorter when recording starts mid-song.
@@ -217,10 +232,12 @@ export class AudioEngine {
   }
 
   async setOutputDevice(deviceId: string): Promise<void> {
+    this._lastOutputDeviceId = deviceId;
     await Promise.all([
       this.vocals?.setSinkId(deviceId),
       this.instrumental?.setSinkId(deviceId),
       this.take?.setSinkId(deviceId),
+      this.exerciseTrack?.setSinkId(deviceId),
     ]);
   }
 
@@ -301,6 +318,12 @@ export class AudioEngine {
         reject(new Error(err?.message || err?.toString?.() || "WaveSurfer load error"));
       });
     });
+
+    if (this._lastOutputDeviceId) {
+      await this.take.setSinkId(this._lastOutputDeviceId).catch((e) =>
+        console.warn("[engine] setSinkId on take failed:", e)
+      );
+    }
 
     this._takeOffset       = startOffset;
     this._takeDuration     = this.take.getDuration();
@@ -455,6 +478,12 @@ export class AudioEngine {
 
     // Guard: clearExerciseTrack()/destroy() may have run during the await.
     if (!this.exerciseTrack) return;
+
+    if (this._lastOutputDeviceId) {
+      await this.exerciseTrack.setSinkId(this._lastOutputDeviceId).catch((e) =>
+        console.warn("[engine] setSinkId on exerciseTrack failed:", e)
+      );
+    }
 
     this.exerciseTrack.on("interaction", (newTime) => {
       this.seekExerciseTrack(newTime);
