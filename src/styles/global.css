@@ -633,11 +633,34 @@ body,
 }
 
 .waveform__take-offset {
-  min-width: 3.5rem;
+  width: 3.5rem;
+  height: 1.6rem;
   text-align: center;
   font-size: 0.8rem;
-  color: var(--text-secondary);
+  font-family: inherit;
+  color: var(--text-primary);
+  background: transparent;
+  border: 1px solid var(--bg-surface);
+  border-radius: 4px;
   font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+
+.waveform__take-offset::-webkit-inner-spin-button,
+.waveform__take-offset::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.waveform__take-offset:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.waveform__take-offset-unit {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-left: -0.15rem;
 }
 
 .waveform__take-drag,
