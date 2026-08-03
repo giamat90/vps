@@ -51,13 +51,14 @@ Manages the song list, import/upload flow, and error state.
 | Field | Type | Description |
 |-------|------|-------------|
 | `songs` | `Song[]` | All songs in the library |
+| `folders` | `Folder[]` | All folders in the library |
 | `processing` | `ProcessingStatus \| null` | Active processing job (null when idle) |
 | `isLoading` | `boolean` | Initial fetch in progress |
 | `error` | `string \| null` | Last friendly error message (cleared on next import attempt) |
 
 `uploadSong(filePath, highQuality?)` and `importYoutube(url, highQuality?)` both accept an optional `highQuality` flag (default `false`), threaded straight through to the Rust commands → sidecar → `processor.process()`'s Demucs model choice (`htdemucs_ft` vs `htdemucs`). `LibraryPage` owns the toggle's state and passes it down to both `DropZone` and `YouTubeImport`.
 
-Actions: `fetchSongs`, `uploadSong`, `importYoutube`, `deleteSong`, `clearError`, `initProgressListener`.
+Actions: `fetchSongs`, `uploadSong`, `importYoutube`, `deleteSong`, `renameSong`, `fetchFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `reorderFolders`, `moveSongs`, `clearError`, `initProgressListener`. See [Library Folders](#library-folders-drag-and-drop) below for the folder-related actions.
 
 Both `uploadSong` and `importYoutube` set an initial `processing` state ("Preparing…" / "Connecting…" at 0%) before calling the Tauri command, eliminating the dead-time gap before the sidecar sends its first progress event.
 
@@ -142,6 +143,21 @@ See [Architecture: Auto-Update](architecture.md#auto-update) for the endpoint/si
 **All dimensions must use relative units** — `%`, `rem`, `vw`, `vh`, `fr`. Never use fixed pixel values (`px`) for layout dimensions. This ensures the UI scales correctly across different screen sizes and DPI settings.
 
 ## Notable Component Details
+
+### Library Folders (drag-and-drop)
+
+`LibraryPage.tsx` groups songs into user-named, flat (non-nested) folders — e.g. all songs by one band — with drag-to-reorder and drag-to-move via `@dnd-kit` (first drag-and-drop library in this project; `react-beautiful-dnd` was ruled out as archived/unmaintained).
+
+**Layout:** the folders block (`.library-page__folders`) and the root song list (`.library-page__list`) are **siblings**, not nested — folders sit pinned above the scrollable root list rather than inside it, so they stay reachable as a drop target no matter how far the root list is scrolled. `.library-page__folders` caps its own height (`max-height: 40vh; overflow-y: auto`) and scrolls independently once there are enough folders to need it, so a large folder count can't push the root list off-screen. One `DndContext` wraps both regions — `DndContext` renders no wrapper DOM element, so it doesn't affect this layout split.
+
+**Components:**
+- `FolderSection` — one folder's header (drag handle, collapse toggle, inline double-click-to-rename matching `SongCard`'s title-rename pattern, delete) plus its song list. `useSortable({ id: "folder:" + folder.id })` makes the folder itself draggable (reorder folders); a separately-prefixed id (`FOLDER_DRAG_PREFIX = "folder:"`) keeps folder-drag ids from colliding with song ids in dnd-kit's shared id namespace. `useDroppable({ id: folder.id })` (unprefixed) on the folder's body makes it a drop target for songs.
+- `DraggableSongRow` — wraps `SongCard` with a small drag-handle button (⠿) that receives dnd-kit's `attributes`/`listeners`; the card itself keeps its existing click-to-open/rename/delete handlers untouched, since making the whole card draggable would conflict with those.
+- `RootDropZone` — `useDroppable({ id: "root" })` wrapping the un-foldered song list.
+
+**Collision detection:** `DndContext` uses a custom `pointerWithin` → `rectIntersection` fallback strategy, not dnd-kit's default `closestCenter`. `closestCenter` compares rect *centers*, so a short/empty folder next to the tall root song list frequently lost to a nearby list row even with the pointer squarely over the folder — the drop silently resolved to the wrong container (or nothing). Resolving by what's actually under the pointer fixed it; `rectIntersection` is only a fallback for the rare case nothing is directly under the pointer (e.g. a fast drag between containers). Both `FolderSection`'s body and `RootDropZone` also read `isOver` from their `useDroppable` call to apply a `--over` highlight class (outline + tint) while a valid drop is armed, so a correct drop is visually confirmable in the moment.
+
+**Drop logic (`handleDragEnd` in `LibraryPage`):** a single store action, `moveSongs(folderId, orderedSongIds)`, covers both a same-folder reorder and a cross-folder move-at-position — a drag-and-drop UI naturally yields "the final ordered id list of the destination container" for either case, so there's no need for separate reorder vs. move code paths. Folder-drag (`activeId` starts with `folder:`) is handled separately via `reorderFolders(orderedIds)`.
 
 ### TransportControls
 

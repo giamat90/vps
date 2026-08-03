@@ -174,6 +174,14 @@ interface Song {
   detectedBpm?: number;
   processedAt: string;  // ISO timestamp
   directory: string;    // absolute path to ~/.vps/library/{id}/
+  folderId?: string | null; // library folder this song belongs to; null/absent = root
+  sortIndex: number;        // rank among sibling songs sharing the same folderId
+}
+
+interface Folder {          // flat, user-named grouping of songs (e.g. all songs by one band)
+  id: string;
+  name: string;
+  sortIndex: number;
 }
 
 interface Take {
@@ -225,6 +233,8 @@ interface PitchPoint {       // frontend-internal representation
 
 ### Storage layout
 
+`library.json`'s top-level shape is `{ folders: Folder[], songs: Song[] }` (a legacy bare-array file is transparently upgraded in memory on read, rewritten in the new shape on the next mutation).
+
 ```
 ~/.vps/
 ├── library/
@@ -250,6 +260,11 @@ interface PitchPoint {       // frontend-internal representation
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
 | `set_metronome_offset(songId, offset?)` | `Song` | persists the metronome's downbeat anchor (song time, seconds); `null` clears it back to song start |
+| `list_folders()` | `Folder[]` | reads library.json |
+| `create_folder(name)` / `rename_folder(folderId, name)` | `Folder` | empty/whitespace name rejected |
+| `delete_folder(folderId)` | `void` | member songs' `folderId` cleared, songs not deleted |
+| `reorder_folders(orderedIds)` | `Folder[]` | reassigns `sortIndex` 0..N |
+| `move_songs(folderId, orderedSongIds)` | `Song[]` | sets `folderId` + sequential `sortIndex` on exactly the given songs — one call covers both a same-folder reorder and a cross-folder move-at-position |
 | `save_take(songId, audioData, startPosition, audioOffset, algorithm?)` | `Take` | sidecar `analyze` (pitch + spectrum) + RMS-normalizes loudness against vocals.wav |
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
@@ -448,9 +463,9 @@ metronomeOffset: number   // song time (s) where the metronome's beat 1 lands; p
 ## Current git state
 
 - **Branch:** `master`
-- **Current version:** `0.1.39` (as of 2026-07-12)
+- **Current version:** `0.1.49` (as of 2026-08-03)
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
-- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE/Praat), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence).
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE/Praat), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence), library folders + drag-to-reorder (group songs into flat user-named folders, drag to reorder/move — see `wiki/components.md#library-folders-drag-and-drop`).
 
 ---
 

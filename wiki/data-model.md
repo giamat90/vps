@@ -18,8 +18,22 @@ interface Song {
   directory: string;    // absolute path to ~/.vps/library/{id}/
   kind?: "vocal" | "instrument"; // defaults to "vocal" (Rust: #[serde(default)])
   metronomeOffset?: number; // song time (s) where the metronome's beat 1 lands
+  folderId?: string | null; // library folder this song belongs to; null/absent = root
+  sortIndex: number;        // rank among sibling songs sharing the same folderId
 }
 ```
+
+### Folder
+
+```ts
+interface Folder {
+  id: string;
+  name: string;
+  sortIndex: number; // rank among sibling folders
+}
+```
+
+Flat (non-nested) user-named grouping of songs in the library, e.g. all songs by one band. See [Components: Library Folders](components.md#library-folders-drag-and-drop).
 
 **`metronomeOffset`** — set via `set_metronome_offset(songId, offset)`, which mirrors `rename_take`'s "find by id, mutate one field, re-save library.json" shape rather than going through `library::add`. `null`/absent means the metronome phase-locks to song position 0 (unchanged legacy behavior). See [Components: TempoControl](components.md#tempocontrol).
 
@@ -138,6 +152,8 @@ interface CoachingTip {
 
 All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 
+`library.json`'s top-level shape is `{ folders: Folder[], songs: Song[] }` (changed from a bare `Song[]` array when folders were added). `library::load()` falls back to parsing the legacy raw-array shape and wraps it as `{ folders: [], songs }` in memory — old libraries open with no migration step, and the file is only actually rewritten in the new shape on the next mutation.
+
 ```
 ~/.vps/
 ├── library/
@@ -164,6 +180,12 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `import_youtube` | `url: string, highQuality?: boolean` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
+| `list_folders` | — | `Folder[]` |
+| `create_folder` | `name: string` | `Folder` (empty/whitespace name rejected) |
+| `rename_folder` | `folderId, name: string` | `Folder` (empty/whitespace name rejected) |
+| `delete_folder` | `folderId: string` | `void` (member songs' `folderId` cleared, songs not deleted) |
+| `reorder_folders` | `orderedIds: string[]` | `Folder[]` (reassigns `sortIndex` 0..N) |
+| `move_songs` | `folderId: string \| null, orderedSongIds: string[]` | `Song[]` (sets `folderId` + sequential `sortIndex` on exactly the given songs — covers both a same-folder reorder and a cross-folder move-at-position in one call) |
 | `save_take` | `songId, audioData: number[], startPosition: f64, audioOffset: f64` | `Take` |
 | `list_takes` | `songId: string` | `Take[]` (backfills missing `stSpectrum*` via sidecar) |
 | `delete_take` | `songId, takeId: string` | `void` |
