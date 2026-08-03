@@ -168,6 +168,8 @@ pub async fn process_song(
                     directory: output_dir_str,
                     kind: track_kind.clone(),
                     metronome_offset: None,
+                    folder_id: None,
+                    sort_index: 0,
                 };
 
                 // Save analysis data to analysis.json
@@ -263,7 +265,7 @@ pub async fn pitch_shift_song(
 
 #[tauri::command]
 pub async fn list_songs() -> Result<Vec<Song>, String> {
-    library::load()
+    library::load_songs()
 }
 
 #[tauri::command]
@@ -279,6 +281,41 @@ pub async fn set_metronome_offset(song_id: String, offset: Option<f64>) -> Resul
 #[tauri::command]
 pub async fn rename_song(song_id: String, title: String) -> Result<Song, String> {
     library::rename(&song_id, &title)
+}
+
+// --- Folder commands ---
+
+#[tauri::command]
+pub async fn list_folders() -> Result<Vec<library::Folder>, String> {
+    library::load_folders()
+}
+
+#[tauri::command]
+pub async fn create_folder(name: String) -> Result<library::Folder, String> {
+    library::create_folder(&name)
+}
+
+#[tauri::command]
+pub async fn rename_folder(folder_id: String, name: String) -> Result<library::Folder, String> {
+    library::rename_folder(&folder_id, &name)
+}
+
+#[tauri::command]
+pub async fn delete_folder(folder_id: String) -> Result<(), String> {
+    library::delete_folder(&folder_id)
+}
+
+#[tauri::command]
+pub async fn reorder_folders(ordered_ids: Vec<String>) -> Result<Vec<library::Folder>, String> {
+    library::reorder_folders(&ordered_ids)
+}
+
+#[tauri::command]
+pub async fn move_songs(
+    folder_id: Option<String>,
+    ordered_song_ids: Vec<String>,
+) -> Result<Vec<Song>, String> {
+    library::move_songs(folder_id, &ordered_song_ids)
 }
 
 // --- Take commands ---
@@ -855,6 +892,8 @@ pub async fn import_youtube(
                     directory: output_dir_str,
                     kind: "vocal".to_string(),
                     metronome_offset: None,
+                    folder_id: None,
+                    sort_index: 0,
                 };
 
                 let analysis = serde_json::json!({

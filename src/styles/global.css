@@ -101,6 +101,215 @@ body,
   padding: 2rem;
 }
 
+/* Folders + drag-to-reorder */
+.library-page__folders {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  flex-shrink: 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.library-page__song-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.25rem;
+}
+
+.library-page__song-row .song-card {
+  flex: 1;
+  min-width: 0;
+}
+
+.library-page__drag-handle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  cursor: grab;
+  border-radius: 4px;
+  font-family: inherit;
+  transition: color 0.15s, background 0.15s;
+  touch-action: none;
+}
+
+.library-page__drag-handle:hover {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+}
+
+.library-page__folder {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.library-page__folder-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.library-page__folder-toggle {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0.1rem 0.2rem;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+
+.library-page__folder-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.library-page__folder-name-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 0.05rem 0.3rem;
+}
+
+.library-page__folder-count {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.library-page__folder-rename,
+.library-page__folder-delete {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 4px;
+  font-family: inherit;
+  flex-shrink: 0;
+  transition: color 0.15s;
+}
+
+.library-page__folder-rename {
+  font-size: 0.85rem;
+}
+
+.library-page__folder-delete {
+  font-size: 1.1rem;
+}
+
+.library-page__folder-rename:hover,
+.library-page__folder-delete:hover {
+  color: var(--accent);
+}
+
+.library-page__folder-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0 0.75rem 0.75rem;
+  min-height: 2rem;
+  border-radius: 6px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.1s, background 0.1s;
+}
+
+.library-page__folder-body--over {
+  outline-color: var(--accent);
+  background: rgba(233, 69, 96, 0.08);
+}
+
+.library-page__folder-empty {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  text-align: center;
+  padding: 0.5rem;
+  border: 1px dashed var(--bg-surface);
+  border-radius: 6px;
+}
+
+.library-page__root-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-height: 2rem;
+  border-radius: 6px;
+  outline: 2px solid transparent;
+  outline-offset: -2px;
+  transition: outline-color 0.1s, background 0.1s;
+}
+
+.library-page__root-list--over {
+  outline-color: var(--accent);
+  background: rgba(233, 69, 96, 0.05);
+}
+
+.library-page__list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.library-page__list-toolbar-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.library-page__new-folder-btn {
+  background: none;
+  border: 1px dashed var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-family: inherit;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+  flex-shrink: 0;
+}
+
+.library-page__new-folder-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.library-page__new-folder-input {
+  font-size: 0.85rem;
+  font-family: inherit;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.4rem 0.8rem;
+  min-width: 12rem;
+  flex-shrink: 0;
+}
+
 .library-page__quality-toggle {
   display: flex;
   align-items: center;

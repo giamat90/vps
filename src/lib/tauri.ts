@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import type { ProcessingStatus, Song, Take, ExerciseTake, PitchAlgorithm } from "./types";
+import type { ProcessingStatus, Song, Take, ExerciseTake, PitchAlgorithm, Folder } from "./types";
 
 /** Process a song file through the Python sidecar */
 export async function processSong(
@@ -61,6 +61,36 @@ export async function setMetronomeOffsetApi(songId: string, offset: number | nul
 /** Rename a song's library title (e.g. to tell apart reprocessed variants using a different pitch algorithm). Empty/whitespace is rejected. */
 export async function renameSongApi(songId: string, title: string): Promise<Song> {
   return invoke<Song>("rename_song", { songId, title });
+}
+
+/** List all folders in the library */
+export async function listFolders(): Promise<Folder[]> {
+  return invoke<Folder[]>("list_folders");
+}
+
+/** Create a new (flat) folder. Empty/whitespace name is rejected. */
+export async function createFolder(name: string): Promise<Folder> {
+  return invoke<Folder>("create_folder", { name });
+}
+
+/** Rename a folder. Empty/whitespace name is rejected. */
+export async function renameFolder(folderId: string, name: string): Promise<Folder> {
+  return invoke<Folder>("rename_folder", { folderId, name });
+}
+
+/** Delete a folder; its songs move back to the root list, they are not deleted. */
+export async function deleteFolder(folderId: string): Promise<void> {
+  return invoke("delete_folder", { folderId });
+}
+
+/** Reorder folders (drag-to-reorder the folder sections themselves) */
+export async function reorderFolders(orderedIds: string[]): Promise<Folder[]> {
+  return invoke<Folder[]>("reorder_folders", { orderedIds });
+}
+
+/** Move/reorder songs into `folderId` (null = root) in the given order. Covers both a same-folder reorder and a cross-folder drag-drop-at-position. */
+export async function moveSongs(folderId: string | null, orderedSongIds: string[]): Promise<Song[]> {
+  return invoke<Song[]>("move_songs", { folderId, orderedSongIds });
 }
 
 /** Load song analysis data (pitchData, onsets, dynamics, spectrogram) */
