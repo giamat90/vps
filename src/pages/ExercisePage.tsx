@@ -27,6 +27,7 @@ function ExercisePage({ onBack }: ExercisePageProps) {
   const currentTime           = usePlayerStore((s) => s.currentTime);
   const isPlaying              = usePlayerStore((s) => s.isPlaying);
   const isRecording           = usePlayerStore((s) => s.isRecording);
+  const isSavingTake          = usePlayerStore((s) => s.isSavingTake);
   const isMonitoring          = usePlayerStore((s) => s.isMonitoring);
   const startExercise         = usePlayerStore((s) => s.startExercise);
   const stopExercise          = usePlayerStore((s) => s.stopExercise);
@@ -55,6 +56,13 @@ function ExercisePage({ onBack }: ExercisePageProps) {
   }, []);
 
   const handleRecord = async () => {
+    // Guards the same race the missing isSavingTake gate used to allow: a
+    // second click while the previous take is still being flushed/saved
+    // (potentially several seconds — the sidecar may be cold-spawning, see
+    // wiki/python-sidecar.md) used to re-enter stopExerciseRecording and call
+    // rec.stop() on an already-stopped MediaRecorder. The disabled attribute
+    // below covers normal clicks; this covers any programmatic double-call.
+    if (isSavingTake) return;
     setRecError(null);
     if (isRecording) {
       try {
@@ -89,8 +97,8 @@ function ExercisePage({ onBack }: ExercisePageProps) {
   };
 
   const trackLoaded = loadedTrackId !== null;
-  const disableRecord = trackLoaded || isImporting;
-  const disableLoadOrImport = isRecording || isImporting;
+  const disableRecord = trackLoaded || isImporting || isSavingTake;
+  const disableLoadOrImport = isRecording || isImporting || isSavingTake;
 
   return (
     <div className="exercise-page">
@@ -149,9 +157,9 @@ function ExercisePage({ onBack }: ExercisePageProps) {
           className={`exercise-rec-btn${isRecording ? " exercise-rec-btn--active" : ""}`}
           onClick={() => void handleRecord()}
           disabled={disableRecord}
-          title={trackLoaded ? "Unload the loaded track to record" : undefined}
+          title={isSavingTake ? "Saving take…" : trackLoaded ? "Unload the loaded track to record" : undefined}
         >
-          {isRecording ? "⏹ Stop" : "⏺ Record"}
+          {isSavingTake ? "Saving…" : isRecording ? "⏹ Stop" : "⏺ Record"}
         </button>
         <button
           className="exercise-page__import-btn"

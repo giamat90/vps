@@ -125,9 +125,19 @@ impl SidecarManager {
             rx,
         };
 
-        // Wait for "ready" message
+        // Wait for "ready" message. 90s, not 30s: the module-level imports
+        // (torch, demucs, torchcrepe, praat-parselmouth, librosa) run before
+        // main() ever sends "ready", and a cold (uncached) first import can
+        // exceed 30s alone. Free Exercise is disproportionately likely to hit
+        // this cold path — it's often the first sidecar-touching action of a
+        // session (no song load/import needed to reach it) — whereas Practice
+        // Room recording almost always finds the sidecar already warm from
+        // process_song/import_youtube. A timeout here doesn't fail the take
+        // (analysis just degrades to none), but the killed-and-respawned
+        // process below made the first Free Exercise recording of a session
+        // look broken until a second attempt warmed the OS file cache.
         let msg = manager
-            .recv_timeout(Duration::from_secs(30))
+            .recv_timeout(Duration::from_secs(90))
             .map_err(|e| format!("Sidecar did not send ready: {e}"))?;
 
         match msg {

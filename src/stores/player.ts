@@ -1123,16 +1123,35 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     eng.stopExerciseTimer();
     eng.setInteract(true);
 
-    const blob = await rec.stop();
-    rec.releaseStream();
-    await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) => console.warn("[exercise-rec] setOutputDevice on stop failed:", e));
+    // Flip isRecording off immediately (button stops reading "Stop") and gate
+    // the remaining async work behind isSavingTake — same pattern as
+    // stopRecording below. Without this, the button stayed clickable as
+    // "Stop" for the entire sidecar round-trip (up to 90s on a cold spawn,
+    // see wiki/python-sidecar.md), and a second click mid-save re-entered
+    // this action and called rec.stop() on an already-stopped MediaRecorder,
+    // throwing "Not recording (state: inactive)" and leaving no take saved.
+    set({ isRecording: false, isPlaying: false, isSavingTake: true });
 
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioData = Array.from(new Uint8Array(arrayBuffer));
-    const take = await saveExerciseTake(audioData, duration, useSettingsStore.getState().pitchAlgorithm);
+    try {
+      const blob = await rec.stop();
 
-    set({ isRecording: false, isPlaying: false, currentTime: 0 });
-    return take;
+      _destroyMicAnalyser();
+      rec.releaseStream();
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e: unknown) => console.warn("[exercise-rec] setOutputDevice on stop failed:", e));
+
+      const arrayBuffer = await blob.arrayBuffer();
+      const audioData = Array.from(new Uint8Array(arrayBuffer));
+      const take = await saveExerciseTake(audioData, duration, useSettingsStore.getState().pitchAlgorithm);
+
+      set({ isSavingTake: false, currentTime: 0 });
+      return take;
+    } catch (e) {
+      _destroyMicAnalyser();
+      rec.releaseStream();
+      await eng.setOutputDevice(get().selectedOutputDeviceId ?? "").catch((e2: unknown) => console.warn("[exercise-rec] setOutputDevice on error-stop failed:", e2));
+      set({ isSavingTake: false, currentTime: 0 });
+      throw e;
+    }
   },
 
   playExerciseTrack: () => {
