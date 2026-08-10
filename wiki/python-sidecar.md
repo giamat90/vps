@@ -314,6 +314,8 @@ python build.py
 
 In development you can run the sidecar directly without building, but Tauri's `beforeDevCommand` does not start it automatically — the Rust `SidecarManager` spawns it lazily on first use.
 
+**Cold-start ready timeout: 90s** (`sidecar.rs`, `SidecarManager::spawn()`). The sidecar's module-level imports (`torch`, `demucs`, `torchcrepe`, `praat-parselmouth`, `librosa`) run before `main()` ever sends `{"type":"ready"}`, and a cold/uncached first import can take a while. If `recv_timeout` expires first, `spawn()` returns `Err` and `Drop::shutdown()` kills the half-started process — the command that triggered the spawn just gets a sidecar-unavailable fallback (e.g. a take saves without analysis, per-command handling), but the caller's *next* command re-spawns from scratch, now against a warmer OS file cache. Was 30s until 2026-08-10 — raised after a Free Exercise recording bug report traced to exactly this: Free Exercise is disproportionately likely to be the first sidecar-touching action of a session (reachable with no song ever loaded/imported), unlike Practice Room recording which almost always finds the sidecar already warm from `process_song`/`import_youtube`. See [Recording Flow: Free Exercise Recording](recording-flow.md#free-exercise-recording-song-less).
+
 The binary is declared as `externalBin` in `tauri.conf.json` so Tauri includes it in the NSIS/DMG bundle. A 0-byte placeholder at `src-tauri/binaries/vps-sidecar-x86_64-pc-windows-msvc.exe` is committed to satisfy `tauri_build` at local-dev build time; CI always overwrites it with the real PyInstaller binary before `cargo build` runs.
 
 ## Python Interpreter Selection

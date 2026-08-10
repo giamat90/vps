@@ -287,3 +287,48 @@ Step 2 matters because `enumerateDevices()` returns empty labels before the firs
 ## Auto-stop on Song End
 
 When the instrumental finishes (`"finish"` event), the engine fires the `_finishCb`. The store checks `isRecording` and calls `stopRecording()` automatically, so the take is saved even if the singer doesn't click stop.
+
+## Free Exercise Recording (song-less)
+
+`ExercisePage.tsx`'s Record button uses a **separate, parallel pair of store actions** — `startExerciseRecording`/`stopExerciseRecording` in `player.ts` — not `startRecording`/`stopRecording` above. There's no song, so none of the vocals/instrumental/take trio or punch-region logic applies; the engine's `_exerciseMode`/`_exerciseOffset` timer (`startExerciseTimer`/`stopExerciseTimer`, `src/audio/engine.ts`) stands in for the instrumental as the elapsed-time clock (see `getCurrentTime()`'s `_exerciseMode` branch).
+
+### startExerciseRecording sequence
+
+```
+1. if (isMonitoring) stopMonitoring()
+2. rec.init(selectedDeviceId)            getUserMedia — same VocalRecorder as song recording
+3. Enumerate output devices               same WASAPI real-output detection as startRecording
+4. eng.setOutputDevice(outputId)
+5. eng.startExerciseTimer()               starts the engine's elapsed-time clock
+6. rec.start()
+7. set isRecording=true, isPlaying=true
+```
+
+No count-in, no latency compensation, no punch region — none of those concepts have meaning without a song to align against.
+
+### stopExerciseRecording sequence
+
+```
+1. duration = eng.getCurrentTime()        read elapsed time before stopping the clock
+2. eng.stopExerciseTimer()
+3. eng.setInteract(true)
+4. set isRecording=false, isSavingTake=true   button stops reading "Stop" AND becomes disabled
+5. blob = await rec.stop()
+6. destroy mic analyser + rec.releaseStream()
+7. eng.setOutputDevice(selectedOutput)    restore normal routing
+8. saveExerciseTake(blob, duration, algorithm)   write ExerciseTake to disk via Tauri
+9. set isSavingTake=false (both success and error paths)
+```
+
+Mirrors `stopRecording`'s exact shape (see above) — flip `isRecording` off and `isSavingTake` on *before* any of the async work, not after.
+
+**Two-part bug fixed 2026-08-10**, both from this action having drifted from `stopRecording`'s shape:
+
+1. **No `try/catch` around steps 5–8.** Any failure in that chain — e.g. `save_exercise_take` hitting a cold-spawning sidecar, see below — left `isRecording: true` stuck forever, since nothing ever ran to reset it. Fixed by wrapping in `try/catch`, resetting state in both branches (matching `stopRecording`).
+2. **`isRecording` (and originally, no `isSavingTake` at all) stayed `true` for the entire async save, not just until `rec.stop()`.** Even after fixing (1), the Record/Stop button kept reading "⏹ Stop" and stayed clickable for the whole sidecar round-trip — which can now take up to 90s on a cold spawn (see below). A second click during that window read `isRecording: true` and re-entered `stopExerciseRecording`, calling `rec.stop()` on a `MediaRecorder` already stopped by the first call — throwing `"Not recording (state: inactive)"` and leaving the two concurrent invocations racing each other's cleanup. Fixed by adopting `stopRecording`'s pattern exactly: flip `isRecording` false and `isSavingTake` true synchronously before any `await`, and gate the Record button's `disabled` on `isSavingTake` in `ExercisePage.tsx` (previously only `trackLoaded`/`isImporting` disabled it) plus an early-return guard in `handleRecord` for any non-click (programmatic) re-entry.
+
+### Why Free Exercise is the likelier place to hit a cold sidecar
+
+Practice Room recording is only reachable after a song has been loaded, processed, or imported — all of which already spawn and warm the sidecar via `process_song`/`import_youtube` well before the user gets to Record. Free Exercise has no such prerequisite: a user can go straight from the library to Free Exercise and hit Record as the very first sidecar-touching action of the session, hitting the full cold-import cost (`torch`/`demucs`/`torchcrepe`/`praat-parselmouth`/`librosa`) inline with that first recording. This is why the sidecar's ready-handshake timeout was raised from 30s to 90s alongside the fixes above — see [Python Sidecar](python-sidecar.md). The longer that window got, the more exposed bug (2) above became, which is how it surfaced during testing of the timeout bump.
+
+Note that even a sidecar spawn failure doesn't block the take from saving — `analyze_and_persist_exercise_take` (`commands.rs`) swallows sidecar errors and still persists the raw recording (just without pitch/dynamics/vibrato data). Bug (1) above is what actually made a failed save look like a vanished recording; bug (2) is what made a *successful* save's tail window race a same-take double-click.
