@@ -50,6 +50,10 @@ export class AudioEngine {
   // WaveSurfer instances, which are destroyed and recreated on each load and would
   // otherwise fall back to the system default sink.
   private _lastOutputDeviceId = "";
+  // Speed last applied via setPlaybackRate — re-applied to `take` on load, same
+  // reasoning as _lastOutputDeviceId: it's destroyed/recreated on every take
+  // switch and would otherwise silently reset to 1x regardless of the active speed.
+  private _lastPlaybackRate = 1;
 
   async load(
     songDir: string,
@@ -227,8 +231,10 @@ export class AudioEngine {
   }
 
   setPlaybackRate(rate: number): void {
+    this._lastPlaybackRate = rate;
     this.vocals?.setPlaybackRate(rate);
     this.instrumental?.setPlaybackRate(rate);
+    this.take?.setPlaybackRate(rate);
   }
 
   async setOutputDevice(deviceId: string): Promise<void> {
@@ -324,6 +330,7 @@ export class AudioEngine {
         console.warn("[engine] setSinkId on take failed:", e)
       );
     }
+    this.take.setPlaybackRate(this._lastPlaybackRate);
 
     this._takeOffset       = startOffset;
     this._takeDuration     = this.take.getDuration();

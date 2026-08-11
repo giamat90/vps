@@ -81,6 +81,7 @@ interface AnalysisState {
 interface AnalysisActions {
   loadSongAnalysis: (songId: string) => Promise<void>;
   loadTakeAnalysis: (take: Take) => void;
+  clearTakeAnalysis: () => void;
   previewTakeManualOffset: (take: Take, offset: number) => void;
   loadExerciseTakeAnalysis: (take: ExerciseTake) => void;
   appendLivePitch: (point: PitchPoint) => void;
@@ -164,6 +165,20 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
 
       set({ takePitch, takeOnsets, takeDynamics, takeVibrato, takeSTSpectrum, timingDeviations, livePitch: [] });
     },
+
+    // Deleting/deselecting the active take (TakeList's "x", or activeTakeId
+    // otherwise going null) used to leave the previous take's pitch/onsets/
+    // dynamics/vibrato/spectrum sitting in state — nothing else re-set them,
+    // so PianoRoll kept drawing the deleted take's red ribbon indefinitely.
+    clearTakeAnalysis: () =>
+      set({
+        takePitch: [],
+        takeOnsets: [],
+        takeDynamics: [],
+        takeVibrato: null,
+        takeSTSpectrum: null,
+        timingDeviations: [],
+      }),
 
     // Live-drag variant of loadTakeAnalysis, called on every throttled pointermove
     // while the user drags a take's sync handle (see Waveform.tsx's TakeSyncControls)

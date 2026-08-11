@@ -53,6 +53,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
   const loadSongAnalysis = useAnalysisStore((s) => s.loadSongAnalysis);
   const loadTakeAnalysis = useAnalysisStore((s) => s.loadTakeAnalysis);
+  const clearTakeAnalysis = useAnalysisStore((s) => s.clearTakeAnalysis);
   const clearAnalysis = useAnalysisStore((s) => s.clear);
   const isAnalysisLoaded = useAnalysisStore((s) => s.isLoaded);
 
@@ -69,7 +70,13 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
   // Load take analysis when active take changes
   useEffect(() => {
-    if (!activeTakeId) return;
+    if (!activeTakeId) {
+      // e.g. the active take was just deleted — without this, the deleted
+      // take's pitch/onsets/dynamics/vibrato stay in the analysis store and
+      // PianoRoll keeps drawing its red ribbon indefinitely.
+      clearTakeAnalysis();
+      return;
+    }
     const take = takes.find((t) => t.id === activeTakeId);
     if (take) {
       loadTakeAnalysis(take);
