@@ -34,8 +34,8 @@ VPS is a three-tier desktop application:
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | htdemucs (standard) / htdemucs_ft (high quality, opt-in) |
-| Pitch detection | SRH (custom, Drugman & Dutoit 2011) | — |
-| Pitch shifting | librosa | — |
+| Pitch detection | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / Praat / pYIN / HPS / CREPE | — |
+| Pitch shifting | librosa (phase vocoder) | — |
 
 ## IPC Layers
 
@@ -73,8 +73,10 @@ Audio files stored in `~/.vps/` are served to the frontend via Tauri's asset pro
 ```json
 "assetProtocol": {
   "enable": true,
-  "scope": ["$HOME/.vps/**", "$HOME\\.vps\\**"]
+  "scope": ["$HOME/.vps/**"]
 }
 ```
+
+Forward-slash only — a redundant backslash-glob entry was removed 2026-07-05 (see `MPS/wiki/known-issues.md`); Tauri's glob matcher already normalizes Windows paths, so the backslash variant never matched anything and just doubled the scope list for no effect.
 
 `convertFileSrc()` from `@tauri-apps/api/core` converts an absolute path to a valid `tauri://` URL for use in WaveSurfer.

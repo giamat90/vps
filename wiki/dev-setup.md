@@ -114,17 +114,23 @@ If none of this works, ask the tester to run `spctl --assess --type execute -v /
 
 ### Bumping the version locally
 
-Use the PowerShell script to keep all three manifests in sync before tagging:
+Use the PowerShell script to keep the manifests in sync before tagging:
 
 ```powershell
 .\scripts\bump-version.ps1 0.2.0
-git add src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml
-git commit -m "chore: bump version to 0.2.0"
+git add src-tauri/tauri.conf.json package.json src-tauri/Cargo.toml src-tauri/Cargo.lock
+git commit -m "Bump version to 0.2.0"
 git tag v0.2.0
 git push origin master v0.2.0
 ```
 
 `bump-version.ps1` writes UTF-8 without BOM (important — PowerShell 5.1's `Set-Content -Encoding utf8` adds a BOM that breaks the TOML parser).
+
+**Commit message has no `chore:` prefix** — every historical bump commit (`git log --grep="^Bump version"`) is a bare `Bump version to X.Y.Z`, not a Conventional Commits `chore:`.
+
+**Two things the script does *not* handle, found 2026-08-11 fixing three unrelated bugs:**
+- **`src-tauri/Cargo.lock`'s own `[[package]] name = "app"` entry is not touched by the script** — it lists `package.json`/`tauri.conf.json`/`Cargo.toml` only. Every real bump commit in history still updates all *four* files (`Cargo.lock` included, 2-line diff), so hand-edit that one line (or run `cargo check` in `src-tauri/` to let Cargo regenerate it) before committing.
+- **The script's `ConvertFrom-Json`/`ConvertTo-Json` round-trip on `package.json` silently reformats the *entire file*** (double-space-after-colon, `&&` escaped to `&&`, irregular nested indentation, dropped trailing newline) the first time it's run against a normally-`prettier`-formatted `package.json` — producing a 60+ line diff instead of the expected 2-line version bump. `tauri.conf.json` is already stored in this mangled style (it went through the same round-trip previously), so its diff stays minimal; `package.json` currently isn't. Hand-edit the single `"version"` line in `package.json` instead of trusting the script's output, or `git diff --stat` after running it and revert+hand-edit if it touched more than 2 lines.
 
 ### Asset protocol scope
 

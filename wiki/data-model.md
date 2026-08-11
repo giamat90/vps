@@ -180,6 +180,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `import_youtube` | `url: string, highQuality?: boolean` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
+| `rename_song` | `songId, title: string` | `Song` |
 | `list_folders` | — | `Folder[]` |
 | `create_folder` | `name: string` | `Folder` (empty/whitespace name rejected) |
 | `rename_folder` | `folderId, name: string` | `Folder` (empty/whitespace name rejected) |

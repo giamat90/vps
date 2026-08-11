@@ -88,7 +88,11 @@ VPS/
 │   ├── audio/
 │   │   ├── engine.ts          AudioEngine class (WaveSurfer management)
 │   │   ├── recorder.ts        VocalRecorder (MediaRecorder wrapper)
-│   │   └── metronome.ts       Metronome class (Web Audio lookahead-scheduled click track)
+│   │   ├── metronome.ts       Metronome class (Web Audio lookahead-scheduled click track)
+│   │   ├── analysisUtils.ts   pitchAtTime/frequency↔MIDI/note-name helpers shared by PianoRoll/DualTuner/timing
+│   │   ├── pitchDetector.ts   real-time autocorrelation pitch reader (frequency/note/cents) for DualTuner/live monitoring
+│   │   ├── notePreview.ts     click-to-preview synthesized tone when pressing a PianoKeyboard/PianoRoll key
+│   │   └── timeStretch.ts     dead stub (`export {}`, "TODO: implement in Session 5") — not imported anywhere; speed control is WaveSurfer's native setPlaybackRate, not this
 │   ├── components/
 │   │   ├── upload/
 │   │   │   ├── DropZone.tsx       file drag-and-drop → processSong (song or instrument track)
@@ -101,7 +105,8 @@ VPS/
 │   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
-│   │   │   └── OutputSelector.tsx  audio output device picker
+│   │   │   ├── OutputSelector.tsx  audio output device picker
+│   │   │   └── LoopButton.tsx      punch-loop toggle (standalone, beside TransportControls)
 │   │   ├── recording/
 │   │   │   ├── RecordButton.tsx    start/stop recording
 │   │   │   ├── MicSelector.tsx     microphone input picker
@@ -129,7 +134,11 @@ VPS/
 │   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
 │   │   ├── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
 │   │   ├── zoomPan.ts         pure zoom-to-cursor / pan math for timeline ctrl+wheel/shift+wheel (byte-identical to SPS)
-│   │   └── metronomeSync.ts   pure phase-lock math for the metronome downbeat anchor (byte-identical to SPS)
+│   │   ├── metronomeSync.ts   pure phase-lock math for the metronome downbeat anchor (byte-identical to SPS)
+│   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
+│   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
+│   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic)
+│   │   └── exerciseSpectrogram.ts  precomputes a loaded Free Exercise track's whole spectrogram once, for a centered drag-to-seek view
 │   ├── stores/
 │   │   ├── player.ts          player + recording + punch + latency-calibration state (Zustand)
 │   │   ├── library.ts         song list + import flow (Zustand)
@@ -153,6 +162,9 @@ VPS/
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
 │   ├── analysis.py    Take analysis (SRH + onsets + dynamics + vibrato + spectrum), RMS loudness normalization, mixdown rendering
 │   ├── yt_importer.py yt-dlp + processor pipeline
+│   ├── version_check.py  proactive + reactive yt-dlp staleness checks (see wiki/known-issues.md upstream in MPS)
+│   ├── fetch_models.py   vendors htdemucs weights into the frozen build at build time (not htdemucs_ft — that's an on-demand download, see the high_quality note in processor.py)
+│   ├── smoke_test.py     standalone sanity script, not part of the main.py dispatch loop
 │   ├── pitch_lab/     algorithm validation workspace (see its README.md)
 │   └── build.py       PyInstaller sidecar build
 └── wiki/              Authoritative documentation (read at session start)
@@ -259,6 +271,7 @@ interface PitchPoint {       // frontend-internal representation
 | `process_song(filePath, kind?, highQuality?, algorithm?)` | `Song` | Demucs + pitch detection (algorithm per Settings, default SRH); 10-min timeout; `kind: "instrument"` skips separation |
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
+| `rename_song(songId, title)` | `Song` | |
 | `set_metronome_offset(songId, offset?)` | `Song` | persists the metronome's downbeat anchor (song time, seconds); `null` clears it back to song start |
 | `list_folders()` | `Folder[]` | reads library.json |
 | `create_folder(name)` / `rename_folder(folderId, name)` | `Folder` | empty/whitespace name rejected |
@@ -269,7 +282,9 @@ interface PitchPoint {       // frontend-internal representation
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
 | `rename_take(songId, takeId, name)` | `Take` | empty/whitespace name clears back to default |
+| `set_take_manual_offset(songId, takeId, offset)` | `Take` | `0` resets to the auto-detected position |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
+| `import_exercise_file(filePath, duration, algorithm?)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
 | `import_youtube(url, highQuality?, algorithm?)` | `Song` | yt-dlp + Demucs; 15-min timeout |
