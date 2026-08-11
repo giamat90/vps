@@ -167,6 +167,12 @@ The zoom-to-cursor and pan math itself (exponential zoom factor, bounds clamping
 
 **Fixed bug (2026-07-26):** `vocals`/`instrumental`/`take`/`exerciseTrack` are all destroyed and recreated from scratch — `load()` on every song load, `loadTakeTrack()`/`loadExerciseTrack()` on every take/exercise-track load — so a `setOutputDevice()` call only ever reached whichever instances existed *at that moment*. A freshly created instance never inherited the previously selected device and silently fell back to the system default output, even though the Zustand store's `selectedOutputDeviceId` (and the `OutputSelector` UI) still showed the correct device selected — the frontend "remembered" the choice, the engine's actual audio elements didn't. Fixed by re-applying `_lastOutputDeviceId` via `setSinkId()` right after each new instance becomes ready, in `load()`, `loadTakeTrack()`, and `loadExerciseTrack()`.
 
+## Playback Rate Sync
+
+`setPlaybackRate(rate)` calls WaveSurfer's `setPlaybackRate()` on `vocals`/`instrumental`/`take` and remembers `rate` in `_lastPlaybackRate` — same re-application pattern as `_lastOutputDeviceId` above, for the same reason: `take` is destroyed and recreated on every take switch (`loadTakeTrack()`), so a rate change only ever reached whichever instance existed *at that moment*.
+
+**Fixed bug (2026-08-11):** `setPlaybackRate()` only touched `vocals`/`instrumental` — `take` was never included, so changing speed during take playback left the take audibly out of sync with the other two tracks. Compounding it, `loadTakeTrack()` never applied the current rate to the freshly created instance either, so switching takes while at a non-default speed silently reset that take to 1×. Fixed by adding `this.take?.setPlaybackRate(rate)` to `setPlaybackRate()` and applying `_lastPlaybackRate` to `take` right after creation in `loadTakeTrack()`, mirroring `_lastOutputDeviceId`'s re-application.
+
 ## `loadTakeTrack` / `clearTakeTrack`
 
 `loadTakeTrack(filePath, container, startOffset, audioOffset, manualOffset)` creates the take WaveSurfer instance inside a given DOM container, waits for `"ready"`, then sizes and positions the container proportionally. `clearTakeTrack()` destroys the instance and resets all five take fields (`_takeOffset`, `_takeDuration`, `_takeAudioOffset`, `_takeManualOffset`, `_takeIsPlaying`). Called from `Waveform.tsx` whenever `activeTakeId` changes.

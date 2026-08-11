@@ -187,6 +187,8 @@ The click stops the instant capture actually starts (silence during the take, ev
 
 Toggles live mic monitoring via `startMonitoring()` / `stopMonitoring()`. Displays a pulsing blue circle while `isMonitoring` is true — this stays true across pause/play; the button reflects "mic session open", not "trace visible". Disabled (grayed out) while `isRecording` is true. Starting a recording automatically stops monitoring first.
 
+**Also disabled while a Free Exercise track is loaded** (`useExerciseStore`'s `loadedTrackId !== null`), tooltip "Unload the loaded track to monitor" — same guard `RecordButton`'s `disableRecord` already applied. **Fixed bug (2026-08-11):** this guard didn't exist before; starting monitor with a track loaded left the UI frozen showing the loaded track instead of live mic input, because `AudioEngine.getCurrentTime()` and the spectrum panels (`SpectrogramPanel`, `ShortTermSpectrumPanel`) both give a loaded `exerciseTrack` unconditional priority over live monitoring data, and `startMonitoring()` never cleared it. The fix disables the button rather than auto-unloading, so a loaded take/import is never silently discarded.
+
 When monitoring is active **and the track is playing** (`isMonitoring && isPlaying`):
 - Microphone stream is opened (same `selectedDeviceId` as recording)
 - Windows WASAPI output routing is pinned (same fix as `startRecording`)
@@ -467,7 +469,7 @@ List of recorded takes for the current song, in `practice-room__takes-wrap`. Eac
 
 - **✎ rename** — or double-click the name itself — swaps the name for an inline `<input>` (local `editingId`/`editValue` state). Enter or blur commits via `renameTake(takeId, name)`; Escape cancels without saving. Trimmed-empty names clear back to the default `"Take N"` label (Rust command `rename_take` stores `None` in that case).
 - **↓ download** — calls `exportTake(take.filepath, "{Song Title} - {display name}.wav")`, opening a native Save-As dialog. The take is always exported as WAV: the Rust `export_take` command first sends a `convert_take` request to the Python sidecar (`analysis.py: convert_take_to_wav`, decodes the source webm/opus via `librosa.load` + writes `soundfile.write` — the same backend already used for take analysis, so no new dependency) into a temp file, copies that to the chosen destination, and deletes the temp file (`TempFile` RAII guard). The sidecar mutex guard is dropped in an inner block before the dialog `.await` so the command future stays `Send`. Mirrors the `exportStem` pattern used by `SongCard`. The download button shows `…` and disables itself while the conversion/dialog is in flight.
-- **× delete** — calls `deleteTake(take.id)`.
+- **× delete** — calls `deleteTake(take.id)`, which clears `activeTakeId` if the deleted take was active. `PracticeRoom.tsx`'s `activeTakeId` effect reacts to that by calling `useAnalysisStore`'s `clearTakeAnalysis()` — **fixed bug (2026-08-11):** this effect used to just bail out (`if (!activeTakeId) return;`) when the active take was deleted, leaving `takePitch`/`takeOnsets`/`takeDynamics`/`takeVibrato` populated with the deleted take's stale data, so PianoRoll kept drawing its red ribbon indefinitely until a different take was selected. `clearTakeAnalysis()` resets all four fields (plus `takeSTSpectrum`/`timingDeviations`) to empty.
 
 All three buttons call `e.stopPropagation()` so clicking them doesn't also select the take. `Take.name` is persisted in `takes.json` (optional field, omitted when unset) and round-trips through `list_takes`/`save_take`/`rename_take`.
 

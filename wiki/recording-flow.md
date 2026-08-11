@@ -283,6 +283,7 @@ Step 2 matters because `enumerateDevices()` returns empty labels before the firs
 - `startMonitoring` bails out if `isRecording` is true
 - `startRecording` calls `stopMonitoring()` first if `isMonitoring` is true
 - The `MonitorButton` is disabled while `isRecording`
+- In Free Exercise, the `MonitorButton` is also disabled while a track is loaded (`loadedTrackId !== null`) — see [Components](components.md#monitorbutton) for the bug this guard fixes
 
 ## Auto-stop on Song End
 
