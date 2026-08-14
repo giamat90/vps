@@ -127,7 +127,8 @@ VPS/
 │   │   ├── coaching/
 │   │   │   └── CoachPanel.tsx      AI coaching tips
 │   │   ├── settings/
-│   │   │   └── PitchAlgorithmControl.tsx  SRH/pYIN/HPS/CREPE selector (library-page settings panel)
+│   │   │   ├── PitchAlgorithmControl.tsx  SRH/pYIN/HPS/CREPE selector (library-page settings panel)
+│   │   │   └── YouTubeCookiesControl.tsx  optional cookies.txt picker for import_youtube, avoids the flaky live-browser cookie fallback
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
 │   ├── lib/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
@@ -287,7 +288,7 @@ interface PitchPoint {       // frontend-internal representation
 | `import_exercise_file(filePath, duration, algorithm?)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
-| `import_youtube(url, highQuality?, algorithm?)` | `Song` | yt-dlp + Demucs; 15-min timeout |
+| `import_youtube(url, highQuality?, algorithm?, cookiesPath?)` | `Song` | yt-dlp + Demucs; 15-min timeout; `cookiesPath` (Settings → YouTube cookies file) is tried before the live-browser cookie cascade |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
 | `export_all(entries, suggestedName)` | `void` | bundles vocals/instrumental + every take into one zip (`zip` crate) via a single native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |

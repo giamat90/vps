@@ -820,6 +820,7 @@ pub async fn import_youtube(
     url: String,
     high_quality: Option<bool>,
     algorithm: Option<String>,
+    cookies_path: Option<String>,
 ) -> Result<Song, String> {
     if !url.contains("youtube.com/") && !url.contains("youtu.be/") {
         return Err("Not a valid YouTube URL".to_string());
@@ -835,6 +836,7 @@ pub async fn import_youtube(
         "outputDir": output_dir_str,
         "highQuality": high_quality.unwrap_or(false),
         "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
+        "cookiesPath": cookies_path,
     });
 
     let guard = ensure_sidecar(&state)?;

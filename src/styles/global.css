@@ -2145,6 +2145,59 @@ body,
   color: var(--text-secondary);
 }
 
+.youtube-cookies-control {
+  margin-bottom: 0.75rem;
+}
+
+.youtube-cookies-control__label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.25rem;
+}
+
+.youtube-cookies-control__desc {
+  margin: 0 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.youtube-cookies-control__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.youtube-cookies-control__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  color: var(--text-primary);
+}
+
+.youtube-cookies-control__btn {
+  background: var(--bg-surface);
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  padding: 0.25rem 0.6rem;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.youtube-cookies-control__btn--clear {
+  color: var(--text-secondary);
+}
+
 /* Recording Offset Control */
 .rec-offset__title {
   font-size: 0.85rem;

@@ -24,7 +24,12 @@ interface LibraryState {
 
   fetchSongs: () => Promise<void>;
   uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument", algorithm?: PitchAlgorithm) => Promise<void>;
-  importYoutube: (url: string, highQuality?: boolean, algorithm?: PitchAlgorithm) => Promise<void>;
+  importYoutube: (
+    url: string,
+    highQuality?: boolean,
+    algorithm?: PitchAlgorithm,
+    cookiesPath?: string | null,
+  ) => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
   renameSong: (songId: string, title: string) => Promise<void>;
   fetchFolders: () => Promise<void>;
@@ -44,7 +49,7 @@ function friendlyError(raw: unknown, context: "youtube" | "upload"): string {
     return "The YouTube downloader (yt-dlp) is out of date and YouTube has changed something it can't handle. Update it: `pip install -U -r requirements.txt` in the sidecar venv (dev), or reinstall the app (installed build).";
   }
   if (msg.includes("sign in to confirm") || msg.includes("not a bot") || msg.includes("bot")) {
-    return "YouTube blocked the download (bot detection). Try disabling your VPN, then retry.";
+    return "YouTube blocked the download (bot detection). Try disabling your VPN, or set a YouTube cookies file in Settings (it may need re-exporting if it's expired), then retry.";
   }
   if (msg.includes("vpn") || msg.includes("proxy")) {
     return "A VPN or proxy may be blocking the connection. Disable it and retry.";
@@ -111,10 +116,15 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }
   },
 
-  importYoutube: async (url: string, highQuality?: boolean, algorithm?: PitchAlgorithm) => {
+  importYoutube: async (
+    url: string,
+    highQuality?: boolean,
+    algorithm?: PitchAlgorithm,
+    cookiesPath?: string | null,
+  ) => {
     set({ error: null, processing: { songId: "", stage: "Connecting…", progress: 0, isComplete: false } });
     try {
-      const song = await importYoutubeApi(url, highQuality, algorithm);
+      const song = await importYoutubeApi(url, highQuality, algorithm, cookiesPath);
       set((state) => ({
         songs: [...state.songs, song],
         processing: null,

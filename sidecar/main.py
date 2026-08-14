@@ -114,6 +114,7 @@ def main():
                     on_progress=make_progress_callback("import_yt"),
                     high_quality=cmd.get("highQuality", False),
                     algorithm=cmd.get("algorithm", "srh"),
+                    cookies_path=cmd.get("cookiesPath"),
                 )
                 send({"type": "result", "cmd": "import_yt", "data": result})
 

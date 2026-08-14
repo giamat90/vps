@@ -40,7 +40,14 @@ def _raise_import_error(exc: Exception):
     raise exc
 
 
-def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = False, algorithm: str = "srh") -> dict:
+def import_yt(
+    url: str,
+    output_dir: str,
+    on_progress=None,
+    high_quality: bool = False,
+    algorithm: str = "srh",
+    cookies_path: str | None = None,
+) -> dict:
     """
     Progress: download occupies 0.0–0.15, existing pipeline fills 0.15–1.0.
     Returns the same dict as processor.process(), with 'title' added.
@@ -69,8 +76,23 @@ def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = 
         "progress_hooks": [ydl_hook],
     }
 
-    # Try without cookies first, then fall back through installed browsers.
-    attempts = [{}] + [{"cookiesfrombrowser": (b,)} for b in _BROWSERS]
+    # A user-supplied cookies.txt (Netscape format, exported once via a
+    # browser extension) sidesteps the live-browser extraction problems
+    # below entirely — no lock/decryption dependency on a running browser,
+    # so it's tried first when configured. Falls through to the old
+    # extract-from-a-running-browser cascade otherwise (kept for anyone who
+    # hasn't set one up): try without cookies first, then cycle through
+    # installed browsers. Chromium browsers' cookie stores are encrypted
+    # with a key only reliably reachable while that browser is running
+    # (Chrome 127+ "app-bound encryption"), which makes that path fragile —
+    # see MPS wiki/known-issues.md.
+    attempts = []
+    if cookies_path:
+        if os.path.isfile(cookies_path):
+            attempts.append({"cookiefile": cookies_path})
+        else:
+            print(f"[yt_importer] cookies file not found, skipping: {cookies_path}")
+    attempts += [{}] + [{"cookiesfrombrowser": (b,)} for b in _BROWSERS]
     last_error: Exception | None = None
 
     for extra in attempts:
@@ -87,14 +109,21 @@ def import_yt(url: str, output_dir: str, on_progress=None, high_quality: bool = 
             # pywin32 install can raise something other than DownloadError
             # while decrypting a browser's cookie store) — any failure on
             # those just moves on to the next browser. For the no-cookie
-            # attempt, only retry on bot-detection; bail immediately
-            # otherwise so real errors (e.g. video unavailable) aren't
-            # masked behind a pointless retry loop.
-            is_cookie_attempt = "cookiesfrombrowser" in extra
-            is_bot_detection = isinstance(exc, yt_dlp.utils.DownloadError) and (
-                "Sign in to confirm" in str(exc) or "bot" in str(exc).lower()
+            # attempt, only retry on errors a cookie session is known to
+            # fix; bail immediately otherwise so real errors (e.g. video
+            # unavailable) aren't masked behind a pointless retry loop.
+            # "403 Forbidden" while downloading the actual media data is
+            # included alongside the "Sign in to confirm"/bot-check text —
+            # same root cause (an unauthenticated request YouTube rejects),
+            # different wording, and just as commonly fixed by cookies.
+            is_cookie_attempt = "cookiesfrombrowser" in extra or "cookiefile" in extra
+            is_retryable = isinstance(exc, yt_dlp.utils.DownloadError) and (
+                "Sign in to confirm" in str(exc)
+                or "bot" in str(exc).lower()
+                or "403" in str(exc)
+                or "forbidden" in str(exc).lower()
             )
-            if not is_cookie_attempt and not is_bot_detection:
+            if not is_cookie_attempt and not is_retryable:
                 _raise_import_error(exc)
             # Clean up any partial file before next attempt.
             for f in os.listdir(output_dir):

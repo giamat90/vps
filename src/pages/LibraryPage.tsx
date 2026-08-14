@@ -17,6 +17,7 @@ import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
 import RecordingOffsetControl from "../components/recording/RecordingOffsetControl";
 import PitchAlgorithmControl from "../components/settings/PitchAlgorithmControl";
+import YouTubeCookiesControl from "../components/settings/YouTubeCookiesControl";
 import { exportStem, pitchShiftSong } from "../lib/tauri";
 import type { Folder, Song } from "../lib/types";
 import { useLibraryStore } from "../stores/library";
@@ -591,6 +592,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
       {showSettings && (
         <div className="library-page__settings">
           <PitchAlgorithmControl />
+          <YouTubeCookiesControl />
           <RecordingOffsetControl />
         </div>
       )}

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useLibraryStore } from "../../stores/library";
+import { useSettingsStore } from "../../stores/settings";
 import type { PitchAlgorithm } from "../../lib/types";
 
 const YT_PATTERN = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//;
@@ -14,6 +15,7 @@ function YouTubeImport({ highQuality, algorithm }: YouTubeImportProps) {
   const [error, setError] = useState<string | null>(null);
   const importYoutube = useLibraryStore((s) => s.importYoutube);
   const isProcessing = useLibraryStore((s) => s.processing !== null);
+  const youtubeCookiesPath = useSettingsStore((s) => s.youtubeCookiesPath);
 
   const handleImport = async () => {
     if (!YT_PATTERN.test(url)) {
@@ -21,7 +23,7 @@ function YouTubeImport({ highQuality, algorithm }: YouTubeImportProps) {
       return;
     }
     setError(null);
-    await importYoutube(url, highQuality, algorithm);
+    await importYoutube(url, highQuality, algorithm, youtubeCookiesPath);
     setUrl("");
   };
 

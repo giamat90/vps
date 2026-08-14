@@ -121,8 +121,13 @@ export async function pitchShiftSong(
 }
 
 /** Import a YouTube URL through yt-dlp + Demucs pipeline */
-export async function importYoutube(url: string, highQuality?: boolean, algorithm?: PitchAlgorithm): Promise<Song> {
-  return invoke<Song>("import_youtube", { url, highQuality, algorithm });
+export async function importYoutube(
+  url: string,
+  highQuality?: boolean,
+  algorithm?: PitchAlgorithm,
+  cookiesPath?: string | null,
+): Promise<Song> {
+  return invoke<Song>("import_youtube", { url, highQuality, algorithm, cookiesPath });
 }
 
 /** Open a native Save As dialog and copy a stem WAV to user-chosen location */
