@@ -50,3 +50,7 @@ sidecar/pitch_lab/results/*
 # Updater signing keys (secret — never commit)
 tauri-updater-key.pem
 *.pem
+
+# Personal dev-machine convenience scripts (not shared project tooling)
+/build.bat
+/tech_lead.bat
