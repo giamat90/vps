@@ -42,14 +42,16 @@ interface LibraryState {
   initProgressListener: () => Promise<() => void>;
 }
 
-function friendlyError(raw: unknown, context: "youtube" | "upload"): string {
+function friendlyError(raw: unknown, context: "youtube" | "upload", hasCookiesFile = false): string {
   const msg = String(raw ?? "").toLowerCase();
 
   if (msg.includes("known-good floor")) {
     return "The YouTube downloader (yt-dlp) is out of date and YouTube has changed something it can't handle. Update it: `pip install -U -r requirements.txt` in the sidecar venv (dev), or reinstall the app (installed build).";
   }
   if (msg.includes("sign in to confirm") || msg.includes("not a bot") || msg.includes("bot")) {
-    return "YouTube blocked the download (bot detection). Try disabling your VPN, or set a YouTube cookies file in Settings (it may need re-exporting if it's expired), then retry.";
+    return hasCookiesFile
+      ? "YouTube blocked the download even with your cookies file — it has likely expired. Re-export cookies.txt and update it in Settings → YouTube cookies file, then retry."
+      : "YouTube blocked the download (bot detection). Fix: open Settings → YouTube cookies file and add one — it's the most reliable fix for this. A VPN can also trigger this; try disabling it too.";
   }
   if (msg.includes("vpn") || msg.includes("proxy")) {
     return "A VPN or proxy may be blocking the connection. Disable it and retry.";
@@ -79,7 +81,9 @@ function friendlyError(raw: unknown, context: "youtube" | "upload"): string {
     return "ffmpeg was not found. Make sure ffmpeg is installed and on your system PATH.";
   }
   if (context === "youtube") {
-    return "YouTube import failed. Check that the URL is public and your internet connection is working.";
+    return hasCookiesFile
+      ? "YouTube import failed even with your cookies file. It may have expired (re-export it in Settings), or the URL/video itself may be the problem."
+      : "YouTube import failed. This is most often fixed by adding a YouTube cookies file in Settings → YouTube cookies file — see the instructions there. Otherwise, check that the URL is public and your internet connection is working.";
   }
   return "Failed to process the audio file. Make sure it is a valid audio format.";
 }
@@ -131,7 +135,7 @@ export const useLibraryStore = create<LibraryState>((set) => ({
       }));
     } catch (e) {
       console.error("YouTube import failed:", e);
-      set({ processing: null, error: friendlyError(e, "youtube") });
+      set({ processing: null, error: friendlyError(e, "youtube", !!cookiesPath) });
     }
   },
 

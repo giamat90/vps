@@ -29,22 +29,24 @@ function YouTubeImport({ highQuality, algorithm }: YouTubeImportProps) {
 
   return (
     <div className="yt-import">
-      <input
-        className="yt-import__input"
-        type="url"
-        placeholder="Paste YouTube URL…"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        disabled={isProcessing}
-        onKeyDown={(e) => e.key === "Enter" && !isProcessing && handleImport()}
-      />
-      <button
-        className="yt-import__btn"
-        onClick={handleImport}
-        disabled={isProcessing || !url.trim()}
-      >
-        {isProcessing ? "Importing…" : "Import"}
-      </button>
+      <div className="yt-import__row">
+        <input
+          className="yt-import__input"
+          type="url"
+          placeholder="Paste YouTube URL…"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          disabled={isProcessing}
+          onKeyDown={(e) => e.key === "Enter" && !isProcessing && handleImport()}
+        />
+        <button
+          className="yt-import__btn"
+          onClick={handleImport}
+          disabled={isProcessing || !url.trim()}
+        >
+          Import
+        </button>
+      </div>
       {error && <p className="yt-import__error">{error}</p>}
     </div>
   );

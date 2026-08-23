@@ -15,6 +15,7 @@ import { SortableContext, arrayMove, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
+import ImportOptions from "../components/upload/ImportOptions";
 import RecordingOffsetControl from "../components/recording/RecordingOffsetControl";
 import PitchAlgorithmControl from "../components/settings/PitchAlgorithmControl";
 import YouTubeCookiesControl from "../components/settings/YouTubeCookiesControl";
@@ -416,6 +417,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const pitchAlgorithm = useSettingsStore((s) => s.pitchAlgorithm);
+  const isProcessing = useLibraryStore((s) => s.processing !== null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -547,46 +549,17 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
 
 
       <div className="library-page__import">
-        <div className="library-page__track-kind-toggle" role="radiogroup">
-          <label>
-            <input
-              type="radio"
-              name="track-kind"
-              checked={trackKind === "vocal"}
-              onChange={() => setTrackKind("vocal")}
-            />
-            Song (separate vocals &amp; instrumental)
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="track-kind"
-              checked={trackKind === "instrument"}
-              onChange={() => setTrackKind("instrument")}
-            />
-            Instrument practice track (piano/guitar melody)
-          </label>
+        <ImportOptions
+          trackKind={trackKind}
+          onTrackKindChange={setTrackKind}
+          highQuality={highQuality}
+          onHighQualityChange={setHighQuality}
+          disabled={isProcessing}
+        />
+        <div className="library-page__import-sources">
+          <DropZone highQuality={highQuality} trackKind={trackKind} algorithm={pitchAlgorithm} />
+          <YouTubeImport highQuality={highQuality} algorithm={pitchAlgorithm} />
         </div>
-        <DropZone highQuality={highQuality} trackKind={trackKind} algorithm={pitchAlgorithm} />
-        <YouTubeImport highQuality={highQuality} algorithm={pitchAlgorithm} />
-        <label
-          className="library-page__quality-toggle"
-          title={
-            trackKind === "instrument"
-              ? "Not applicable — instrument practice tracks skip stem separation"
-              : undefined
-          }
-        >
-          <input
-            type="checkbox"
-            checked={highQuality}
-            disabled={trackKind === "instrument"}
-            onChange={(e) => setHighQuality(e.target.checked)}
-          />
-          {highQuality
-            ? "htdemucs_ft — better isolation, ~2–3× slower"
-            : "htdemucs — fast standard quality"}
-        </label>
       </div>
 
       {showSettings && (
