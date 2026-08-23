@@ -2999,6 +2999,7 @@ body,
   padding: 0.3rem 0.5rem;
 }
 
+.exercise-take-list__download,
 .exercise-take-list__delete {
   background: none;
   border: none;
@@ -3012,6 +3013,12 @@ body,
   flex-shrink: 0;
 }
 
+.exercise-take-list__download:hover,
 .exercise-take-list__delete:hover {
   color: var(--accent);
+}
+
+.exercise-take-list__download:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

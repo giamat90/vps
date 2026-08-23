@@ -534,7 +534,12 @@ An imported external file is persisted through the **same** `ExerciseTake` model
 
 ### ExerciseTakeList
 
-Flat list of recorded exercise takes. Each row shows the recorded date and duration. Clicking an inactive row loads it into the main view (see [Free Exercise Track Loading](#free-exercise-track-loading) above) via `loadExerciseTakeIntoTrack(take, containerEl)`, where `containerEl` is a ref to `ExercisePage`'s shared waveform-strip container (passed down as a prop, so there's one WaveSurfer container reused across list clicks rather than one per row). Clicking the already-loaded row again unloads it via `clearLoadedTrack()`. Disabled (no-op) while recording. A `×` button deletes the take; deleting the currently-loaded one also unloads it.
+Flat list of recorded exercise takes. Each row shows the recorded date and duration. Clicking an inactive row loads it into the main view (see [Free Exercise Track Loading](#free-exercise-track-loading) above) via `loadExerciseTakeIntoTrack(take, containerEl)`, where `containerEl` is a ref to `ExercisePage`'s shared waveform-strip container (passed down as a prop, so there's one WaveSurfer container reused across list clicks rather than one per row). Clicking the already-loaded row again unloads it via `clearLoadedTrack()`. Disabled (no-op) while recording.
+
+Two icon buttons sit on each row, both `e.stopPropagation()`-guarded so clicking them doesn't also select/load the row:
+
+- **↓ download** (added 2026-08-23) — reuses `TakeList`'s `exportTake(take.filepath, suggestedName)` as-is, no backend change needed: `export_take` only takes a raw file path + suggested name, with no song/take-table dependency, so it works unmodified against an `ExerciseTake`'s `filepath` (already the sidecar's loudness-normalized WAV in the common case — see [Free Exercise Track Loading](#free-exercise-track-loading)). The suggested filename is `"Free Exercise - {date}.wav"`, where `{date}` is built by a local `formatFileLabel` (`YYYY-MM-DD HH-MM`) kept deliberately separate from the row's *display* date string — the display format's `:`/`,` characters are invalid/ugly in a Windows filename. Button disables itself (shows `…`) while the conversion/dialog is in flight, mirroring `TakeList`'s `exportingId` pattern.
+- **× delete** — deletes the take; deleting the currently-loaded one also unloads it.
 
 ### YouTubeImport
 

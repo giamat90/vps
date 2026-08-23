@@ -1,11 +1,20 @@
 import { useState } from "react";
 import { useExerciseStore } from "../../stores/exercise";
 import { usePlayerStore } from "../../stores/player";
+import { exportTake } from "../../lib/tauri";
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.floor(seconds % 60);
   return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+// Separate from the display date (which uses ":" and "," — invalid/ugly in a
+// Windows filename) so the Save-As dialog gets a clean suggested name.
+function formatFileLabel(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}-${pad(d.getMinutes())}`;
 }
 
 interface ExerciseTakeListProps {
@@ -20,6 +29,7 @@ function ExerciseTakeList({ trackContainerRef }: ExerciseTakeListProps) {
   const deleteTake          = useExerciseStore((s) => s.deleteExerciseTake);
   const isRecording         = usePlayerStore((s) => s.isRecording);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
   if (exerciseTakes.length === 0) {
     return <p className="exercise-take-list__empty">No recordings yet.</p>;
@@ -39,6 +49,20 @@ function ExerciseTakeList({ trackContainerRef }: ExerciseTakeListProps) {
       await loadIntoTrack(take, container);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const handleDownload = async (e: React.MouseEvent, takeId: string, dateLabel: string) => {
+    e.stopPropagation();
+    setDownloadingId(takeId);
+    const take = exerciseTakes.find((t) => t.id === takeId);
+    if (!take) return;
+    try {
+      await exportTake(take.filepath, `Free Exercise - ${dateLabel}.wav`);
+    } catch (e) {
+      console.error("[ExerciseTakeList] export failed:", e);
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -64,6 +88,14 @@ function ExerciseTakeList({ trackContainerRef }: ExerciseTakeListProps) {
               <span className="exercise-take-list__date">{date}</span>
               <span className="exercise-take-list__dur">{formatDuration(take.duration)}</span>
             </div>
+            <button
+              className="exercise-take-list__download"
+              onClick={(e) => void handleDownload(e, take.id, formatFileLabel(take.recordedAt))}
+              disabled={downloadingId === take.id}
+              title="Download as WAV"
+            >
+              {downloadingId === take.id ? "…" : "↓"}
+            </button>
             <button
               className="exercise-take-list__delete"
               onClick={(e) => { e.stopPropagation(); void deleteTake(take.id); }}
