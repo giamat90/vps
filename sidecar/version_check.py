@@ -17,7 +17,7 @@ from datetime import datetime
 # identical constant in SPS's version_check.py — see MPS wiki
 # conventions.md#10 ("yt-dlp version must always match across both
 # projects"). Bump this whenever the floor is bumped.
-MIN_YT_DLP_VERSION = "2026.7.4"
+MIN_YT_DLP_VERSION = "2026.8.19"
 
 _CACHE_PATH = os.path.join(os.path.expanduser("~"), ".vps", "yt_dlp_check.json")
 _CACHE_TTL_SECONDS = 24 * 3600

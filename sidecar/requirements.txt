@@ -20,5 +20,5 @@ scipy
 # starts failing in production, then rebuild the sidecar and cut a release.
 # Keep in sync with version_check.py's MIN_YT_DLP_VERSION (both here and in
 # SPS — see MPS wiki/conventions.md#10).
-yt-dlp>=2026.7.4
+yt-dlp>=2026.8.19
 pywin32; sys_platform == "win32"

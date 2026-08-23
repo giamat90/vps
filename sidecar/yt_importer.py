@@ -89,9 +89,12 @@ def import_yt(
     attempts = []
     if cookies_path:
         if os.path.isfile(cookies_path):
+            print(f"[yt_importer] trying cookies file: {cookies_path}")
             attempts.append({"cookiefile": cookies_path})
         else:
             print(f"[yt_importer] cookies file not found, skipping: {cookies_path}")
+    else:
+        print("[yt_importer] no cookiesPath configured")
     attempts += [{}] + [{"cookiesfrombrowser": (b,)} for b in _BROWSERS]
     last_error: Exception | None = None
 
