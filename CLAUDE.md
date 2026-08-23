@@ -95,8 +95,9 @@ VPS/
 │   │   └── timeStretch.ts     dead stub (`export {}`, "TODO: implement in Session 5") — not imported anywhere; speed control is WaveSurfer's native setPlaybackRate, not this
 │   ├── components/
 │   │   ├── upload/
-│   │   │   ├── DropZone.tsx       file drag-and-drop → processSong (song or instrument track)
-│   │   │   └── YouTubeImport.tsx  URL paste → importYoutube
+│   │   │   ├── DropZone.tsx       file picker → pending-file confirm (Cancel/Analyze) → processSong (song or instrument track)
+│   │   │   ├── YouTubeImport.tsx  URL paste → importYoutube
+│   │   │   └── ImportOptions.tsx  track-kind (song/instrument) + high-quality chip card above DropZone/YouTubeImport, mirrors SPS's StemPicker visual style
 │   │   ├── player/
 │   │   │   ├── Waveform.tsx        3-track waveform display + take loading
 │   │   │   ├── ExportMixButton.tsx export current mix as WAV (rendered in PracticeRoom header)
