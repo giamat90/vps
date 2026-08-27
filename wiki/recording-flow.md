@@ -68,7 +68,8 @@ After a successful open, `stream.getAudioTracks()[0].getSettings()` is logged to
 ## startRecording Sequence
 
 ```
-0. if (isMonitoring) stopMonitoring()   stop monitor stream first
+0a. if (activeTakeId) set activeTakeId=null + eng.clearTakeTrack()   deselect previous take
+0b. if (isMonitoring) stopMonitoring()   stop monitor stream first
 1. recordingStartPos = punchIn ?? currentTime  use punch-in if set
 2. eng.pause()                          pause playback
 3. rec.init(selectedDeviceId)           getUserMedia — mic opens here
@@ -103,6 +104,10 @@ The singer hears **both** original vocals and instrumental during recording — 
 During `save_take`, the sidecar `analyze` step also **RMS-normalizes the take's loudness against `vocals.wav`** (peak-capped) and the normalized `{takeId}.wav` replaces the raw `.webm` on disk — see [Python Sidecar](python-sidecar.md#analyze). This is why takes match the mastered Demucs stems' loudness without touching the take volume slider.
 
 Setting `activeTakeId` triggers the `Waveform` component to call `eng.loadTakeTrack()`, which loads the take as a third, separate waveform track alongside vocals and instrumental.
+
+### Previous take is deselected when a new recording starts
+
+`startRecording` nulls `activeTakeId` and calls `eng.clearTakeTrack()` up front (step 0a). Without this, a previously selected take stayed loaded in the engine and the rAF take-window sync kept auto-playing it whenever the playhead crossed its window during the new recording — the singer would hear their last attempt mixed into the backing track, and its red pitch ribbon stayed on the PianoRoll. The take itself is untouched on disk (`takes.json` is only appended to / edited explicitly), so it remains in the take list and re-selectable; it's just removed from playback and the analysis overlay. Nulling `activeTakeId` drives the existing `Waveform` (`clearTakeTrack`) and `PracticeRoom` (`clearTakeAnalysis`) effects; the direct `clearTakeTrack()` call closes the gap before React flushes them.
 
 ## Windows WASAPI: Default Communications Device
 
