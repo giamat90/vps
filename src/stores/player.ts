@@ -767,6 +767,18 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const { song } = get();
     if (!song) return;
 
+    // Deselect any active take before recording a new one. The previous take
+    // stays saved (takes.json is never touched) and re-selectable from the
+    // take list, but it's dropped from playback and the analysis overlay so
+    // the singer records against the backing track alone — not their last
+    // attempt. Nulling activeTakeId drives Waveform's clearTakeTrack() and
+    // PracticeRoom's clearTakeAnalysis() via their activeTakeId effects; the
+    // direct clearTakeTrack() closes the gap before React flushes those.
+    if (get().activeTakeId) {
+      set({ activeTakeId: null });
+      getEngine().clearTakeTrack();
+    }
+
     // Stop monitoring before opening the recorder's mic stream
     if (get().isMonitoring) await get().stopMonitoring();
 
