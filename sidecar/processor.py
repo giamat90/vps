@@ -685,8 +685,30 @@ def process(
         on_progress(0.10, "stem-separation")
 
         _log("Running Demucs separation...")
-        with torch.no_grad():
-            sources = apply_model(model, wav[None], progress=False)[0]
+        # apply_model is one long blocking call with no progress hook; run it in a
+        # worker thread and emit heartbeat pings so the Rust-side recv timeout
+        # (per-message, not total) keeps resetting during separation.
+        import threading
+
+        sep_result = {}
+
+        def _separate():
+            with torch.no_grad():
+                sep_result["sources"] = apply_model(model, wav[None], progress=False)[0]
+
+        sep_thread = threading.Thread(target=_separate, daemon=True)
+        sep_thread.start()
+        start = time.monotonic()
+        while sep_thread.is_alive():
+            sep_thread.join(timeout=10.0)
+            if not sep_thread.is_alive():
+                break
+            # Asymptotic ramp across the 0.10–0.45 band; never reaches 0.45 until done.
+            frac = 1.0 - 0.5 ** ((time.monotonic() - start) / 60.0)
+            on_progress(0.10 + 0.34 * frac, "stem-separation")
+        if "sources" not in sep_result:
+            raise RuntimeError("Demucs separation thread exited without producing output")
+        sources = sep_result["sources"]
         on_progress(0.45, "stem-separation")
 
         source_names = model.sources
