@@ -620,43 +620,45 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
 
       {!isLoading && (songs.length > 0 || sortedFolders.length > 0) && (
         <DndContext sensors={sensors} collisionDetection={collisionDetectionStrategy} onDragEnd={handleDragEnd}>
-          {sortedFolders.length > 0 && (
-            <div className="library-page__folders">
-              <SortableContext
-                items={sortedFolders.map((f) => `${FOLDER_DRAG_PREFIX}${f.id}`)}
-                strategy={verticalListSortingStrategy}
-              >
-                {sortedFolders.map((folder) => (
-                  <FolderSection
-                    key={folder.id}
-                    folder={folder}
-                    songs={songsByFolder.get(folder.id) ?? []}
-                    onSelectSong={onSelectSong}
-                    onDeleteSong={deleteSong}
-                    onRenameSong={renameSong}
-                    onRenameFolder={renameFolder}
-                    onDeleteFolder={deleteFolder}
-                  />
-                ))}
-              </SortableContext>
-            </div>
-          )}
+          <div className="library-page__scroll">
+            {sortedFolders.length > 0 && (
+              <div className="library-page__folders">
+                <SortableContext
+                  items={sortedFolders.map((f) => `${FOLDER_DRAG_PREFIX}${f.id}`)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  {sortedFolders.map((folder) => (
+                    <FolderSection
+                      key={folder.id}
+                      folder={folder}
+                      songs={songsByFolder.get(folder.id) ?? []}
+                      onSelectSong={onSelectSong}
+                      onDeleteSong={deleteSong}
+                      onRenameSong={renameSong}
+                      onRenameFolder={renameFolder}
+                      onDeleteFolder={deleteFolder}
+                    />
+                  ))}
+                </SortableContext>
+              </div>
+            )}
 
-          <section className="library-page__list">
-            <RootDropZone>
-              <SortableContext items={rootSongs.map((s) => s.id)} strategy={verticalListSortingStrategy}>
-                {rootSongs.map((song) => (
-                  <DraggableSongRow
-                    key={song.id}
-                    song={song}
-                    onSelect={() => onSelectSong(song.id)}
-                    onDelete={() => deleteSong(song.id)}
-                    onRename={(title) => renameSong(song.id, title)}
-                  />
-                ))}
-              </SortableContext>
-            </RootDropZone>
-          </section>
+            <section className="library-page__list">
+              <RootDropZone>
+                <SortableContext items={rootSongs.map((s) => s.id)} strategy={verticalListSortingStrategy}>
+                  {rootSongs.map((song) => (
+                    <DraggableSongRow
+                      key={song.id}
+                      song={song}
+                      onSelect={() => onSelectSong(song.id)}
+                      onDelete={() => deleteSong(song.id)}
+                      onRename={(title) => renameSong(song.id, title)}
+                    />
+                  ))}
+                </SortableContext>
+              </RootDropZone>
+            </section>
+          </div>
         </DndContext>
       )}
     </div>

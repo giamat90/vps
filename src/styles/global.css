@@ -51,12 +51,22 @@ body,
   font-weight: 600;
 }
 
+/* Single scroll region owning both the folders block and the loose root songs,
+   so a long folder list scrolls together with the songs instead of each getting
+   its own nested scrollbar. The Library toolbar stays fixed above this. */
+.library-page__scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .library-page__list {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  overflow-y: auto;
-  flex: 1;
 }
 
 .library-page__error {
@@ -106,9 +116,6 @@ body,
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  flex-shrink: 0;
-  max-height: 40vh;
-  overflow-y: auto;
 }
 
 .library-page__song-row {
