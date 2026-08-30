@@ -71,6 +71,12 @@ impl SidecarManager {
             return Err("Sidecar not found: no main.py in source tree and no vps-sidecar binary next to exe".to_string());
         };
 
+        // Force UTF-8 on the sidecar's stdio. Rust writes the JSON-lines protocol
+        // as UTF-8; without this Python decodes stdin using the Windows console
+        // codepage (e.g. cp1252), which mangles any non-ASCII character in a file
+        // path and makes ffprobe fail with a misleading "ffmpeg was not found".
+        cmd.env("PYTHONUTF8", "1").env("PYTHONIOENCODING", "utf-8");
+
         // Suppress the console window that would otherwise flash on Windows.
         #[cfg(windows)]
         {

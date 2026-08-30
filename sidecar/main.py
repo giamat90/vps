@@ -11,6 +11,16 @@ import sys
 import json
 import traceback
 
+# The JSON-lines protocol with the Rust shell is UTF-8. On Windows, Python
+# otherwise decodes stdin/stdout with the console codepage (e.g. cp1252), which
+# mangles non-ASCII file paths and surfaces as a misleading ffmpeg/ffprobe
+# failure. Belt-and-suspenders with PYTHONUTF8/PYTHONIOENCODING set by the shell.
+for _stream in (sys.stdin, sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
+
 # When frozen by PyInstaller (--onefile), any bundled ffmpeg/ffprobe binary
 # is extracted to sys._MEIPASS on launch. Demucs shells out to bare
 # `ffmpeg`/`ffprobe` on PATH to decode audio, so without this the installed
