@@ -16,6 +16,8 @@ The Python sidecar handles all computationally heavy audio processing that would
 
 Communication is **JSON lines** on stdin/stdout. Each message is a single JSON object terminated by `\n`. Stderr is not used for structured communication.
 
+The protocol is **UTF-8** in both directions. `SidecarManager::spawn()` sets `PYTHONUTF8=1` and `PYTHONIOENCODING=utf-8` on the child, and `main.py` also `reconfigure(encoding="utf-8")`s its stdio at startup. Without this, Python on Windows decodes stdin with the console codepage (e.g. cp1252) and mangles any non-ASCII character in a file path — which surfaces downstream as a misleading `ffprobe`/"ffmpeg was not found" failure inside Demucs rather than an encoding error.
+
 ### Startup
 
 On launch the sidecar sends:
