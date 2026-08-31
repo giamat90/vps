@@ -266,7 +266,8 @@ function FolderSection({
   onRenameFolder,
   onDeleteFolder,
 }: FolderSectionProps) {
-  const [collapsed, setCollapsed] = useState(false);
+  const collapsed = useSettingsStore((s) => s.collapsedFolders[folder.id] ?? false);
+  const setFolderCollapsed = useSettingsStore((s) => s.setFolderCollapsed);
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(folder.name);
 
@@ -311,7 +312,7 @@ function FolderSection({
         </button>
         <button
           className="library-page__folder-toggle"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={() => setFolderCollapsed(folder.id, !collapsed)}
           title={collapsed ? "Expand" : "Collapse"}
         >
           {collapsed ? "▸" : "▾"}
