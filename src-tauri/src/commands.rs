@@ -80,6 +80,15 @@ pub async fn process_song(
 ) -> Result<Song, String> {
     let track_kind = track_kind.unwrap_or_else(|| "vocal".to_string());
     let skip_separation = track_kind == "instrument";
+    // Instrument practice tracks (piano scales the singer pitches against) need
+    // a monophonic-instrument detector, not the voice-tuned default — see
+    // detect_pitch_piano in processor.py. Recorded takes stay on the vocal
+    // algorithm (save_take passes `algorithm` unchanged).
+    let algorithm = if skip_separation {
+        Some("piano".to_string())
+    } else {
+        algorithm
+    };
     let song_id = uuid::Uuid::new_v4().to_string();
     let output_dir = storage::song_dir(&song_id);
 

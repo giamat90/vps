@@ -360,6 +360,7 @@ export default function PianoRoll() {
   const isLoaded         = useAnalysisStore((s) => s.isLoaded);
   const isRecording      = usePlayerStore((s) => s.isRecording);
   const exerciseMode     = usePlayerStore((s) => s.exerciseMode);
+  const songLabel        = usePlayerStore((s) => (s.song?.kind === "instrument" ? "Piano" : "Song"));
   const punchIn          = usePlayerStore((s) => s.punchIn);
   const punchOut         = usePlayerStore((s) => s.punchOut);
   const duration         = usePlayerStore((s) => s.duration);
@@ -681,7 +682,7 @@ export default function PianoRoll() {
         <span className="analysis-panel__label">Piano Roll</span>
         <div className="analysis-panel__legend">
           <span className="legend-dot legend-dot--song" />
-          <span>Song</span>
+          <span>{songLabel}</span>
           {takePitch.length > 0 && (
             <>
               <span className="legend-dot legend-dot--take" />

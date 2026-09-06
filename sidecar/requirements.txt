@@ -10,6 +10,13 @@ torchcrepe
 # 0.4.7 is the first release line compatible with numpy 2 (venv has 2.4.x)
 praat-parselmouth>=0.4.7
 librosa
+# librosa.effects.pitch_shift's res_type="kaiser_fast" (used by pitch_shift_song,
+# key transpose) lazy-imports resampy at call time — librosa itself doesn't
+# declare it as a hard dependency since its own default res_type is soxr-based.
+# Was previously an undeclared transitive dependency here (present in this
+# venv already); now declared explicitly after SPS's port hit a fresh venv
+# missing it outright — see MPS/wiki/lineage.md.
+resampy
 soundfile
 numpy
 scipy

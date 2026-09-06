@@ -68,9 +68,9 @@ Separates a mixed audio file and extracts analysis data.
 
 **`htdemucs_ft` is not vendored into the frozen build** (`sidecar/fetch_models.py` only bundles the standard `htdemucs` weights — the fine-tuned model is an extra ~4×84 MB only needed for this opt-in path). On a frozen/installed build, the *first* `highQuality: true` call falls back to Demucs's normal network download of those weights inside the `process`/`import_yt` call, on top of `htdemucs_ft` already being a ~2-3x slower 4-model ensemble — easy to exceed `process`'s 600s / `import_yt`'s 900s timeout on a slow connection or in dev mode without the vendor cache populated (`sidecar/vendor/demucs-models/`, see `fetch_models.py`), especially combined with a cold sidecar spawn (see the cold-start timeout note below). Surfaces as "import/processing fails, but only with High Quality checked" — not a bad file or bad URL.
 
-`skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage.
+`skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage. **`commands.rs` forces `algorithm: "piano"` for these imports** (overriding the user's vocal setting) — the track is a piano/instrument, not a voice. Recorded takes against an instrument song keep the vocal algorithm (they're the singer).
 
-`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"praat"`, `"pyin"`, `"hps"`, `"crepe"`; user-selectable in the Settings panel. See [Pitch Detection](#pitch-detection-user-selectable).
+`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"praat"`, `"pyin"`, `"hps"`, `"crepe"`, `"piano"`; user-selectable in the Settings panel (except `"piano"`, which is set automatically for instrument imports). See [Pitch Detection](#pitch-detection-user-selectable).
 
 Steps (in `processor.py`):
 1. Demucs `htdemucs` (or `htdemucs_ft` if `highQuality`) — produces `vocals.wav` and `instrumental.wav`; **or**, if `skipSeparation`, load the input directly and duplicate it to both paths
@@ -185,7 +185,7 @@ used for song vocals (`processor.py`'s `process()`) and recorded takes (`analysi
 `processor.py` holds a small dispatch registry:
 
 ```python
-PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect_pitch_hps, "crepe": detect_pitch_crepe, "praat": detect_pitch_praat}
+PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect_pitch_hps, "crepe": detect_pitch_crepe, "praat": detect_pitch_praat, "piano": detect_pitch_piano}
 def get_pitch_fn(algorithm): return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
 ```
 
@@ -280,6 +280,19 @@ comparative study in `Researches/1912.12609v1` found Praat best at voicing deter
 Praat's default costs; parameter sweeps go through `pitch_lab`'s `praat_variant()` (most interesting
 knobs: `octave_cost`, `voicing_threshold`). Confidence is Praat's candidate `strength` (autocorrelation
 peak height) clipped to [0, 1].
+
+### Piano — instrument practice tracks only, not user-selectable
+
+`detect_pitch_piano` in `processor.py`: pYIN (autocorrelation) over an **A1–C7** range (55–2093 Hz),
+not the 65–1400 Hz vocal window — a keyboard warm-up routinely goes below C2 and above F#6. Set
+automatically by `commands.rs` whenever `skipSeparation` is true (an instrument import, `kind:
+"instrument"`); never appears in the Settings selector. Chosen over the vocal detectors because: pYIN's
+HMM voicing follows a piano note's exponential decay tail instead of an energy gate cutting it off
+early; and it uses **only a short median filter (`size=3`), no `_smooth_voiced`** — a scale is a
+staircase of steady discrete pitches, and the vocal median+Gaussian smoothing would round off the note
+transitions. Confidence is pYIN's `voiced_probs`. No new dependency (librosa's pYIN was already used by
+`detect_pitch`). Recorded takes against an instrument song still use the singer's chosen vocal
+algorithm — only the song's own track is analyzed as "piano".
 
 `_smooth_voiced()` (median filter `size=6` + Gaussian `sigma=1.5` on voiced frames only) is shared by
 SRH, HPS, and CREPE. pYIN and Praat deliberately skip it: pYIN's HMM and Praat's Viterbi path finding

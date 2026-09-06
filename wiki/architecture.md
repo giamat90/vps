@@ -34,7 +34,7 @@ VPS is a three-tier desktop application:
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | htdemucs (standard) / htdemucs_ft (high quality, opt-in) |
-| Pitch detection | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / Praat / pYIN / HPS / CREPE | — |
+| Pitch detection | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / Praat / pYIN / HPS / CREPE; plus "piano" (auto-selected for instrument imports, not in the picker) | — |
 | Pitch shifting | librosa (phase vocoder) | — |
 
 ## IPC Layers

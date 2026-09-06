@@ -32,7 +32,7 @@ Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log wi
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | `htdemucs` (default) / `htdemucs_ft` (high-quality opt-in) |
-| Pitch detection (song + take) | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / Praat (`praat-parselmouth`) / pYIN / HPS / CREPE (`torchcrepe`) | — |
+| Pitch detection (song + take) | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / Praat (`praat-parselmouth`) / pYIN / HPS / CREPE (`torchcrepe`); `piano` (pYIN A1–C7, auto-forced for `kind:"instrument"` imports, not user-selectable) | — |
 | Pitch shifting | librosa phase vocoder | — |
 
 **Platform:** Windows 11, x86_64. WebView2 is pre-installed.
@@ -435,6 +435,7 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 - **HPS** (`detect_pitch_hps`) — new; Harmonic Product Spectrum, no new dependency, more octave-jitter-prone than SRH by design (multiplicative harmonic combination).
 - **CREPE** (`detect_pitch_crepe`) — new; deep-learning tracker via `torchcrepe` (`"tiny"` model, reuses the `torch` dependency Demucs already needs), slower than the DSP algorithms on full-song audio. Rated second-best in the 2026-07-12 in-app A/B.
 - **Praat** (`detect_pitch_praat`) — was the default in `v0.1.37`–`v0.1.38`, promoted after a lab A/B on two test tracks plus an in-app listening test; superseded back to SRH in `v0.1.39` (2026-07-12) per a broader in-app A/B across all five algorithms. Autocorrelation method (Boersma 1993) via `praat-parselmouth`. VoceVista's algorithm is unpublished, but its documented behavior (time-domain detector separate from the FFT, "prefer harmonic fundamental" option, pitch floor/ceiling) matches Praat's octave-cost + Viterbi-path design, and the singing-voice comparative study in `Researches/1912.12609v1` found Praat best at voicing determination — still a reasonable alternative, just no longer the default. Praat defaults kept; skips `_smooth_voiced` (its path finding already smooths, same reasoning as pYIN's HMM). Parameter sweeps: `pitch_lab`'s `praat_variant()`.
+- **Piano** (`detect_pitch_piano`) — **not user-selectable**; `commands.rs` forces `algorithm: "piano"` for instrument imports (`skip_separation`). pYIN over A1–C7 (55–2093 Hz), short median filter only (no `_smooth_voiced` — a scale's discrete steps shouldn't be smoothed). For the piano/instrument practice track a singer pitches against, not a voice. Takes recorded against an instrument song keep the vocal algorithm.
 - **Algorithm validation workspace:** `sidecar/pitch_lab/` — reuses the production SRH/pYIN/HPS/CREPE functions to visualize, sonify, and cross-compare pitch detection on real Demucs-split tracks. See `sidecar/pitch_lab/README.md`.
 
 ---

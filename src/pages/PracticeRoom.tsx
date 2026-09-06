@@ -35,6 +35,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const isRecording = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const song = songs.find((s) => s.id === songId);
+  const isInstrument = song?.kind === "instrument";
   const renameSong = useLibraryStore((s) => s.renameSong);
 
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -58,6 +59,13 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const isAnalysisLoaded = useAnalysisStore((s) => s.isLoaded);
 
   const [showAnalysis, setShowAnalysis] = useState(false);
+
+  // Instrument practice tracks exist to be pitched against — the piano's pitch
+  // ribbon is the whole point, so open the analysis panel without waiting for
+  // a recorded take.
+  useEffect(() => {
+    if (isInstrument) setShowAnalysis(true);
+  }, [isInstrument]);
 
   // Load song analysis on mount
   useEffect(() => {
@@ -169,7 +177,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
                   className={`analysis-tab ${showAnalysis ? "analysis-tab--active" : ""}`}
                   onClick={() => setShowAnalysis((v) => !v)}
                 >
-                  Analysis {activeTakeId ? "" : "(select take)"}
+                  Analysis {activeTakeId || isInstrument ? "" : "(select take)"}
                 </button>
               </div>
               {(showAnalysis || isRecording || isMonitoring) && (

@@ -195,6 +195,7 @@ export default function PianoKeyboard() {
   const isRecording = usePlayerStore((s) => s.isRecording);
   const exerciseMode = usePlayerStore((s) => s.exerciseMode);
   const selectedOutputDeviceId = usePlayerStore((s) => s.selectedOutputDeviceId);
+  const songLabel = usePlayerStore((s) => (s.song?.kind === "instrument" ? "Piano" : "Song"));
   const drawRef     = useRef<() => void>(() => {});
   const windowMinRef = useRef<number>(PIANO_WINDOW_DEFAULT_MIN);
   const layoutRef   = useRef<KeyLayout>(new Map());
@@ -289,7 +290,7 @@ export default function PianoKeyboard() {
         <span className="analysis-panel__label">Pitch Monitor</span>
         <div className="analysis-panel__legend">
           <span className="legend-dot legend-dot--song" />
-          <span>Song</span>
+          <span>{songLabel}</span>
           {takePitch.length > 0 && (
             <>
               <span className="legend-dot legend-dot--take" />

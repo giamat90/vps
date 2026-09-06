@@ -392,7 +392,7 @@ Real-time pitch gauge. Active whenever `isRecording || (isMonitoring && isPlayin
 **Form factor:** Thin SVG horizontal bar (`viewBox="0 0 300 8"`, `preserveAspectRatio="none"`) — stretches to full container width. No note labels, no ticks — pure color zones only. Range: ±50 cents. Zones: green ±0–15 ct, yellow ±15–30 ct, red >±30 ct. Needle is a 3 px rect; centre mark at x=150.
 
 **Placement:**
-- **ExercisePage** — rendered inside `PianoKeyboard` (not the page header). `PianoKeyboard` owns and renders `<DualTuner />` between its header strip and the canvas key row. Not present in `PracticeRoom`.
+- `PianoKeyboard` owns and renders `<DualTuner />` between its header strip and the canvas key row. `PianoKeyboard` is used by **both** ExercisePage and PracticeRoom's analysis panel, so the tuner appears in both — in PracticeRoom it compares the live mic against the song/piano pitch at the playhead (`songPitch` via `pitchAtTime`), which is exactly the "am I in tune with the piano" readout for instrument practice tracks.
 
 **Stream model:** DualTuner never opens its own `getUserMedia`. It reuses the already-open stream owned by the store:
 
@@ -453,7 +453,7 @@ Song practice page. Requires a processed song.
 
 **Sidebar layout:** The sidebar splits 50/50 between `practice-room__takes-wrap` (TakeList) and `practice-room__sidebar-bottom` (VibratoCard, TimingChart, CoachPanel), each independently scrollable (`overflow-y: auto`) so neither zone can crowd out the other. The full `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__sidebar`) for the `overflow-y: auto` zones to engage.
 
-**Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on or `isRecording` is true. `showAnalysis` is set automatically when the user selects a take. No `DualTuner` in this page — the tuner is ExercisePage-only.
+**Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on, `isRecording`, or `isMonitoring`. `showAnalysis` is set automatically when the user selects a take, **and on mount for `kind: "instrument"` songs** — an instrument practice track exists to be pitched against, so its piano-pitch ribbon + Pitch Monitor open without waiting for a take, and the tab drops the "(select take)" hint. `PianoKeyboard` renders `<DualTuner />` internally, so the tuner *is* present here (comparing the live mic against the song/piano pitch) — despite older revisions of this note claiming it was ExercisePage-only. For instrument songs the PianoRoll/PitchMonitor legend reads "Piano" instead of "Song".
 
 ### VibratoCard
 

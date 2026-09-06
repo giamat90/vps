@@ -440,12 +440,56 @@ def detect_pitch_praat(audio: np.ndarray, sr: int, fmin: float = 65.0, fmax: flo
     }
 
 
+def detect_pitch_piano(audio: np.ndarray, sr: int, fmin: float = 55.0, fmax: float = 2093.0) -> dict:
+    """
+    Monophonic pitch detection tuned for an isolated instrument practice
+    track (e.g. a piano playing scales/arpeggios the singer pitches
+    against) — NOT the singing voice.
+
+    Differences from the vocal algorithms:
+    - Range is A1–C7, not the 65–1400 Hz vocal window: a keyboard warm-up
+      routinely sits below C2 and above F#6.
+    - pYIN (autocorrelation) is robust to piano's strong harmonics and
+      sharp attack, and its HMM voicing follows the exponential decay tail
+      instead of gating the note off early the way an energy-thresholded
+      spectral detector does.
+    - Only a short median filter, no Gaussian/vibrato-preserving smoothing:
+      a scale is a staircase of steady discrete pitches, and the vocal
+      smoothing (_smooth_voiced) would round off the note transitions.
+    """
+    target_sr = 22050
+    if sr != target_sr:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
+        sr = target_sr
+
+    hop_length = 512
+    f0, voiced_flag, voiced_probs = librosa.pyin(
+        audio, fmin=fmin, fmax=fmax, sr=sr,
+        frame_length=2048, hop_length=hop_length,
+    )
+    times = librosa.times_like(f0, sr=sr, hop_length=hop_length)
+    f0_clean = np.where(voiced_flag & np.isfinite(f0), f0, 0.0)
+
+    voiced_idx = np.where(f0_clean > 0)[0]
+    if len(voiced_idx) > 3:
+        f0_clean[voiced_idx] = median_filter(f0_clean[voiced_idx], size=3)
+
+    voiced = f0_clean > 0
+    return {
+        "times": times.tolist(),
+        "f0": f0_clean.tolist(),
+        "voiced": voiced.tolist(),
+        "confidence": np.nan_to_num(voiced_probs).tolist(),
+    }
+
+
 PITCH_ALGORITHMS = {
     "srh": detect_pitch_srh,
     "pyin": detect_pitch,
     "hps": detect_pitch_hps,
     "crepe": detect_pitch_crepe,
     "praat": detect_pitch_praat,
+    "piano": detect_pitch_piano,
 }
 
 
@@ -635,8 +679,9 @@ def process(
       and analyze the file directly. vocals.wav and instrumental.wav are
       written as identical copies of the input so the rest of the pipeline
       (AudioEngine, pitch_shift_song, Waveform) needs no special-casing.
-    pitch_algorithm: one of "srh" (default), "praat", "pyin", "hps", "crepe" —
-      see PITCH_ALGORITHMS / get_pitch_fn.
+    pitch_algorithm: one of "srh" (default), "praat", "pyin", "hps", "crepe",
+      "piano" — see PITCH_ALGORITHMS / get_pitch_fn. Instrument imports
+      (skip_separation) are forced to "piano" by the caller (commands.rs).
     """
     if on_progress is None:
         on_progress = lambda v, s: None
