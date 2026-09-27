@@ -138,10 +138,11 @@ export class AudioEngine {
     // "seeking" → vocals.seekTo(0) → … each iteration queued a new async task,
     // growing the task queue and RAM indefinitely after every stop.
     this.vocals.on("interaction", (newTime) => {
-      // Map vocals file time → instrumental song time, then seek instrumental
+      // Map vocals file time → instrumental song time, then seek instrumental + take
       const instrTime = newTime + this._vocalsOffset;
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
       this.instrumental?.seekTo(instrProgress);
+      this._seekTake(instrTime);
     });
 
     this.instrumental.on("interaction", (newTime) => {
