@@ -2,7 +2,11 @@ import WaveSurfer from "wavesurfer.js";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { clamp, FOLLOW_MARGIN_RATIO, FOLLOW_RESUME_SUPPRESS_MS } from "../lib/zoomPan";
 
-export type TimeUpdateCallback = (currentTime: number) => void;
+const DRIFT_TOLERANCE_S = 0.05;
+const DRIFT_CHECK_INTERVAL_MS = 250;
+const DRIFT_CHECK_END_GUARD_S = 0.1;
+
+export type TimeUpdateCallback= (currentTime: number) => void;
 export type FinishCallback = () => void;
 export type ScrollChangeCallback = (minPxPerSec: number, scrollTime: number) => void;
 
@@ -54,6 +58,12 @@ export class AudioEngine {
   // reasoning as _lastOutputDeviceId: it's destroyed/recreated on every take
   // switch and would otherwise silently reset to 1x regardless of the active speed.
   private _lastPlaybackRate = 1;
+  // A volume-0 <audio> element is not guaranteed to stay locked to the audio-device
+  // clock like an audible one, so a muted track drifts ahead of the audible ones.
+  // Tracked so _correctDrift pulls the silent track toward the audible one, never
+  // the other way round (which would make the audible track skip).
+  private _silent = { vocals: false, instrumental: false };
+  private _lastDriftCheckAt = 0;
 
   async load(
     songDir: string,
@@ -249,10 +259,12 @@ export class AudioEngine {
   }
 
   setVocalsVolume(volume: number): void {
+    this._silent.vocals = volume <= 0;
     this.vocals?.setVolume(volume);
   }
 
   setInstrumentalVolume(volume: number): void {
+    this._silent.instrumental = volume <= 0;
     this.instrumental?.setVolume(volume);
   }
 
@@ -688,6 +700,11 @@ export class AudioEngine {
         }
       }
 
+      if (performance.now() - this._lastDriftCheckAt >= DRIFT_CHECK_INTERVAL_MS) {
+        this._lastDriftCheckAt = performance.now();
+        this._correctDrift();
+      }
+
       // Auto-follow: while zoomed in and playing, keep the playhead from
       // scrolling out of view, without fighting a just-made manual pan/zoom.
       const baseline = this.getMinPxPerSec();
@@ -722,6 +739,31 @@ export class AudioEngine {
       this._rafId = requestAnimationFrame(tick);
     };
     this._rafId = requestAnimationFrame(tick);
+  }
+
+  private _correctDrift(): void {
+    if (!this.vocals || !this.instrumental) return;
+    const instrTime = this.instrumental.getCurrentTime();
+    const vocalsTime = this.vocals.getCurrentTime();
+    const expectedVocals = Math.max(0, instrTime - this._vocalsOffset);
+    const vocalsActive = expectedVocals < this._vocalsDuration - DRIFT_CHECK_END_GUARD_S;
+    let refTime = instrTime;
+
+    if (vocalsActive && Math.abs(vocalsTime - expectedVocals) > DRIFT_TOLERANCE_S) {
+      if (this._silent.instrumental && !this._silent.vocals) {
+        refTime = vocalsTime + this._vocalsOffset;
+        this.instrumental.setTime(refTime);
+      } else {
+        this.vocals.setTime(expectedVocals);
+      }
+    }
+
+    if (this.take && this._takeIsPlaying) {
+      const expectedTake = this._takeAudioOffset + Math.max(0, refTime - (this._takeOffset + this._takeManualOffset));
+      if (Math.abs(this.take.getCurrentTime() - expectedTake) > DRIFT_TOLERANCE_S) {
+        this.take.setTime(expectedTake);
+      }
+    }
   }
 
   private _stopTimeUpdate(): void {

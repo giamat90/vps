@@ -120,6 +120,7 @@ This mutates real DOM/WaveSurfer state directly (`marginLeft`/`width`/seek posit
 - **Loop detection** — checked every frame for accurate loop-point enforcement
 - **Take window sync** — transitions `_takeIsPlaying` on every frame (see above)
 - **UI notifications** — throttled to ~30 fps (33 ms gate) via `_lastNotifyTime`, halving React re-render rate
+- **Drift correction** — every 250 ms (`DRIFT_CHECK_INTERVAL_MS`) `_correctDrift()` compares vocals to the instrumental and re-seeks with `setTime()` if they differ by more than 50 ms (`DRIFT_TOLERANCE_S`). A volume-0 (muted) `<audio>` element does not stay locked to the audio-device clock and runs ahead, so `_silent` (set in `setVocalsVolume`/`setInstrumentalVolume`) makes the silent track the one that gets pulled, never the audible one. A playing take is re-synced to the same reference.
 
 ## Timeline Zoom/Pan
 
