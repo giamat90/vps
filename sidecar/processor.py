@@ -170,10 +170,16 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     frame_length = 2756  # 125 ms at 22050 Hz — optimal for singing (Babacan et al. 2019)
     fft_size = 4096      # zero-pad to 4096: 5.4 Hz/bin with only 125 ms temporal blur
     hop_length = 512
-    n_harmonics = 5
+    # 7, not 5: with 5 the score of a strong upper harmonic (e.g. the 3rd) can beat the true F0
+    # on loud harmonic-rich notes. A pitch_lab sweep (2026-10-08) on two tracks raised agreement
+    # with the Praat/pYIN/CREPE consensus (58.6% vs 49.0% within 50 cents on "Them Bones") and
+    # didn't hurt "Like a Stone"; 8+ trades too-high errors for too-low ones.
+    n_harmonics = 7
     fmin = 65.0    # C2 — lowest practical singing fundamental
     fmax = 1400.0  # above F#6 — matches VoceVista upper limit; no singer exceeds this
-    voicing_threshold = 0.25  # matches VoceVista XML "minimumClarity" — rejects weakly-voiced frames
+    # Lowered from 0.25 (VoceVista "minimumClarity") because the 7-harmonic score distribution is
+    # lower; 0.22 keeps the voiced-frame count about equal to the old 5-harmonic/0.25 setting.
+    voicing_threshold = 0.22
     amplitude_threshold = 10 ** (-50 / 20)  # −50 dBFS; silent frames skipped before SRH
 
     # Pad audio

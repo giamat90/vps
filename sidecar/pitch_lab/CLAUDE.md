@@ -17,7 +17,9 @@ from something found only in one track's plot.
 - **Tools built:** `algorithms.py` (SRH/pYIN/HPS/CREPE/Praat production wrappers — all five are
   shipped, user-selectable in the app's Settings panel — + `firstpeak` naive baseline +
   `srh_variant`/`praat_variant` for parameter sweeps), `visualize.py`, `spectrogram_mpl.py` /
-  `spectrogram_interactive.py`, `sonify.py`, `compare.py`, `preprocess.py` / `preprocess_compare.py`,
+  `spectrogram_interactive.py`, `waveform_mpl.py` (native-window waveform), `short_term_spectrum_mpl.py`
+  (the app's Short-Term Spectrum panel at a slider-chosen time, with per-algorithm F0 + harmonics overlay
+  to eyeball octave errors), `sonify.py`, `compare.py`, `preprocess.py` / `preprocess_compare.py`,
   `postprocess.py` / `postprocess_compare.py`, `batch_report.py`.
 - **Real tracks in `tracks/`** (gitignored, not in this listing but present on disk): "Alice In Chains
   – Them Bones – Vocals.wav" (66.6% SRH/pYIN disagreement — pYIN fails badly on this raspy vocal) and
@@ -57,8 +59,16 @@ from something found only in one track's plot.
 
 - `preprocess_compare.py` / `postprocess_compare.py` aren't wired into `batch_report.py`'s automatic
   bulk pass yet — still manual, per-track, opt-in tools you run explicitly.
-- Nothing from this lab has been ported back to `processor.py` yet — every finding above is still
-  lab-only/provisional.
+- **Ported 2026-10-08:** SRH `n_harmonics` 5 → 7 and `voicing_threshold` 0.25 → 0.22 in
+  `processor.py:detect_pitch_srh` (`srh_variant()` defaults updated to match). Basis: sweep on a fixed
+  frame set scored against the Praat/pYIN/CREPE consensus — "Them Bones" 49.0% → 58.6% within 50 cents,
+  "Like a Stone" 88.6% → 89.1%; 8+ harmonics swaps too-high for too-low errors; a "prefer sub-multiple
+  candidate" rule was disastrous (octave-down on 30–97% of frames). Still provisional: only two male
+  rock tracks, reference is other detectors (not ground truth). Not fixed: SRH still reports pitch on
+  noise/consonants (~630 / ~456 loud frames where Praat+CREPE say unvoiced) — needs a
+  harmonicity/periodicity check, and Them Bones ~67.0 s (true ~138 Hz, SRH 240 Hz) is still wrong.
+  Songs already analyzed keep their old `analysis.json` pitch until re-processed.
+- Everything else above is still lab-only/provisional.
 - Only two real tracks tested so far. Treat the HPSS/denoise verdicts as directional, not universal,
   until validated against more voice types/timbres (the existing rejections were specific to Layne
   Staley's raspy texture and Demucs' apparent lack of stationary noise floor — a different singer or a
@@ -71,5 +81,9 @@ from something found only in one track's plot.
   an absolute path at creation time). If `pip.exe` ever breaks again with a "Fatal error in launcher"
   pointing at a stale path, use `python -m pip` to bypass it rather than `venv --upgrade` (which only
   rewrites `python.exe`/`activate`, not pip's own generated launcher scripts).
+- Run lab scripts with the sidecar venv's Python (`..\.venv\Scripts\python.exe` from `pitch_lab/`, or
+  activate it). Launching a script by bare filename uses the global Python, which lacks
+  `praat-parselmouth` (`short_term_spectrum_mpl.py` skips such algorithms with a warning; the others
+  crash).
 - `matplotlib` and `plotly` are lab-only dependencies (`pitch_lab/requirements-lab.txt`), not part of
   the shipped sidecar's `requirements.txt` — don't let production code start depending on them.

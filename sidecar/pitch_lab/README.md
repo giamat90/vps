@@ -51,7 +51,24 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    python pitch_lab\sonify.py pitch_lab\tracks\<name>.wav                 # audible check, one file per algorithm
    python pitch_lab\sonify.py pitch_lab\tracks\<name>.wav --algo pyin     # pYIN only
    python pitch_lab\compare.py pitch_lab\tracks\<name>.wav                # SRH vs pYIN overlaid on one axis
+   python pitch_lab\waveform_mpl.py pitch_lab\tracks\<name>.wav           # waveform, pan/zoom window
+   python pitch_lab\short_term_spectrum_mpl.py pitch_lab\tracks\<name>.wav --algo srh praat   # spectrum snapshot + F0/harmonics
    ```
+   `short_term_spectrum_mpl.py` is the matplotlib twin of the app's `ShortTermSpectrumPanel` (8192-sample
+   Blackman FFT in dBFS, log-Hz axis 30 Hz–20 kHz, thermal colormap, smoothed envelope, LPC F1/F2/F3
+   markers) at one moment in time, chosen with a slider (←/→ ±0.05 s, ↑/↓ ±1 s) or `--time`. Each
+   `--algo` (`srh` default, `pyin`, `firstpeak`, `hps`, `crepe`, `praat`, `all`, or `none`) adds its F0 as
+   a solid line and its first `--harmonics N` (default 10) multiples as dotted lines, with a legend of
+   each algorithm's F0 (or "unvoiced") — if the dotted lines land on the spectrum's peaks the detector
+   has the fundamental; if the peaks sit at half the line spacing it's an octave too high. Detectors run
+   once over the whole track at startup (pYIN ~1 min, CREPE ~15 s on a full song); an algorithm whose
+   module is missing is skipped with a warning. `--save` writes
+   `results/<name>-short-term-spectrum-<t>s.png` instead of opening a window. Its formant markers are a
+   single-frame librosa-LPC estimate with no frame-to-frame tracking, so they can differ slightly from
+   the app's.
+
+   **Run lab scripts with the sidecar venv's Python** (`..\.venv\Scripts\python.exe`, or activate it
+   first) — the global Python lacks `praat-parselmouth`.
    `visualize.py` writes `<name>-spectrum-srh.png`, `<name>-spectrum-pyin.png`,
    `<name>-spectrum-firstpeak.png`, `<name>-spectrum-hps.png`, `<name>-spectrum-crepe.png`, and
    `<name>-spectrum-praat.png` — each shows that algorithm's F0 curve against the actual spectrogram,
@@ -193,6 +210,8 @@ can't tell a wrong-but-structured detection from a real one on its own.
 | `postprocess_compare.py` | A/B: runs an algorithm, then compares its raw output against `smooth_pitch()`'s output, writes a comparison plot |
 | `visualize.py` | Spectrogram + F0 overlay, one plot per algorithm (`<name>-spectrum-<algo>.png`) — static PNG |
 | `spectrogram_mpl.py` | Spectrogram only (no F0 overlay), opened as a native matplotlib window — run as a script, zoom/pan with matplotlib's own toolbar, nothing written to disk |
+| `waveform_mpl.py` | Waveform of a track (min/max envelope) as a native matplotlib window with pan/zoom — nothing written to disk |
+| `short_term_spectrum_mpl.py` | Short-Term Spectrum snapshot (twin of the app's panel) with a time slider and optional F0 + harmonics overlay per algorithm; `--save` for a PNG |
 | `spectrogram_interactive.py` | Spectrogram only, written to a standalone zoomable HTML file (`<name>-spectrogram.html`, Plotly) — for when you want to reopen it later without re-running Python |
 | `sonify.py` | Renders detected F0 as an audible sine tone alongside the original, one file per algorithm (`<name>-<algo>.wav`) |
 | `compare.py` | SRH vs pYIN overlay + per-frame disagreement in cents |

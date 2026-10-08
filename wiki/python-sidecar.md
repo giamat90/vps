@@ -208,8 +208,8 @@ CREPE and pYIN were tried first and both failed on singers with strong upper har
 | `hop_length` | 512 | 23.2 ms step (~43 frames/s) |
 | `fmin` | 65.0 Hz | C2 — lowest practical singing fundamental |
 | `fmax` | 1400.0 Hz | Above F#6 — VoceVista upper limit; no singer exceeds this; cuts candidate grid ~34% |
-| `n_harmonics` | 5 | — |
-| `voicing_threshold` | 0.25 | VoceVista `minimumClarity` from XML profile |
+| `n_harmonics` | 7 | Raised from 5 on 2026-10-08. With 5, a strong upper harmonic (often the 3rd) sometimes outscored the true F0. A `pitch_lab` sweep scored candidate selection against the Praat/pYIN/CREPE consensus on a fixed frame set: "Them Bones" 49.0% → 58.6% within 50 cents (too-high errors 29.2% → 20.4%), "Like a Stone" 88.6% → 89.1%. 8+ harmonics trades too-high errors for too-low ones. Reference is other detectors, not ground truth; only two male rock tracks tested |
+| `voicing_threshold` | 0.22 | Was 0.25 (VoceVista `minimumClarity`). Lowered because the 7-harmonic normalized score is lower; 0.22 keeps the voiced-frame count about equal to the old setting. Does not reduce false voicing on noise/consonants (still ~630 / ~456 loud frames on the two tracks where Praat and CREPE both say unvoiced) |
 | `amplitude_threshold` | −50 dBFS | VoceVista `minimumIntensity`; silent frames skipped before SRH |
 | Window function | Dolph-Chebyshev (`chebwin`, at=100 dB) | Lower inter-harmonic leakage than Hanning; VoceVista uses same |
 
