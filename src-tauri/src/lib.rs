@@ -1,5 +1,6 @@
 mod commands;
 mod library;
+mod lyrics;
 mod sidecar;
 mod storage;
 #[cfg(test)]
@@ -39,6 +40,10 @@ pub fn run() {
             commands::rename_take,
             commands::set_take_manual_offset,
             commands::load_analysis,
+            commands::load_lyrics,
+            commands::sync_lyrics,
+            commands::find_lyrics,
+            commands::delete_lyrics,
             commands::save_exercise_take,
             commands::import_exercise_file,
             commands::list_exercise_takes,

@@ -635,6 +635,50 @@ pub(crate) fn load_analysis_impl(state: &SidecarState, song_id: &str) -> Result<
     Ok(analysis)
 }
 
+/// Lyrics sync progress event payload (emitted to frontend as "lyrics-progress").
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsProgress {
+    pub song_id: String,
+    pub progress: f32,
+    pub stage: String,
+}
+
+#[tauri::command]
+pub async fn load_lyrics(song_id: String) -> Result<Option<crate::lyrics::Lyrics>, String> {
+    crate::lyrics::load(&song_id)
+}
+
+#[tauri::command]
+pub async fn sync_lyrics(
+    app: AppHandle,
+    state: State<'_, SidecarState>,
+    song_id: String,
+    text: String,
+    source: Option<String>,
+) -> Result<crate::lyrics::Lyrics, String> {
+    let source = source.unwrap_or_else(|| "paste".to_string());
+    crate::lyrics::sync_impl(&state, &song_id, &text, &source, &mut |progress, stage| {
+        let payload = LyricsProgress { song_id: song_id.clone(), progress, stage: stage.to_string() };
+        if let Err(e) = app.emit("lyrics-progress", payload) {
+            log::warn!("Could not emit lyrics-progress: {e}");
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn find_lyrics(
+    state: State<'_, SidecarState>,
+    song_id: String,
+) -> Result<crate::lyrics::FoundLyrics, String> {
+    crate::lyrics::find_impl(&state, &song_id)
+}
+
+#[tauri::command]
+pub async fn delete_lyrics(song_id: String) -> Result<(), String> {
+    crate::lyrics::delete(&song_id)
+}
+
 #[tauri::command]
 pub async fn list_takes(state: State<'_, SidecarState>, song_id: String) -> Result<Vec<Take>, String> {
     list_takes_impl(&state, &song_id)
