@@ -58,6 +58,11 @@ describe("frequencyToNote", () => {
   it("does not return 'undefined' for very low frequencies", () => {
     expect(frequencyToNote(4).note).not.toMatch(/undefined/);
   });
+  it("names notes below MIDI 0 with a wrapped pitch class and a negative octave", () => {
+    expect(frequencyToNote(midiToFrequency(-1)).note).toBe("B-2");
+    expect(frequencyToNote(midiToFrequency(-12)).note).toBe("C-2");
+    expect(frequencyToNote(midiToFrequency(-13)).note).toBe("B-3");
+  });
 });
 
 describe("computePianoWindowTarget", () => {

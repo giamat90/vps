@@ -391,6 +391,15 @@ class TestAnalyzeRecording:
         assert first_voiced_skip < 0.3
         assert first_voiced_full > 0.9
 
+    def test_the_normalised_file_keeps_the_audio_offset_padding_because_the_player_skips_it_itself(self, tmp_path):
+        lead = np.zeros(self.SR, dtype=np.float32)
+        x = np.concatenate([lead, harmonic_tone(220, self.SR, 2.0, amp=0.1)])
+        _, r, _ = self.run(tmp_path, x, audio_offset_s=1.0)
+        out, sr = sf.read(r["normalizedPath"], dtype="float32")
+        assert len(out) == len(x)
+        assert not out[: sr - 100].any()
+        assert rms_db(out[sr:]) == pytest.approx(-18.0, abs=0.7), "loudness is measured on the audible part only"
+
     def test_progress_runs_from_zero_to_one_and_never_goes_backwards(self, tmp_path):
         _, _, events = self.run(tmp_path, harmonic_tone(220, self.SR, 2.0))
         values = [v for v, _ in events]

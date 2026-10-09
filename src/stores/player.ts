@@ -445,6 +445,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       // relabeled "Melody" track is audible (avoids doubled playback).
       mutedTracks: { vocals: false, instrumental: song.kind === "instrument", take: false },
       soloedTrack: null,
+      punchIn: null,
+      punchOut: null,
+      punchLoop: false,
       minPxPerSec: baselinePxPerSec,
       scrollTime: 0,
       metronomeOffset: Math.max(0, Math.min(eng.getDuration(), song.metronomeOffset ?? 0)),

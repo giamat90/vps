@@ -252,3 +252,19 @@ def test_every_command_the_rust_side_sends_is_handled():
     handled = set(re.findall(r'cmd\.get\("cmd"\) == "(\w+)"', main_py))
     assert sent, "regex found no commands in commands.rs"
     assert sent <= handled, f"Rust sends commands main.py does not handle: {sent - handled}"
+
+
+def test_a_failing_freshness_check_is_logged_and_does_not_block_startup(monkeypatch, capsys):
+    import io
+
+    import main
+
+    def boom():
+        raise RuntimeError("network down")
+
+    monkeypatch.setattr(main, "check_yt_dlp_freshness", boom)
+    monkeypatch.setattr(main.sys, "stdin", io.StringIO(""))
+    main.main()
+    captured = capsys.readouterr()
+    assert '"type": "ready"' in captured.out and '"advisory": null' in captured.out
+    assert "network down" in captured.err

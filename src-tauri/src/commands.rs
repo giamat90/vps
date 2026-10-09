@@ -120,6 +120,14 @@ fn compute_st_spectrum(
     }
 }
 
+/// A song job that failed in the sidecar never reached library.json, so nothing
+/// else would ever clean up the copied source and any partial output.
+fn remove_failed_job_dir(dir: &std::path::Path) {
+    if let Err(e) = std::fs::remove_dir_all(dir) {
+        log::warn!("Could not remove the directory of the failed job {}: {e}", dir.display());
+    }
+}
+
 #[tauri::command]
 pub async fn process_song(
     app: AppHandle,
@@ -273,6 +281,7 @@ pub async fn process_song(
                         error: Some(message.clone()),
                     },
                 );
+                remove_failed_job_dir(&output_dir);
                 return Err(message);
             }
             _ => {}
@@ -1027,6 +1036,7 @@ pub async fn import_youtube(
                         error: Some(message.clone()),
                     },
                 );
+                remove_failed_job_dir(&output_dir);
                 return Err(message);
             }
             _ => {}
@@ -1588,6 +1598,18 @@ mod tests {
         std::fs::create_dir_all(home.path().join("exercises")).unwrap();
         std::fs::write(home.path().join("exercises").join("exercises.json"), "[[").unwrap();
         assert!(run(list_exercise_takes()).unwrap_err().contains("Parse exercises"));
+    }
+
+    // ── failed jobs ───────────────────────────────────────────────────────
+
+    #[test]
+    fn a_failed_job_directory_is_removed_and_a_missing_one_tolerated() {
+        let home = TestHome::new();
+        let dir = storage::song_dir("failed-job");
+        std::fs::write(dir.join("source.mp3"), b"x").unwrap();
+        remove_failed_job_dir(&dir);
+        assert!(!dir.exists());
+        remove_failed_job_dir(&home.path().join("never-existed"));
     }
 
     // ── library command pass-throughs ─────────────────────────────────────

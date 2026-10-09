@@ -260,6 +260,13 @@ describe("loadSong", () => {
     expect(store().getState().metronomeOffset).toBe(expected);
   });
 
+  it("does not carry a punch region from the previous song into the next one", async () => {
+    await loadedSong(song({ id: "a" }));
+    store().setState({ punchIn: 30, punchOut: 60, punchLoop: true });
+    await loadedSong(song({ id: "b" }));
+    expect(store().getState()).toMatchObject({ punchIn: null, punchOut: null, punchLoop: false });
+  });
+
   it("starts the metronome offset at 0 when the song has none", async () => {
     await loadedSong();
     expect(store().getState().metronomeOffset).toBe(0);

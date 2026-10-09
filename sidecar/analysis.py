@@ -27,6 +27,8 @@ PEAK_CEILING_DBFS = -1.0
 
 
 def _rms_dbfs(samples: np.ndarray) -> float:
+    if samples.size == 0:
+        return -120.0
     rms = np.sqrt(np.mean(samples.astype(np.float64) ** 2))
     return 20 * np.log10(rms) if rms > 0 else -120.0
 
@@ -330,8 +332,12 @@ def analyze_recording(
     normalized_path = None
     gain_linear = 0.0
     try:
-        take_audio, take_sr = librosa.load(recording_path, sr=None, mono=True, offset=audio_offset_s)
-        take_rms_db = _rms_dbfs(take_audio)
+        take_audio, take_sr = librosa.load(recording_path, sr=None, mono=True)
+        # Loudness is judged on the audible part only, but the whole file is
+        # written back: the player skips `audio_offset_s` into it itself, so
+        # trimming it here would skip that much twice.
+        audible = take_audio[min(len(take_audio), int(round(audio_offset_s * take_sr))):]
+        take_rms_db = _rms_dbfs(audible)
         take_peak = float(np.max(np.abs(take_audio))) if take_audio.size else 0.0
 
         if reference_path and os.path.exists(reference_path):
