@@ -33,6 +33,9 @@ export function dynamicsAtTime(
     if (dynamics[mid].time < time) lo = mid + 1;
     else hi = mid;
   }
+  if (lo > 0 && Math.abs(dynamics[lo - 1].time - time) < Math.abs(dynamics[lo].time - time)) {
+    return dynamics[lo - 1];
+  }
   return dynamics[lo];
 }
 

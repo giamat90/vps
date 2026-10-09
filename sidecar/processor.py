@@ -666,7 +666,10 @@ def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
             nearest = int(np.argmin(np.abs(freqs - np.sqrt(f_lo * f_hi))))
             result[:, bi] = stft[nearest, :]
 
-    result_db = librosa.amplitude_to_db(result, ref=1.0)
+    # top_db=None: the default (80) would clip everything below peak-80 dB, lifting
+    # the floor of a quiet passage whenever the same file also contains a loud one -
+    # the stored range is the absolute MIN_DB..MAX_DB, exactly like the live panels.
+    result_db = librosa.amplitude_to_db(result, ref=1.0, top_db=None)
     result_u8 = np.clip((result_db - MIN_DB) / (MAX_DB - MIN_DB) * 255.0, 0, 255).astype(np.uint8)
 
     return {
@@ -872,9 +875,9 @@ def process(
     on_progress(0.92, "short-term-spectrum")
 
     # ===================================================================
-    # Stage 5: BPM detection (0.90 – 0.95)
+    # Stage 5: BPM detection (0.92 – 0.95)
     # ===================================================================
-    on_progress(0.90, "bpm-detection")
+    on_progress(0.92, "bpm-detection")
     _log("Estimating BPM...")
 
     full_mix, sr_full = librosa.load(input_path, sr=SAMPLE_RATE, mono=True)

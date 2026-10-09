@@ -55,7 +55,7 @@ Hot reload works for React/TypeScript changes. Rust changes require a full resta
 
 ## Tests
 
-`npm test` runs the vitest suite (`src/lib/*.test.ts`) once. Currently covers the formant estimator and its harmonic-envelope helper; see [UI/analysis notes in components.md](components.md). Tests are not run by `release.yml`.
+`npm test` runs the vitest suite once; `cargo test --lib` (in `src-tauri/`) and `python -m pytest` (in `sidecar/`) run the other two. All three run in CI via `.github/workflows/test.yml` (`release.yml` still only builds). See [Testing](testing.md).
 
 ## Building for Release
 

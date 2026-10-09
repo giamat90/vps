@@ -91,6 +91,7 @@ VPS/
 │   │   ├── metronome.ts       Metronome class (Web Audio lookahead-scheduled click track)
 │   │   ├── analysisUtils.ts   pitchAtTime/frequency↔MIDI/note-name helpers shared by PianoRoll/DualTuner/timing
 │   │   ├── pitchDetector.ts   real-time autocorrelation pitch reader (frequency/note/cents) for DualTuner/live monitoring
+│   │   ├── outputDevice.ts    pickHardwareOutput — picks the real hardware output for the selected mic (skips Default/Communications/Steam), shared by monitoring + both recording flows
 │   │   ├── notePreview.ts     click-to-preview synthesized tone when pressing a PianoKeyboard/PianoRoll key
 │   │   └── timeStretch.ts     dead stub (`export {}`, "TODO: implement in Session 5") — not imported anywhere; speed control is WaveSurfer's native setPlaybackRate, not this
 │   ├── components/
@@ -159,6 +160,7 @@ VPS/
 │   ├── storage.rs     Path helpers (~/.vps/)
 │   ├── sidecar.rs     Python sidecar process manager
 │   └── lib.rs         Tauri builder + invoke_handler registration
+├── tests/contract/    cross-language tests that read the TS and Rust sources (IPC command/argument contract)
 ├── sidecar/
 │   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, ping, quit)
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
@@ -167,6 +169,7 @@ VPS/
 │   ├── version_check.py  proactive + reactive yt-dlp staleness checks (see wiki/known-issues.md upstream in MPS)
 │   ├── fetch_models.py   vendors htdemucs weights into the frozen build at build time (not htdemucs_ft — that's an on-demand download, see the high_quality note in processor.py)
 │   ├── smoke_test.py     standalone sanity script, not part of the main.py dispatch loop
+│   ├── tests/         pytest suite (see wiki/testing.md); requirements-test.txt is its light dependency set
 │   ├── pitch_lab/     algorithm validation workspace (see its README.md)
 │   └── build.py       PyInstaller sidecar build
 └── wiki/              Authoritative documentation (read at session start)
@@ -342,7 +345,7 @@ Three WaveSurfer instances in lockstep:
 ### Windows WASAPI output routing
 When `getUserMedia` opens a mic, Windows switches `""` sinkId to the **Communications Device** (different port than headphones). Auto-detection after `getUserMedia`:
 1. Filter out `"Default -"` and `"Communications -"` aliases and virtual devices (Steam)
-2. Match the output whose label shares a ≥4-char token with the selected mic label (e.g. `"BEHRINGER"`)
+2. Match the output whose label shares the most ≥4-char tokens with the selected mic label (e.g. `"BEHRINGER"`); ties go to the first — `pickHardwareOutput` in `src/audio/outputDevice.ts`, used by monitoring and both recording flows
 3. Fallback: first non-alias output
 4. User override: `selectedOutputDeviceId` takes priority
 
@@ -496,8 +499,14 @@ npm run tauri dev
 # Type-check only (no emit)
 npx tsc --noEmit
 
-# Unit tests (vitest)
+# Frontend tests (vitest: unit + store/IPC integration); see wiki/testing.md
 npm test
+
+# Rust tests (incl. the real Python sidecar driven through the command bodies)
+cd src-tauri; cargo test --lib
+
+# Sidecar tests (pytest, venv active; pip install -r requirements-test.txt once)
+cd sidecar; python -m pytest
 
 # Build release
 npm run tauri build

@@ -1,0 +1,11 @@
+# Lightweight set for `pytest` (CI and local). Deliberately excludes torch /
+# demucs / torchcrepe, so the heavy stem-separation and CREPE paths are
+# skipped unless the full requirements.txt is installed (tests use importorskip).
+pytest
+numpy
+scipy
+librosa
+resampy
+soundfile
+praat-parselmouth>=0.4.7
+yt-dlp>=2026.8.19
