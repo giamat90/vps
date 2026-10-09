@@ -131,7 +131,57 @@ export function decodeSTSpectrumFrames(b64: string): Uint8Array {
   return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
 }
 
+// Web Audio's AnalyserNode (and fft.ts's mimic of it) divides the windowed FFT
+// by N, so a full-scale tone reads about -13.6 dB; the sidecar's stored
+// spectra divide by the window's coherent gain (sum/2) so it reads 0 dBFS.
+// Blackman's coherent gain is 0.42, so adding this to an AnalyserNode/fft.ts
+// dB value puts it on the sidecar's dBFS scale.
+export const WEBAUDIO_TO_DBFS = 20 * Math.log10(2 / 0.42);
+
 export interface SpectrumPoint { x: number; y: number; normalized: number }
+
+// Display span and layout shared by ShortTermSpectrumPanel (Free Exercise) and
+// ShortTermSpectrumComparisonPanel (Practice Room) so the same level lands at
+// the same height in both. The span also matches the sidecar's stored range.
+export const SPECTRUM_MIN_DB = -100;
+export const SPECTRUM_MAX_DB = 0;
+export const SPECTRUM_BOTTOM_AXIS_H = 16; // px (dpr-scaled) reserved under the plot for Hz labels
+
+/**
+ * Per-pixel-column curve from a Web Audio-style dB spectrum (AnalyserNode or
+ * fft.ts): max over the FFT bins under each column, lifted onto the sidecar's
+ * dBFS scale so it is directly comparable with the stored curves.
+ */
+export function analyserCurvePoints(
+  data: Float32Array,
+  sr: number,
+  rollW: number,
+  fMin: number,
+  fMax: number,
+  axisW: number,
+): SpectrumPoint[] {
+  const binCount = data.length;
+  const binHz = sr / (binCount * 2);
+  const maxBin = binCount - 1;
+  const dbRange = SPECTRUM_MAX_DB - SPECTRUM_MIN_DB;
+  const points: SpectrumPoint[] = [];
+  for (let px = 0; px < rollW; px++) {
+    const fLo = xToFreq(Math.max(0, px - 0.5), rollW, fMin, fMax);
+    const fHi = xToFreq(Math.min(rollW, px + 0.5), rollW, fMin, fMax);
+    const binLo = Math.max(0, Math.floor(Math.min(fLo, fHi) / binHz));
+    const binHi = Math.min(maxBin, Math.ceil(Math.max(fLo, fHi) / binHz));
+    let db = -Infinity;
+    for (let b = binLo; b <= binHi; b++) {
+      if (data[b] > db) db = data[b];
+    }
+    if (db === -Infinity) {
+      db = data[Math.min(maxBin, Math.max(0, Math.round(xToFreq(px, rollW, fMin, fMax) / binHz)))];
+    }
+    const normalized = Math.max(0, Math.min(1, (db + WEBAUDIO_TO_DBFS - SPECTRUM_MIN_DB) / dbRange));
+    points.push({ x: axisW + px, y: 0, normalized });
+  }
+  return points;
+}
 
 /**
  * Moving average with a window that widens with frequency — formants are

@@ -15,7 +15,7 @@ import numpy as np
 import soundfile as sf
 import librosa
 from scipy.signal import butter, sosfilt, resample_poly
-from scipy.signal.windows import chebwin
+from scipy.signal.windows import blackman, chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
 
 SAMPLE_RATE = 44100
@@ -614,11 +614,16 @@ def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
     """
     F_MIN, F_MAX = 30.0, 20000.0
     MIN_DB, MAX_DB = -100.0, 0.0
-    N_BINS = 1024
+    # 1152, not 1024: purely a cache-invalidation marker (see
+    # ST_SPECTRUM_MIN_BINS in commands.rs) so blobs stored with the old
+    # Chebyshev window get recomputed with Blackman.
+    N_BINS = 1152
 
     fft_size = 8192
     hop_length = 2048  # coarser than compute_spectrogram — this is a snapshot line, not a waterfall
-    window = chebwin(fft_size, at=100)
+    # Blackman, same as src/lib/fft.ts and Web Audio's AnalyserNode, so this
+    # stored curve and the Free Exercise / live curves share one window shape.
+    window = blackman(fft_size)
 
     stft = np.abs(librosa.stft(
         audio,

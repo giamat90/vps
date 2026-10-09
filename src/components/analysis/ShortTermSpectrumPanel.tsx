@@ -1,8 +1,8 @@
 import { useRef, useEffect } from "react";
 import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
-import { SPECTRO_COLORMAP, freqToX as freqToXShared, xToFreq as xToFreqShared, smoothSpectrumEnvelope } from "../../lib/spectroUtils";
-import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX, MIN_DB, MAX_DB } from "./SpectrogramPanel";
+import { SPECTRO_COLORMAP, freqToX as freqToXShared, smoothSpectrumEnvelope, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H } from "../../lib/spectroUtils";
+import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
 import { estimateFormants, type FormantEstimate } from "../../lib/formants";
 
@@ -12,7 +12,10 @@ const FFT_SIZE = 8192;
 
 // ─── constants ───────────────────────────────────────────────────────────────
 
-const BOTTOM_AXIS_H = 16; // px (dpr-scaled) reserved at bottom for Hz labels
+const MIN_DB = SPECTRUM_MIN_DB;
+const MAX_DB = SPECTRUM_MAX_DB;
+
+const BOTTOM_AXIS_H = SPECTRUM_BOTTOM_AXIS_H;
 const DB_TICK_STEP   = 10;
 const FREQ_DECADES    = [100, 1000, 10000];
 
@@ -25,14 +28,18 @@ function freqToX(f: number, rollW: number, fMax: number): number {
   return freqToXShared(f, rollW, F_MIN, fMax);
 }
 
-function xToFreq(x: number, rollW: number, fMax: number): number {
-  return xToFreqShared(x, rollW, F_MIN, fMax);
-}
-
 function formatHz(f: number): string {
   return f >= 1000 ? `${f / 1000}k` : `${f}`;
 }
 
+
+function buildSpectrumPoints(data: Float32Array, sr: number, rollW: number, fMax: number, plotH: number) {
+  const points = analyserCurvePoints(data, sr, rollW, F_MIN, fMax, AXIS_W);
+  points.forEach((p) => { p.y = plotH * (1 - p.normalized); });
+  return points;
+}
+
+const LIVE_OVERLAY_COLOR = "255,140,30";
 
 export default function ShortTermSpectrumPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -84,7 +91,7 @@ export default function ShortTermSpectrumPanel() {
       let timeData: Float32Array | null = null;
       if (trackActive) {
         const engineSr = getEngine().getExerciseTrackSampleRate();
-        const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
+        const samples = getEngine().getExerciseTrackSamples(FFT_SIZE, true);
         if (engineSr && samples) {
           sr = engineSr;
           timeData = samples;
@@ -167,29 +174,7 @@ export default function ShortTermSpectrumPanel() {
       }
 
       // ── per-frame snapshot: same source feeding the spectrogram ──────────
-      const data = freqData!;
-      const binCount = data.length;
-      const binHz   = sr! / (binCount * 2);
-      const maxBin  = binCount - 1;
-      const dbRange = MAX_DB - MIN_DB;
-
-      const points: { x: number; y: number; normalized: number }[] = [];
-      for (let px = 0; px < rollW; px++) {
-        const f = xToFreq(px, rollW, fMax);
-        const fLo = xToFreq(Math.max(0, px - 0.5), rollW, fMax);
-        const fHi = xToFreq(Math.min(rollW, px + 0.5), rollW, fMax);
-        const binLo = Math.max(0, Math.floor(Math.min(fLo, fHi) / binHz));
-        const binHi = Math.min(maxBin, Math.ceil(Math.max(fLo, fHi) / binHz));
-        let db = -Infinity;
-        for (let b = binLo; b <= binHi; b++) {
-          if (data[b] > db) db = data[b];
-        }
-        if (db === -Infinity) db = data[Math.min(maxBin, Math.max(0, Math.round(f / binHz)))];
-
-        const normalized = Math.max(0, Math.min(1, (db - MIN_DB) / dbRange));
-        const y = plotH * (1 - normalized);
-        points.push({ x: AXIS_W + px, y, normalized });
-      }
+      const points = buildSpectrumPoints(freqData!, sr!, rollW, fMax, plotH);
 
       // 3. stroke as individually colored segments
       for (let i = 1; i < points.length; i++) {
@@ -271,6 +256,43 @@ export default function ShortTermSpectrumPanel() {
           ctx.fillStyle = color;
           ctx.fillText(`F${i + 1} ${Math.round(f)}Hz`, x, plotH - 3 * dpr - i * 12 * dpr);
         });
+      }
+
+      // ── second input: live mic overlaid on the loaded track's spectrum ───
+      if (trackActive && isMonitoring) {
+        const analyser = getMicAnalyser();
+        if (analyser) {
+          const liveData = new Float32Array(analyser.frequencyBinCount);
+          analyser.getFloatFrequencyData(liveData);
+          const livePoints = buildSpectrumPoints(liveData, analyser.context.sampleRate, rollW, fMax, plotH);
+          const liveEnvelope = smoothSpectrumEnvelope(livePoints);
+          liveEnvelope.forEach((p) => { p.y = plotH * (1 - p.normalized); });
+
+          ctx.save();
+          ctx.fillStyle = `rgba(${LIVE_OVERLAY_COLOR},0.18)`;
+          ctx.beginPath();
+          ctx.moveTo(liveEnvelope[0].x, plotH);
+          for (const p of liveEnvelope) ctx.lineTo(p.x, p.y);
+          ctx.lineTo(liveEnvelope[liveEnvelope.length - 1].x, plotH);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.strokeStyle = `rgba(${LIVE_OVERLAY_COLOR},0.95)`;
+          ctx.lineWidth = 2 * dpr;
+          ctx.beginPath();
+          ctx.moveTo(liveEnvelope[0].x, liveEnvelope[0].y);
+          for (let i = 1; i < liveEnvelope.length; i++) ctx.lineTo(liveEnvelope[i].x, liveEnvelope[i].y);
+          ctx.stroke();
+
+          ctx.font         = `${11 * dpr}px sans-serif`;
+          ctx.textAlign    = "right";
+          ctx.textBaseline = "top";
+          ctx.fillStyle    = `rgba(${LIVE_OVERLAY_COLOR},0.95)`;
+          ctx.fillText("● mic", W - LEGEND_WIDTH - 6 * dpr, 4 * dpr);
+          ctx.fillStyle    = "rgba(255,255,255,0.85)";
+          ctx.fillText("○ track", W - LEGEND_WIDTH - 6 * dpr, 4 * dpr + 13 * dpr);
+          ctx.restore();
+        }
       }
     };
   }, [isRecording, isMonitoring, trackActive]);

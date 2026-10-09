@@ -374,7 +374,6 @@ export default function SpectrogramPanel() {
           } else {
             const analyser = getMicAnalyser();
             if (analyser) {
-              analyser.smoothingTimeConstant = 0.15;
               const binCount = analyser.frequencyBinCount;
               if (!fftScratch.current || fftScratch.current.length !== binCount) {
                 fftScratch.current = new Float32Array(binCount);

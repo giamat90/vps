@@ -543,17 +543,27 @@ export class AudioEngine {
   // the track is playing, paused, or was just scrubbed — unlike an
   // AnalyserNode, which only ever reports something while audio is actively
   // flowing through it.
-  getExerciseTrackSamples(windowSize: number): Float32Array | null {
+  // `matchStoredFrames` reproduces how the sidecar's stored short-term spectra
+  // are framed (librosa.stft center=True on a mono mixdown): the window is
+  // centered on the playhead and channels are averaged, instead of trailing
+  // the playhead on channel 0 only.
+  getExerciseTrackSamples(windowSize: number, matchStoredFrames = false): Float32Array | null {
     if (!this.exerciseTrack) return null;
     const buffer = this.exerciseTrack.getDecodedData();
     if (!buffer) return null;
-    const channelData = buffer.getChannelData(0);
+    const channels: Float32Array[] = [];
+    const channelCount = matchStoredFrames ? buffer.numberOfChannels : 1;
+    for (let c = 0; c < channelCount; c++) channels.push(buffer.getChannelData(c));
+    const length = channels[0].length;
     const end = Math.floor(this.exerciseTrack.getCurrentTime() * buffer.sampleRate);
-    const start = end - windowSize;
+    const start = matchStoredFrames ? end - Math.floor(windowSize / 2) : end - windowSize;
     const out = new Float32Array(windowSize);
     for (let i = 0; i < windowSize; i++) {
       const srcIdx = start + i;
-      out[i] = srcIdx >= 0 && srcIdx < channelData.length ? channelData[srcIdx] : 0;
+      if (srcIdx < 0 || srcIdx >= length) continue;
+      let sum = 0;
+      for (const ch of channels) sum += ch[srcIdx];
+      out[i] = sum / channels.length;
     }
     return out;
   }

@@ -1,17 +1,15 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore, type STSpectrum } from "../../stores/analysis";
 import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
-import { freqToX, xToFreq, smoothSpectrumLight, type SpectrumPoint } from "../../lib/spectroUtils";
+import { freqToX, smoothSpectrumLight, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 
 // Deliberately decoupled from SpectrogramPanel's MIN_DB/MAX_DB (-85..-20,
 // tuned for the live waterfall's thermal LUT) — this panel needs the full
-// vocal dynamic range, not a tight display window, so it uses its own wider
-// -100..0 dBFS span. Also matches the mic AnalyserNode's widened
-// minDecibels/maxDecibels (see stores/player.ts).
-const PANEL_MIN_DB = -100;
-const PANEL_MAX_DB = 0;
+// vocal dynamic range, so it shares ShortTermSpectrumPanel's -100..0 dBFS span.
+const PANEL_MIN_DB = SPECTRUM_MIN_DB;
+const PANEL_MAX_DB = SPECTRUM_MAX_DB;
 const DB_TICK_STEP = 10;
 const FREQ_DECADES = [100, 1000, 10000];
 
@@ -71,47 +69,21 @@ function storedCurvePoints(
   minDb: number,
   maxDb: number,
   rollW: number,
-  fMax: number,
 ): SpectrumPoint[] {
   const bins = frame.length;
-  const logFMin = Math.log(F_MIN);
-  const logFMax = Math.log(fMax);
   const points: SpectrumPoint[] = [];
   for (let px = 0; px < rollW; px++) {
-    // Column → frequency → source bin (log axis, so columns near F_MIN are
-    // denser in bins than columns near F_MAX).
-    const t = px / (rollW - 1);
-    const f = Math.exp(logFMax - t * (logFMax - logFMin));
-    const bt = Math.log(f / F_MIN) / Math.log(fMax / F_MIN);
-    const bi = Math.max(0, Math.min(bins - 1, Math.round(bt * (bins - 1))));
-    const db = minDb + (frame[bi] / 255) * (maxDb - minDb);
-    const normalized = Math.max(0, Math.min(1, (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB)));
-    points.push({ x: AXIS_W + px, y: 0, normalized });
-  }
-  return points;
-}
-
-/** Builds normalized points from a live curve straight off the mic AnalyserNode (dBFS already). */
-function liveCurvePoints(
-  data: Float32Array,
-  sr: number,
-  rollW: number,
-  fMax: number,
-): SpectrumPoint[] {
-  const binCount = data.length;
-  const binHz = sr / (binCount * 2);
-  const maxBin = binCount - 1;
-  const points: SpectrumPoint[] = [];
-  for (let px = 0; px < rollW; px++) {
-    const fLo = xToFreq(Math.max(0, px - 0.5), rollW, F_MIN, fMax);
-    const fHi = xToFreq(Math.min(rollW, px + 0.5), rollW, F_MIN, fMax);
-    const binLo = Math.max(0, Math.floor(Math.min(fLo, fHi) / binHz));
-    const binHi = Math.min(maxBin, Math.ceil(Math.max(fLo, fHi) / binHz));
-    let db = -Infinity;
+    // Stored bins are log-spaced from F_MIN (bin 0) to fMax, the same axis
+    // xToFreq maps columns onto (low frequency at the left), so a column's
+    // bin range is just its fractional position. Max-in-range, like the live
+    // curve's per-column FFT bin lookup.
+    const binLo = Math.max(0, Math.min(bins - 1, Math.floor((px / rollW) * bins)));
+    const binHi = Math.max(binLo, Math.min(bins - 1, Math.floor(((px + 1) / rollW) * bins)));
+    let peak = 0;
     for (let b = binLo; b <= binHi; b++) {
-      if (data[b] > db) db = data[b];
+      if (frame[b] > peak) peak = frame[b];
     }
-    if (db === -Infinity) db = data[Math.min(maxBin, Math.max(0, binLo))];
+    const db = minDb + (peak / 255) * (maxDb - minDb);
     const normalized = Math.max(0, Math.min(1, (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB)));
     points.push({ x: AXIS_W + px, y: 0, normalized });
   }
@@ -147,6 +119,7 @@ export default function ShortTermSpectrumComparisonPanel() {
       }
 
       const rollW = W - AXIS_W - LEGEND_WIDTH;
+      const plotH = H - SPECTRUM_BOTTOM_AXIS_H * dpr;
       const fMax = F_MAX;
       const live = isRecording || isMonitoring;
       const analyser = live ? getMicAnalyser() : null;
@@ -166,7 +139,7 @@ export default function ShortTermSpectrumComparisonPanel() {
       for (const db of dbTicks) {
         const isEdge = db === PANEL_MIN_DB || db === PANEL_MAX_DB;
         const norm = (db - PANEL_MIN_DB) / (PANEL_MAX_DB - PANEL_MIN_DB);
-        const y = H * (1 - norm);
+        const y = plotH * (1 - norm);
         ctx.strokeStyle = isEdge ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)";
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -188,10 +161,10 @@ export default function ShortTermSpectrumComparisonPanel() {
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(x, 0);
-        ctx.lineTo(x, H);
+        ctx.lineTo(x, plotH);
         ctx.stroke();
         ctx.fillStyle = "rgba(255,255,255,0.6)";
-        ctx.fillText(formatHz(f), x, H - 12 * dpr);
+        ctx.fillText(formatHz(f), x, plotH + 3 * dpr);
       }
 
       const hasAnyData = songSTSpectrum || takeSTSpectrum || (live && analyser);
@@ -200,7 +173,7 @@ export default function ShortTermSpectrumComparisonPanel() {
         ctx.font = `${11 * dpr}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("No spectrum data", AXIS_W + rollW / 2, H / 2);
+        ctx.fillText("No spectrum data", AXIS_W + rollW / 2, plotH / 2);
         return;
       }
 
@@ -209,8 +182,8 @@ export default function ShortTermSpectrumComparisonPanel() {
       if (songSTSpectrum) {
         const frame = nearestFrame(songSTSpectrum, currentTime);
         if (frame) {
-          const points = storedCurvePoints(frame, songSTSpectrum.minDb, songSTSpectrum.maxDb, rollW, fMax);
-          strokePoints(ctx, points, COLOR_SONG, H, dpr, false);
+          const points = storedCurvePoints(frame, songSTSpectrum.minDb, songSTSpectrum.maxDb, rollW);
+          strokePoints(ctx, points, COLOR_SONG, plotH, dpr, false);
         }
       }
 
@@ -221,20 +194,20 @@ export default function ShortTermSpectrumComparisonPanel() {
           liveScratch.current = new Float32Array(binCount);
         }
         analyser.getFloatFrequencyData(liveScratch.current);
-        const points = liveCurvePoints(liveScratch.current, analyser.context.sampleRate, rollW, fMax);
-        strokePoints(ctx, points, COLOR_LIVE, H, dpr, true);
+        const points = analyserCurvePoints(liveScratch.current, analyser.context.sampleRate, rollW, F_MIN, fMax, AXIS_W);
+        strokePoints(ctx, points, COLOR_LIVE, plotH, dpr, true);
       } else if (takeSTSpectrum) {
         const frame = nearestFrame(takeSTSpectrum, currentTime);
         if (frame) {
-          const points = storedCurvePoints(frame, takeSTSpectrum.minDb, takeSTSpectrum.maxDb, rollW, fMax);
-          strokePoints(ctx, points, COLOR_TAKE, H, dpr, true);
+          const points = storedCurvePoints(frame, takeSTSpectrum.minDb, takeSTSpectrum.maxDb, rollW);
+          strokePoints(ctx, points, COLOR_TAKE, plotH, dpr, true);
         }
       } else {
         ctx.fillStyle = "#a0a0b060";
         ctx.font = `${11 * dpr}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "bottom";
-        ctx.fillText("No take selected", AXIS_W + rollW / 2, H - 6 * dpr);
+        ctx.fillText("No take selected", AXIS_W + rollW / 2, plotH - 6 * dpr);
       }
     };
 

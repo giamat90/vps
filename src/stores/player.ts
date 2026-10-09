@@ -61,6 +61,11 @@ function _ensureMicAnalyser(stream: MediaStream): AnalyserNode | null {
     // inside this range, so they're unaffected.
     micAnalyser.minDecibels = -100;
     micAnalyser.maxDecibels = 0;
+    // One value for every consumer (Free Exercise spectrogram + spectrum,
+    // Practice Room comparison) so live curves look the same on both pages;
+    // SpectrogramPanel used to set this at draw time, so it only applied
+    // while that panel was mounted (Web Audio default 0.8 otherwise).
+    micAnalyser.smoothingTimeConstant = 0.15;
     source.connect(micAnalyser);
     return micAnalyser;
   } catch (e) {
