@@ -134,6 +134,9 @@ def _load_source_slice(source: dict, start_sec: float, end_sec: float) -> tuple:
     path = source["path"]
     window_len = end_sec - start_sec
 
+    # The first `audio_offset` seconds of a take's file are latency padding that
+    # playback skips, so the file only becomes audible from that point on.
+    first_audible = 0.0
     if source.get("isTake"):
         # fileTime = projectTime - (startPosition + manualOffset) + audioOffset (see player.ts).
         start_position = float(source.get("startPosition", 0.0))
@@ -142,12 +145,13 @@ def _load_source_slice(source: dict, start_sec: float, end_sec: float) -> tuple:
         effective_start = start_position + manual_offset
         file_start = start_sec - effective_start + audio_offset
         file_end = end_sec - effective_start + audio_offset
+        first_audible = audio_offset
     else:
         file_start = start_sec
         file_end = end_sec
 
     duration, sr, full_samples = _probe_source(path)
-    clipped_start = max(0.0, file_start)
+    clipped_start = max(first_audible, file_start)
     clipped_end = min(duration, file_end)
 
     if clipped_end <= clipped_start:
@@ -167,9 +171,9 @@ def _load_source_slice(source: dict, start_sec: float, end_sec: float) -> tuple:
             audio = audio[np.newaxis, :]
         samples = audio.T  # (n, channels)
 
-    # Position this slice within the full window (front/back silence for
-    # the part of the window this source doesn't cover).
-    lead_silence = max(0.0, clipped_start - max(0.0, file_start))
+    # Position this slice within the full window: the part of the window that
+    # precedes the source's first audible sample is silence.
+    lead_silence = clipped_start - file_start
     lead_samples = int(round(lead_silence * sr))
     target_samples = int(round(window_len * sr))
 
