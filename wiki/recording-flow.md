@@ -123,7 +123,7 @@ When `getUserMedia` opens a microphone, Windows silently switches the `""` sinkI
 After `getUserMedia`, the store enumerates output devices and picks the real hardware output:
 
 1. **Filter out aliases** — exclude labels starting with `"Default -"` or `"Communications -"` and virtual devices (e.g., Steam Streaming Speakers)
-2. **Match mic interface** — prefer the output whose label shares a token ≥4 characters with the selected microphone label (e.g., `"BEHRINGER"` in both `"Line In (2-Behringer USB WDM Audio)"` and `"Speakers (2-Behringer USB WDM Audio)"`)
+2. **Match mic interface** — prefer the output whose label shares the **most** tokens of ≥4 characters with the selected microphone label (e.g., `"BEHRINGER"` in both `"Line In (2-Behringer USB WDM Audio)"` and `"Speakers (2-Behringer USB WDM Audio)"`); scoring by count, not first hit, keeps a generic shared word like `"Audio"` from pairing the mic with an unrelated sound card listed earlier (`pickHardwareOutput`, `src/audio/outputDevice.ts`, shared by monitoring and both recording flows)
 3. **Fallback** — first non-alias, non-virtual output if no match found
 4. **User override** — if `selectedOutputDeviceId` is set explicitly, it takes priority
 

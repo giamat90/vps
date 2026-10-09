@@ -143,7 +143,7 @@ Returns the same dict as `process`, with `"title"` added (extracted from yt-dlp 
 
 ### `compute_st_spectrum`
 
-Computes the log-Hz short-term spectral envelope of an audio file over time (used for the song side of the `ShortTermSpectrumComparisonPanel`). Implemented as `compute_st_spectrum_from_file` in `processor.py`; accepts an optional `audioOffset` in seconds. Returns the same base64-packed byte-matrix shape as the `stSpectrum*` fields of `analyze` (`times`, `b64`, `frames`, `bins`, `minDb`, `maxDb`).
+Computes the log-Hz short-term spectral envelope of an audio file over time (used for the song side of the `ShortTermSpectrumComparisonPanel`). Implemented as `compute_st_spectrum_from_file` in `processor.py`; accepts an optional `audioOffset` in seconds. Returns the same base64-packed byte-matrix shape as the `stSpectrum*` fields of `analyze` (`times`, `b64`, `frames`, `bins`, `minDb`, `maxDb`). The encoded range is the absolute −100…0 dBFS: `librosa.amplitude_to_db` is called with `top_db=None` (its default of 80 used to lift the floor of a quiet passage to peak − 80 dB whenever the same file also held a loud one; blobs cached before 2026-10-09 carry that lifted floor and are not recomputed, since the cache marker is the bin count).
 
 ```json
 {"cmd": "compute_st_spectrum", "audioPath": "/path/to/vocals.wav"}
@@ -165,7 +165,7 @@ Renders a single mixdown WAV from a list of sources, honoring the frontend's liv
 {"cmd": "mix_export", "sources": [{"path": "...", "gain": 0.8, "isTake": false}, {"path": "...", "gain": 1.0, "isTake": true, "startPosition": 12.5, "audioOffset": 0.25}], "startSec": 10.0, "endSec": 42.0, "outputPath": "/path/to/mix.wav"}
 ```
 
-Each source is loaded only over the `[startSec, endSec)` window; takes are aligned via `fileTime = projectTime - startPosition + audioOffset`. Sources are resampled/upmixed to a common rate and channel count, summed with per-source gain, then peak-safe scaled before writing.
+Each source is loaded only over the `[startSec, endSec)` window; takes are aligned via `fileTime = projectTime - (startPosition + manualOffset) + audioOffset`. A take that begins *inside* the window is preceded by silence (before 2026-10-09 it slid to the window start whenever the window began before the take), and the first `audioOffset` seconds of its file (latency padding) are never played, matching live playback. Sources are resampled/upmixed to a common rate and channel count, summed with per-source gain, then peak-safe scaled before writing.
 
 ### `ping` / `quit`
 
