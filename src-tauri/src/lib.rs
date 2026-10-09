@@ -2,6 +2,10 @@ mod commands;
 mod library;
 mod sidecar;
 mod storage;
+#[cfg(test)]
+mod integration_tests;
+#[cfg(test)]
+mod test_util;
 
 use commands::SidecarState;
 

@@ -30,6 +30,34 @@ pub struct ProcessingStatus {
 /// from the nearest FFT bin: the bin count is only a cache-invalidation marker.
 const ST_SPECTRUM_MIN_BINS: i64 = 1280;
 
+/// True when a cached Short-Term Spectrum blob is complete and at least the
+/// current resolution. Anything else (absent, empty, missing a dB bound, or a
+/// lower bin count from before a bump) is recomputed by the backfill.
+fn spectrum_is_current(b64: Option<&serde_json::Value>, min_db: Option<&serde_json::Value>, max_db: Option<&serde_json::Value>, bins: Option<&serde_json::Value>) -> bool {
+    b64.and_then(|v| v.as_str()).is_some_and(|s| !s.is_empty())
+        && min_db.is_some_and(|v| v.is_number())
+        && max_db.is_some_and(|v| v.is_number())
+        && bins.and_then(|v| v.as_i64()).is_some_and(|b| b >= ST_SPECTRUM_MIN_BINS)
+}
+
+fn analysis_has_current_spectrum(analysis: &serde_json::Value) -> bool {
+    spectrum_is_current(
+        analysis.get("stSpectrumB64"),
+        analysis.get("stSpectrumMinDb"),
+        analysis.get("stSpectrumMaxDb"),
+        analysis.get("stSpectrumBins"),
+    )
+}
+
+fn take_has_current_spectrum(take: &Take) -> bool {
+    spectrum_is_current(
+        take.st_spectrum_b64.as_ref(),
+        take.st_spectrum_min_db.as_ref(),
+        take.st_spectrum_max_db.as_ref(),
+        take.st_spectrum_bins.as_ref(),
+    )
+}
+
 /// Ensure sidecar is running, spawning if needed. Returns a lock guard.
 fn ensure_sidecar(
     state: &SidecarState,
@@ -353,7 +381,7 @@ pub async fn move_songs(
 // --- Take commands ---
 
 /// Take metadata for frontend (includes optional analysis data).
-#[derive(Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Take {
     pub id: String,
@@ -426,6 +454,19 @@ pub async fn save_take(
     audio_offset: f64,
     algorithm: Option<String>,
 ) -> Result<Take, String> {
+    save_take_impl(&state, song_id, audio_data, start_position, audio_offset, algorithm)
+}
+
+// The command bodies below take a plain `&SidecarState` rather than tauri's
+// `State` extractor so tests can drive them without building a Tauri app.
+pub(crate) fn save_take_impl(
+    state: &SidecarState,
+    song_id: String,
+    audio_data: Vec<u8>,
+    start_position: f64,
+    audio_offset: f64,
+    algorithm: Option<String>,
+) -> Result<Take, String> {
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::song_dir(&song_id).join("takes");
     std::fs::create_dir_all(&takes_dir).map_err(|e| format!("Create takes dir: {e}"))?;
@@ -440,7 +481,7 @@ pub async fn save_take(
 
     // Analyze the recording via sidecar (also RMS-normalizes loudness against vocals.wav)
     let (pitch_data, onsets, dynamics, vibrato, st_spectrum_times, st_spectrum_b64, st_spectrum_frames, st_spectrum_bins, st_spectrum_min_db, st_spectrum_max_db, normalized_path) = {
-        let guard = ensure_sidecar(&state);
+        let guard = ensure_sidecar(state);
         if let Ok(guard) = guard {
             if let Some(sidecar) = guard.as_ref() {
                 let mut cmd_obj = serde_json::json!({
@@ -535,7 +576,11 @@ pub async fn load_analysis(
     state: State<'_, SidecarState>,
     song_id: String,
 ) -> Result<serde_json::Value, String> {
-    let song_dir = storage::song_dir(&song_id);
+    load_analysis_impl(&state, &song_id)
+}
+
+pub(crate) fn load_analysis_impl(state: &SidecarState, song_id: &str) -> Result<serde_json::Value, String> {
+    let song_dir = storage::song_dir(song_id);
     let path = song_dir.join("analysis.json");
     if !path.exists() {
         return Ok(serde_json::json!({"pitchData": [], "onsets": [], "dynamics": []}));
@@ -550,17 +595,10 @@ pub async fn load_analysis(
     // fields in analysis.json — any older/lower-res encoding is transparently
     // recomputed rather than misread or left stale. Uses the already-separated
     // vocals.wav, so future loads skip straight to the cached data.
-    let has_spectrum = analysis
-        .get("stSpectrumB64")
-        .and_then(|v| v.as_str())
-        .is_some_and(|s| !s.is_empty())
-        && analysis.get("stSpectrumMinDb").is_some_and(|v| v.is_number())
-        && analysis.get("stSpectrumMaxDb").is_some_and(|v| v.is_number())
-        && analysis.get("stSpectrumBins").and_then(|v| v.as_i64()).is_some_and(|b| b >= ST_SPECTRUM_MIN_BINS);
-    if !has_spectrum {
+    if !analysis_has_current_spectrum(&analysis) {
         let vocals_path = song_dir.join("vocals.wav");
         if vocals_path.exists() {
-            if let Some(result) = compute_st_spectrum(&state, &vocals_path.to_string_lossy(), 0.0) {
+            if let Some(result) = compute_st_spectrum(state, &vocals_path.to_string_lossy(), 0.0) {
                 if let Some(obj) = analysis.as_object_mut() {
                     for key in [
                         "stSpectrumTimes", "stSpectrumB64", "stSpectrumFrames",
@@ -590,24 +628,20 @@ pub async fn load_analysis(
 
 #[tauri::command]
 pub async fn list_takes(state: State<'_, SidecarState>, song_id: String) -> Result<Vec<Take>, String> {
-    let mut takes = load_takes(&song_id)?;
+    list_takes_impl(&state, &song_id)
+}
+
+pub(crate) fn list_takes_impl(state: &SidecarState, song_id: &str) -> Result<Vec<Take>, String> {
+    let mut takes = load_takes(song_id)?;
     let mut changed = false;
 
     // Same backfill/version-marker logic as load_analysis, per-take, using
     // each take's own recording file and stored latency offset.
     for take in takes.iter_mut() {
-        let has_spectrum = take
-            .st_spectrum_b64
-            .as_ref()
-            .and_then(|v| v.as_str())
-            .is_some_and(|s| !s.is_empty())
-            && take.st_spectrum_min_db.as_ref().is_some_and(|v| v.is_number())
-            && take.st_spectrum_max_db.as_ref().is_some_and(|v| v.is_number())
-            && take.st_spectrum_bins.as_ref().and_then(|v| v.as_i64()).is_some_and(|b| b >= ST_SPECTRUM_MIN_BINS);
-        if has_spectrum || !std::path::Path::new(&take.filepath).exists() {
+        if take_has_current_spectrum(take) || !std::path::Path::new(&take.filepath).exists() {
             continue;
         }
-        if let Some(result) = compute_st_spectrum(&state, &take.filepath, take.audio_offset) {
+        if let Some(result) = compute_st_spectrum(state, &take.filepath, take.audio_offset) {
             take.st_spectrum_times = result.get("stSpectrumTimes").cloned();
             take.st_spectrum_b64 = result.get("stSpectrumB64").cloned();
             take.st_spectrum_frames = result.get("stSpectrumFrames").cloned();
@@ -619,7 +653,7 @@ pub async fn list_takes(state: State<'_, SidecarState>, song_id: String) -> Resu
     }
 
     if changed {
-        save_takes(&song_id, &takes)?;
+        save_takes(song_id, &takes)?;
     }
     Ok(takes)
 }
@@ -666,7 +700,7 @@ pub async fn set_take_manual_offset(song_id: String, take_id: String, offset: f6
 
 // --- Exercise take commands ---
 
-#[derive(Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExerciseTake {
     pub id: String,
@@ -705,7 +739,7 @@ fn save_exercise_takes_list(takes: &[ExerciseTake]) -> Result<(), String> {
 // preferring its loudness-normalized output over the raw/copied file, then
 // build + persist the resulting ExerciseTake.
 fn analyze_and_persist_exercise_take(
-    state: &State<'_, SidecarState>,
+    state: &SidecarState,
     analyze_path: &str,
     raw_file_path: String,
     output_dir_str: &str,
@@ -795,6 +829,15 @@ pub async fn save_exercise_take(
     duration: f64,
     algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
+    save_exercise_take_impl(&state, audio_data, duration, algorithm)
+}
+
+pub(crate) fn save_exercise_take_impl(
+    state: &SidecarState,
+    audio_data: Vec<u8>,
+    duration: f64,
+    algorithm: Option<String>,
+) -> Result<ExerciseTake, String> {
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::exercises_takes_dir();
 
@@ -804,12 +847,21 @@ pub async fn save_exercise_take(
     let file_path_str = file_path.to_string_lossy().to_string();
     let output_dir_str = takes_dir.to_string_lossy().to_string();
 
-    analyze_and_persist_exercise_take(&state, &file_path_str, file_path_str.clone(), &output_dir_str, take_id, duration, algorithm)
+    analyze_and_persist_exercise_take(state, &file_path_str, file_path_str.clone(), &output_dir_str, take_id, duration, algorithm)
 }
 
 #[tauri::command]
 pub async fn import_exercise_file(
     state: State<'_, SidecarState>,
+    file_path: String,
+    duration: f64,
+    algorithm: Option<String>,
+) -> Result<ExerciseTake, String> {
+    import_exercise_file_impl(&state, file_path, duration, algorithm)
+}
+
+pub(crate) fn import_exercise_file_impl(
+    state: &SidecarState,
     file_path: String,
     duration: f64,
     algorithm: Option<String>,
@@ -831,7 +883,7 @@ pub async fn import_exercise_file(
 
     // Analyze the copied file, not the original source, so the persisted
     // ExerciseTake's filepath always matches what analyze actually ran against.
-    analyze_and_persist_exercise_take(&state, &dest_str, dest_str.clone(), &output_dir_str, take_id, duration, algorithm)
+    analyze_and_persist_exercise_take(state, &dest_str, dest_str.clone(), &output_dir_str, take_id, duration, algorithm)
 }
 
 #[tauri::command]
@@ -1219,5 +1271,413 @@ impl Drop for TempFile {
         if let Err(e) = std::fs::remove_file(&self.0) {
             log::warn!("Failed to remove temp export file {:?}: {e}", self.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::test_support::TestHome;
+    use serde_json::json;
+
+    fn run<F: std::future::Future>(f: F) -> F::Output {
+        tauri::async_runtime::block_on(f)
+    }
+
+    fn take(id: &str) -> Take {
+        Take {
+            id: id.to_string(),
+            song_id: "s1".to_string(),
+            recorded_at: "2026-01-01T00:00:00Z".to_string(),
+            filepath: String::new(),
+            name: None,
+            start_position: 0.0,
+            audio_offset: 0.0,
+            manual_offset: 0.0,
+            pitch_data: None,
+            onsets: None,
+            dynamics: None,
+            vibrato: None,
+            st_spectrum_times: None,
+            st_spectrum_b64: None,
+            st_spectrum_frames: None,
+            st_spectrum_bins: None,
+            st_spectrum_min_db: None,
+            st_spectrum_max_db: None,
+        }
+    }
+
+    fn with_spectrum(mut t: Take, bins: i64) -> Take {
+        t.st_spectrum_b64 = Some(json!("AAAA"));
+        t.st_spectrum_min_db = Some(json!(-100.0));
+        t.st_spectrum_max_db = Some(json!(0.0));
+        t.st_spectrum_bins = Some(json!(bins));
+        t
+    }
+
+    fn write_takes(song_id: &str, takes: &[Take]) {
+        save_takes(song_id, takes).unwrap();
+    }
+
+    fn offline_state() -> SidecarState {
+        SidecarState(std::sync::Mutex::new(None))
+    }
+
+    fn sidecar_was_spawned(state: &SidecarState) -> bool {
+        state.0.lock().unwrap().is_some()
+    }
+
+    // ── cache marker ──────────────────────────────────────────────────────
+
+    #[test]
+    fn spectrum_currency_requires_every_marker_at_the_current_resolution() {
+        let full = json!({
+            "stSpectrumB64": "AAAA", "stSpectrumMinDb": -100.0, "stSpectrumMaxDb": 0.0, "stSpectrumBins": ST_SPECTRUM_MIN_BINS,
+        });
+        assert!(analysis_has_current_spectrum(&full));
+
+        let mut higher = full.clone();
+        higher["stSpectrumBins"] = json!(ST_SPECTRUM_MIN_BINS + 512);
+        assert!(analysis_has_current_spectrum(&higher), "a finer blob than required is fine");
+
+        for (field, bad) in [
+            ("stSpectrumB64", json!("")),
+            ("stSpectrumB64", json!(null)),
+            ("stSpectrumB64", json!(12)),
+            ("stSpectrumMinDb", json!("-100")),
+            ("stSpectrumMinDb", json!(null)),
+            ("stSpectrumMaxDb", json!(null)),
+            ("stSpectrumBins", json!(ST_SPECTRUM_MIN_BINS - 1)),
+            ("stSpectrumBins", json!(1024)),
+            ("stSpectrumBins", json!(128)),
+            ("stSpectrumBins", json!("1280")),
+            ("stSpectrumBins", json!(null)),
+        ] {
+            let mut v = full.clone();
+            v[field] = bad.clone();
+            assert!(!analysis_has_current_spectrum(&v), "{field}={bad} should be stale");
+        }
+        for field in ["stSpectrumB64", "stSpectrumMinDb", "stSpectrumMaxDb", "stSpectrumBins"] {
+            let mut v = full.clone();
+            v.as_object_mut().unwrap().remove(field);
+            assert!(!analysis_has_current_spectrum(&v), "missing {field} should be stale");
+        }
+        assert!(!analysis_has_current_spectrum(&json!({})));
+    }
+
+    #[test]
+    fn a_take_spectrum_is_current_only_at_the_current_resolution() {
+        assert!(take_has_current_spectrum(&with_spectrum(take("t"), ST_SPECTRUM_MIN_BINS)));
+        assert!(!take_has_current_spectrum(&with_spectrum(take("t"), ST_SPECTRUM_MIN_BINS - 1)));
+        assert!(!take_has_current_spectrum(&take("t")));
+        let mut no_min = with_spectrum(take("t"), ST_SPECTRUM_MIN_BINS);
+        no_min.st_spectrum_min_db = None;
+        assert!(!take_has_current_spectrum(&no_min));
+    }
+
+    #[test]
+    fn the_cache_marker_matches_the_sidecars_bin_count() {
+        let py = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../sidecar/processor.py")).unwrap();
+        let line = py
+            .lines()
+            .find(|l| l.trim_start().starts_with("N_BINS ="))
+            .expect("N_BINS assignment in processor.py");
+        let bins: i64 = line.split('=').nth(1).unwrap().trim().parse().unwrap();
+        assert_eq!(
+            bins, ST_SPECTRUM_MIN_BINS,
+            "a mismatch makes every blob look stale (recomputed on each open) or lets old ones through"
+        );
+    }
+
+    // ── serde contract ────────────────────────────────────────────────────
+
+    #[test]
+    fn take_serializes_camel_case_and_omits_empty_optionals() {
+        let v = serde_json::to_value(take("t")).unwrap();
+        for key in ["id", "songId", "recordedAt", "filepath", "startPosition"] {
+            assert!(v.get(key).is_some(), "missing {key}");
+        }
+        for key in ["name", "audioOffset", "manualOffset", "pitchData", "onsets", "dynamics", "vibrato", "stSpectrumB64"] {
+            assert!(v.get(key).is_none(), "{key} should be omitted when empty");
+        }
+    }
+
+    #[test]
+    fn take_keeps_nonzero_offsets_and_spectrum_fields() {
+        let mut t = with_spectrum(take("t"), ST_SPECTRUM_MIN_BINS);
+        t.audio_offset = 0.25;
+        t.manual_offset = -1.5;
+        t.name = Some("Verse".into());
+        let v = serde_json::to_value(&t).unwrap();
+        assert_eq!(v["audioOffset"], 0.25);
+        assert_eq!(v["manualOffset"], -1.5);
+        assert_eq!(v["name"], "Verse");
+        assert_eq!(v["stSpectrumBins"], ST_SPECTRUM_MIN_BINS);
+    }
+
+    #[test]
+    fn take_from_an_old_takes_json_parses_with_defaults() {
+        let old = r#"{"id":"t","songId":"s","recordedAt":"x","filepath":"/t.webm"}"#;
+        let t: Take = serde_json::from_str(old).unwrap();
+        assert_eq!((t.start_position, t.audio_offset, t.manual_offset), (0.0, 0.0, 0.0));
+        assert!(t.name.is_none() && t.pitch_data.is_none());
+    }
+
+    #[test]
+    fn take_round_trips_through_json() {
+        let mut t = with_spectrum(take("t"), 2000);
+        t.pitch_data = Some(json!({"times": [0.0], "f0": [220.0], "voiced": [true], "confidence": [0.9]}));
+        t.manual_offset = 0.5;
+        let back: Take = serde_json::from_str(&serde_json::to_string(&t).unwrap()).unwrap();
+        assert_eq!(format!("{back:?}"), format!("{t:?}"));
+    }
+
+    #[test]
+    fn processing_status_serializes_camel_case() {
+        let v = serde_json::to_value(ProcessingStatus {
+            song_id: "s".into(),
+            progress: 0.5,
+            stage: "pitch".into(),
+            is_complete: false,
+            error: None,
+        })
+        .unwrap();
+        assert_eq!(v["songId"], "s");
+        assert_eq!(v["isComplete"], false);
+        assert!(v.get("is_complete").is_none());
+    }
+
+    // ── takes ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn takes_start_empty_and_survive_a_save_load_round_trip() {
+        let _home = TestHome::new();
+        assert!(load_takes("s1").unwrap().is_empty());
+        write_takes("s1", &[take("a"), take("b")]);
+        let loaded = load_takes("s1").unwrap();
+        assert_eq!(loaded.iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["a", "b"]);
+    }
+
+    #[test]
+    fn takes_of_different_songs_do_not_mix() {
+        let _home = TestHome::new();
+        write_takes("s1", &[take("a")]);
+        write_takes("s2", &[take("b")]);
+        assert_eq!(load_takes("s1").unwrap()[0].id, "a");
+        assert_eq!(load_takes("s2").unwrap()[0].id, "b");
+    }
+
+    #[test]
+    fn a_corrupt_takes_file_is_reported() {
+        let home = TestHome::new();
+        let dir = home.path().join("library").join("s1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("takes.json"), "oops").unwrap();
+        assert!(load_takes("s1").unwrap_err().contains("Parse takes"));
+    }
+
+    #[test]
+    fn rename_take_trims_and_empty_clears_back_to_the_default_label() {
+        let _home = TestHome::new();
+        write_takes("s1", &[take("a")]);
+        let named = run(rename_take("s1".into(), "a".into(), "  Chorus  ".into())).unwrap();
+        assert_eq!(named.name.as_deref(), Some("Chorus"));
+        assert_eq!(load_takes("s1").unwrap()[0].name.as_deref(), Some("Chorus"));
+
+        let cleared = run(rename_take("s1".into(), "a".into(), "   ".into())).unwrap();
+        assert_eq!(cleared.name, None);
+        assert_eq!(load_takes("s1").unwrap()[0].name, None);
+    }
+
+    #[test]
+    fn rename_take_reports_an_unknown_take() {
+        let _home = TestHome::new();
+        write_takes("s1", &[take("a")]);
+        let err = run(rename_take("s1".into(), "zzz".into(), "x".into())).unwrap_err();
+        assert!(err.contains("zzz"));
+    }
+
+    #[test]
+    fn set_take_manual_offset_persists_and_zero_resets() {
+        let _home = TestHome::new();
+        write_takes("s1", &[take("a")]);
+        assert_eq!(run(set_take_manual_offset("s1".into(), "a".into(), -0.75)).unwrap().manual_offset, -0.75);
+        assert_eq!(load_takes("s1").unwrap()[0].manual_offset, -0.75);
+        run(set_take_manual_offset("s1".into(), "a".into(), 0.0)).unwrap();
+        let raw = std::fs::read_to_string(storage::song_dir("s1").join("takes.json")).unwrap();
+        assert!(!raw.contains("manualOffset"), "a zero offset is not stored");
+        assert!(run(set_take_manual_offset("s1".into(), "ghost".into(), 1.0)).is_err());
+    }
+
+    #[test]
+    fn delete_take_removes_the_entry_and_its_audio_file_only() {
+        let home = TestHome::new();
+        let file_a = home.path().join("a.wav");
+        let file_b = home.path().join("b.wav");
+        std::fs::write(&file_a, b"a").unwrap();
+        std::fs::write(&file_b, b"b").unwrap();
+        let (mut a, mut b) = (take("a"), take("b"));
+        a.filepath = file_a.to_string_lossy().to_string();
+        b.filepath = file_b.to_string_lossy().to_string();
+        write_takes("s1", &[a, b]);
+
+        run(delete_take("s1".into(), "a".into())).unwrap();
+
+        assert!(!file_a.exists());
+        assert!(file_b.exists());
+        assert_eq!(load_takes("s1").unwrap().iter().map(|t| t.id.as_str()).collect::<Vec<_>>(), ["b"]);
+    }
+
+    #[test]
+    fn delete_take_copes_with_a_missing_file_and_an_unknown_id() {
+        let _home = TestHome::new();
+        let mut a = take("a");
+        a.filepath = "/not/there.wav".into();
+        write_takes("s1", &[a]);
+        run(delete_take("s1".into(), "a".into())).unwrap();
+        run(delete_take("s1".into(), "never".into())).unwrap();
+        assert!(load_takes("s1").unwrap().is_empty());
+    }
+
+    // ── exercise takes ────────────────────────────────────────────────────
+
+    #[test]
+    fn exercise_takes_list_and_delete_with_their_files() {
+        let home = TestHome::new();
+        assert!(run(list_exercise_takes()).unwrap().is_empty());
+
+        let file = home.path().join("e1.webm");
+        std::fs::write(&file, b"x").unwrap();
+        save_exercise_takes_list(&[
+            ExerciseTake {
+                id: "e1".into(), recorded_at: "x".into(), filepath: file.to_string_lossy().to_string(),
+                duration: 3.5, pitch_data: None, dynamics: None, vibrato: None,
+            },
+            ExerciseTake {
+                id: "e2".into(), recorded_at: "x".into(), filepath: "/gone.webm".into(),
+                duration: 1.0, pitch_data: Some(json!({"times": []})), dynamics: None, vibrato: None,
+            },
+        ])
+        .unwrap();
+
+        let listed = run(list_exercise_takes()).unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(listed[0].duration, 3.5);
+
+        run(delete_exercise_take("e1".into())).unwrap();
+        assert!(!file.exists());
+        run(delete_exercise_take("e2".into())).unwrap();
+        run(delete_exercise_take("ghost".into())).unwrap();
+        assert!(run(list_exercise_takes()).unwrap().is_empty());
+    }
+
+    #[test]
+    fn exercise_take_serializes_camel_case_and_skips_missing_analysis() {
+        let v = serde_json::to_value(ExerciseTake {
+            id: "e".into(), recorded_at: "x".into(), filepath: "/e".into(), duration: 2.0,
+            pitch_data: None, dynamics: None, vibrato: None,
+        })
+        .unwrap();
+        assert!(v.get("recordedAt").is_some());
+        assert!(v.get("pitchData").is_none());
+    }
+
+    #[test]
+    fn a_corrupt_exercise_file_is_reported() {
+        let home = TestHome::new();
+        std::fs::create_dir_all(home.path().join("exercises")).unwrap();
+        std::fs::write(home.path().join("exercises").join("exercises.json"), "[[").unwrap();
+        assert!(run(list_exercise_takes()).unwrap_err().contains("Parse exercises"));
+    }
+
+    // ── library command pass-throughs ─────────────────────────────────────
+
+    #[test]
+    fn library_commands_round_trip_through_the_real_store() {
+        let _home = TestHome::new();
+        assert!(run(list_songs()).unwrap().is_empty());
+        library::add(Song {
+            id: "a".into(), title: "A".into(), artist: None, duration: 1.0, detected_key: None, detected_bpm: None,
+            processed_at: "x".into(), directory: storage::song_dir("a").to_string_lossy().to_string(),
+            kind: "vocal".into(), metronome_offset: None, folder_id: None, sort_index: 0,
+        })
+        .unwrap();
+
+        assert_eq!(run(rename_song("a".into(), " Renamed ".into())).unwrap().title, "Renamed");
+        assert_eq!(run(set_metronome_offset("a".into(), Some(3.0))).unwrap().metronome_offset, Some(3.0));
+
+        let folder = run(create_folder("Band".into())).unwrap();
+        assert_eq!(run(rename_folder(folder.id.clone(), "Group".into())).unwrap().name, "Group");
+        let moved = run(move_songs(Some(folder.id.clone()), vec!["a".into()])).unwrap();
+        assert_eq!(moved[0].folder_id.as_deref(), Some(folder.id.as_str()));
+        assert_eq!(run(reorder_folders(vec![folder.id.clone()])).unwrap()[0].sort_index, 0);
+        run(delete_folder(folder.id)).unwrap();
+        assert_eq!(run(list_songs()).unwrap()[0].folder_id, None);
+
+        let dir = storage::song_dir("a");
+        assert!(dir.exists());
+        run(delete_song("a".into())).unwrap();
+        assert!(!dir.exists());
+        assert!(run(list_songs()).unwrap().is_empty());
+    }
+
+    // ── load_analysis / list_takes without needing the sidecar ────────────
+
+    #[test]
+    fn load_analysis_for_a_song_without_analysis_returns_the_empty_shape() {
+        let _home = TestHome::new();
+        let state = offline_state();
+        let v = load_analysis_impl(&state, "fresh").unwrap();
+        assert_eq!(v, json!({"pitchData": [], "onsets": [], "dynamics": []}));
+        assert!(!sidecar_was_spawned(&state));
+    }
+
+    #[test]
+    fn load_analysis_returns_a_current_cached_spectrum_untouched_and_never_spawns_the_sidecar() {
+        let _home = TestHome::new();
+        let state = offline_state();
+        let analysis = json!({
+            "pitchData": {"times": [0.0]}, "onsets": [1.0], "dynamics": [],
+            "stSpectrumB64": "AAAA", "stSpectrumMinDb": -100.0, "stSpectrumMaxDb": 0.0, "stSpectrumBins": ST_SPECTRUM_MIN_BINS,
+        });
+        std::fs::write(storage::song_dir("s").join("analysis.json"), analysis.to_string()).unwrap();
+        let v = load_analysis_impl(&state, "s").unwrap();
+        assert_eq!(v, analysis);
+        assert!(!sidecar_was_spawned(&state));
+    }
+
+    #[test]
+    fn load_analysis_skips_the_backfill_when_there_is_no_vocals_file_to_analyse() {
+        let _home = TestHome::new();
+        let state = offline_state();
+        let analysis = json!({"pitchData": {"times": []}, "onsets": [], "dynamics": []});
+        std::fs::write(storage::song_dir("s").join("analysis.json"), analysis.to_string()).unwrap();
+        let v = load_analysis_impl(&state, "s").unwrap();
+        assert_eq!(v, analysis);
+        assert!(!sidecar_was_spawned(&state));
+    }
+
+    #[test]
+    fn load_analysis_rejects_a_corrupt_analysis_file() {
+        let _home = TestHome::new();
+        let state = offline_state();
+        std::fs::write(storage::song_dir("s").join("analysis.json"), "{{").unwrap();
+        assert!(load_analysis_impl(&state, "s").unwrap_err().contains("Parse analysis"));
+    }
+
+    #[test]
+    fn list_takes_leaves_current_and_unbackfillable_takes_alone() {
+        let _home = TestHome::new();
+        let state = offline_state();
+        let current = with_spectrum(take("current"), ST_SPECTRUM_MIN_BINS);
+        let mut orphan = take("orphan");
+        orphan.filepath = "/file/was/deleted.wav".into();
+        write_takes("s1", &[current, orphan]);
+
+        let listed = list_takes_impl(&state, "s1").unwrap();
+
+        assert_eq!(listed.len(), 2);
+        assert!(!sidecar_was_spawned(&state), "nothing to backfill, so no sidecar");
+        assert!(listed[1].st_spectrum_b64.is_none());
     }
 }
