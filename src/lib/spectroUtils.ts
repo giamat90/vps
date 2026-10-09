@@ -34,13 +34,6 @@ function buildColormap(): Uint8Array {
 
 export const SPECTRO_COLORMAP: Uint8Array = buildColormap();
 
-// Verification log — confirms correct colors are loaded at key indices.
-[0, 64, 128, 192, 255].forEach((i) => {
-  console.log(
-    `colormap[${i}]: rgb(${SPECTRO_COLORMAP[i * 3]}, ${SPECTRO_COLORMAP[i * 3 + 1]}, ${SPECTRO_COLORMAP[i * 3 + 2]})`,
-  );
-});
-
 /**
  * Build an OffscreenCanvas from raw base64-encoded spectrogram bytes.
  * Layout: n_frames columns × nRows rows; row 0 = top (highest freq).

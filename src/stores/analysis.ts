@@ -54,6 +54,8 @@ function decodeSTSpectrum(
 // which is song time. Convert local time -> song time via songTime = localTime + startPosition.
 function pitchDataToPoints(pd: PitchData, toSongTime: (t: number) => number): PitchPoint[] {
   const out: PitchPoint[] = [];
+  // load_analysis answers with `pitchData: []` (not an object) when a song has no analysis.json.
+  if (!Array.isArray(pd?.times)) return out;
   for (let i = 0; i < pd.times.length; i++) {
     if (pd.voiced[i] && pd.f0[i] > 0) {
       out.push({ time: toSongTime(pd.times[i]), frequency: pd.f0[i], confidence: pd.confidence[i] });

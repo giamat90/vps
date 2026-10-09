@@ -8,6 +8,7 @@ import { useSettingsStore } from "./settings";
 import { useAnalysisStore } from "./analysis";
 import { metronome } from "../audio/metronome";
 import { countInDurationSeconds } from "../lib/metronomeSync";
+import { pickHardwareOutput } from "../audio/outputDevice";
 
 // Singletons outside Zustand
 let engine: AudioEngine | null = null;
@@ -726,21 +727,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const allDevices = await navigator.mediaDevices.enumerateDevices();
     // Update device list now that permission is granted (labels become visible)
     set({ audioDevices: allDevices.filter((d) => d.kind === "audioinput") });
-    const outputs = allDevices.filter((d) => d.kind === "audiooutput");
-    const inputLabel = (
-      allDevices.find((d) => d.kind === "audioinput" && d.deviceId === s.selectedDeviceId)?.label ?? ""
-    ).toUpperCase();
-    const realOutputs = outputs.filter(
-      (d) =>
-        !d.label.startsWith("Default -") &&
-        !d.label.startsWith("Communications -") &&
-        !d.label.toLowerCase().includes("steam"),
-    );
-    const matched =
-      realOutputs.find((d) =>
-        d.label.toUpperCase().split(/\W+/).some((tok) => tok.length >= 4 && inputLabel.includes(tok))
-      ) ?? realOutputs[0];
-    const outputId = s.selectedOutputDeviceId ?? matched?.deviceId ?? "";
+    const outputId = s.selectedOutputDeviceId ?? pickHardwareOutput(allDevices, s.selectedDeviceId) ?? "";
     try {
       await eng.setOutputDevice(outputId);
     } catch (e) {
@@ -816,37 +803,12 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       throw new Error("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
     }
 
-    // After getUserMedia, Windows may switch the "default" audio endpoint to the
-    // Communications device. Explicitly pin output to a non-Communications device
-    // so the singer hears the instrumental through the regular headphone output.
-    // After getUserMedia Windows may switch the "Default" audio alias to the
-    // Communications endpoint, so sinkId="" routes to the wrong device.
-    // Identify the real hardware output by:
-    //   1. excluding Default/Communications aliases and virtual (Steam) devices
-    //   2. preferring the device that shares an interface token with the selected mic
+    // After getUserMedia, Windows may switch the "Default" audio alias to the
+    // Communications endpoint, so sinkId="" would route to the wrong device;
+    // pin the real hardware output so the singer hears the instrumental
+    // through the regular headphone output.
     const allDevices = await navigator.mediaDevices.enumerateDevices();
-    const outputs = allDevices.filter((d) => d.kind === "audiooutput");
-    const selectedInputLabel = (
-      allDevices.find(
-        (d) => d.kind === "audioinput" && d.deviceId === get().selectedDeviceId,
-      )?.label ?? ""
-    ).toUpperCase();
-
-    const realOutputs = outputs.filter(
-      (d) =>
-        !d.label.startsWith("Default -") &&
-        !d.label.startsWith("Communications -") &&
-        !d.label.toLowerCase().includes("steam"),
-    );
-    const matchedOutput =
-      realOutputs.find((d) =>
-        d.label
-          .toUpperCase()
-          .split(/\W+/)
-          .some((token) => token.length >= 4 && selectedInputLabel.includes(token)),
-      ) ?? realOutputs[0];
-
-    const outputId = get().selectedOutputDeviceId ?? matchedOutput?.deviceId ?? "";
+    const outputId = get().selectedOutputDeviceId ?? pickHardwareOutput(allDevices, get().selectedDeviceId) ?? "";
     try {
       await eng.setOutputDevice(outputId);
     } catch (e) {
@@ -1110,21 +1072,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     }
 
     const allDevices = await navigator.mediaDevices.enumerateDevices();
-    const outputs = allDevices.filter((d) => d.kind === "audiooutput");
-    const inputLabel = (
-      allDevices.find((d) => d.kind === "audioinput" && d.deviceId === get().selectedDeviceId)?.label ?? ""
-    ).toUpperCase();
-    const realOutputs = outputs.filter(
-      (d) =>
-        !d.label.startsWith("Default -") &&
-        !d.label.startsWith("Communications -") &&
-        !d.label.toLowerCase().includes("steam"),
-    );
-    const matched =
-      realOutputs.find((d) =>
-        d.label.toUpperCase().split(/\W+/).some((tok) => tok.length >= 4 && inputLabel.includes(tok))
-      ) ?? realOutputs[0];
-    const outputId = get().selectedOutputDeviceId ?? matched?.deviceId ?? "";
+    const outputId = get().selectedOutputDeviceId ?? pickHardwareOutput(allDevices, get().selectedDeviceId) ?? "";
     try { await eng.setOutputDevice(outputId); } catch (e) { console.warn("[exercise-rec] setOutputDevice:", e); }
 
     eng.startExerciseTimer();
