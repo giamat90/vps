@@ -18,6 +18,7 @@ import ShortTermSpectrumComparisonPanel from "../components/analysis/ShortTermSp
 import VibratoCard from "../components/analysis/VibratoCard";
 import TimingChart from "../components/analysis/TimingChart";
 import CoachPanel from "../components/coaching/CoachPanel";
+import LyricsPanel from "../components/lyrics/LyricsPanel";
 import { useLibraryStore } from "../stores/library";
 import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
@@ -170,6 +171,8 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
           <div className="practice-room__waveforms">
             <Waveform song={song} />
           </div>
+
+          {!isInstrument && <LyricsPanel songId={songId} />}
 
           {isAnalysisLoaded && (
             <div className="practice-room__analysis">
