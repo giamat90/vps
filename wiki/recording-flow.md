@@ -265,7 +265,7 @@ If none are supported, `MediaRecorder` is created without an explicit `mimeType`
 2. enumerateDevices()                   refresh audioDevices with labels now that permission is granted
 3. Enumerate output devices             find real hardware output (same WASAPI fix as recording)
 4. eng.setOutputDevice(outputId)        pin audio away from Communications endpoint
-5. if exerciseMode: eng.startExerciseTimer()   advance currentTime while monitoring
+5. if exerciseMode && !eng.exerciseTrack: eng.startExerciseTimer()   advance currentTime while monitoring (a loaded track is its own clock)
 6. set isMonitoring = true
 ```
 

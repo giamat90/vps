@@ -1164,10 +1164,41 @@ describe("free exercise recording", () => {
     expect(store().getState().isPlaying).toBe(false);
   });
 
+  it("marks playback as stopped when a loaded track finishes without recording", () => {
+    store().setState({ isPlaying: true });
+    eng().finishCb();
+    expect(store().getState().isPlaying).toBe(false);
+    expect(h.api.saveExerciseTake).not.toHaveBeenCalled();
+  });
+
   it("stopExercise leaves exercise mode and halts the timer", () => {
     store().getState().stopExercise();
     expect(eng().stopExerciseTimer).toHaveBeenCalled();
     expect(store().getState()).toMatchObject({ exerciseMode: false, isPlaying: false, currentTime: 0 });
+  });
+});
+
+describe("monitoring in free exercise", () => {
+  beforeEach(() => {
+    store().setState({ selectedDeviceId: "mic-ub" });
+    store().getState().startExercise();
+  });
+
+  it("drives the free-running timer when no track is loaded", async () => {
+    await store().getState().startMonitoring();
+    expect(eng().startExerciseTimer).toHaveBeenCalled();
+    await store().getState().stopMonitoring();
+    expect(eng().stopExerciseTimer).toHaveBeenCalled();
+  });
+
+  it("leaves the clock to the loaded track, which is its own clock", async () => {
+    eng().exerciseTrack = {};
+    await store().getState().startMonitoring();
+    expect(eng().startExerciseTimer).not.toHaveBeenCalled();
+    expect(store().getState().isMonitoring).toBe(true);
+    await store().getState().stopMonitoring();
+    expect(eng().stopExerciseTimer).not.toHaveBeenCalled();
+    expect(store().getState().isMonitoring).toBe(false);
   });
 });
 

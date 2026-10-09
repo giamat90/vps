@@ -737,7 +737,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       console.warn("[monitor] setOutputDevice failed:", e);
     }
 
-    if (get().exerciseMode) eng.startExerciseTimer();
+    // A loaded track is its own clock (play/pause drive isPlaying); the
+    // free-running timer would report "playing" while the track is paused.
+    if (get().exerciseMode && !eng.exerciseTrack) eng.startExerciseTimer();
     set({ isMonitoring: true });
   },
 
@@ -748,7 +750,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       monitorStream = null;
     }
     const eng = getEngine();
-    if (get().exerciseMode) eng.stopExerciseTimer();
+    if (get().exerciseMode && !eng.exerciseTrack) eng.stopExerciseTimer();
     try {
       await eng.setOutputDevice(get().selectedOutputDeviceId ?? "");
     } catch (e) {
@@ -1047,6 +1049,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
         get().stopExerciseRecording().catch((e: unknown) =>
           console.error("[exercise] auto-stop failed:", e)
         );
+      } else {
+        set({ isPlaying: false });
       }
     });
     set({ exerciseMode: true, currentTime: 0, isPlaying: false, isRecording: false });

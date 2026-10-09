@@ -7,11 +7,6 @@ function MonitorButton() {
   const isRecording     = usePlayerStore((s) => s.isRecording);
   const startMonitoring = usePlayerStore((s) => s.startMonitoring);
   const stopMonitoring  = usePlayerStore((s) => s.stopMonitoring);
-  // A loaded Free Exercise track (past take or import) takes unconditional
-  // priority over live mic input in getCurrentTime()/SpectrogramPanel/
-  // ShortTermSpectrumPanel — starting monitor without unloading it first left
-  // the UI frozen on the loaded track instead of switching to live mic data.
-  // Same guard RecordButton-equivalent already applies in ExercisePage.
   const trackLoaded    = useExerciseStore((s) => s.loadedTrackId !== null);
   const [error, setError] = useState<string | null>(null);
 
@@ -33,12 +28,12 @@ function MonitorButton() {
       <button
         className={`monitor-btn${isMonitoring ? " monitor-btn--active" : ""}`}
         onClick={handleClick}
-        disabled={isRecording || trackLoaded}
+        disabled={isRecording}
         title={
-          trackLoaded
-            ? "Unload the loaded track to monitor"
-            : isMonitoring
+          isMonitoring
             ? "Stop microphone monitor"
+            : trackLoaded
+            ? "Monitor mic against the loaded track (no recording)"
             : "Monitor mic in piano roll (no recording)"
         }
       >

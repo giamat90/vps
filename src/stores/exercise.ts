@@ -74,6 +74,9 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
 
   loadExerciseTakeIntoTrack: async (take, container) => {
     await getEngine().loadExerciseTrack(take.filepath, container);
+    // Monitoring started before the load is running the free timer; the track
+    // is the clock from here on.
+    if (usePlayerStore.getState().isMonitoring) getEngine().stopExerciseTimer();
     useAnalysisStore.getState().loadExerciseTakeAnalysis(take);
     // duration must be set here — it defaults to 0 and nothing else in the
     // Free Exercise flow sets it, so PianoRoll's drag-to-seek clamp
@@ -102,6 +105,8 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
     getEngine().clearExerciseTrack();
     useAnalysisStore.getState().clear();
     usePlayerStore.setState({ isPlaying: false, currentTime: 0, duration: 0 });
+    const player = usePlayerStore.getState();
+    if (player.isMonitoring && player.exerciseMode) getEngine().startExerciseTimer();
     set({
       loadedTrackKind: null,
       loadedTrackId: null,
