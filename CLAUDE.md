@@ -496,6 +496,9 @@ npm run tauri dev
 # Type-check only (no emit)
 npx tsc --noEmit
 
+# Unit tests (vitest)
+npm test
+
 # Build release
 npm run tauri build
 

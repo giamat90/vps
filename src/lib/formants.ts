@@ -1,13 +1,19 @@
 /**
  * Client-side formant (F1/F2/F3) estimator via LPC.
  *
- * Pipeline: decimate -> pre-emphasis -> Hamming window -> autocorrelation ->
- * Levinson-Durbin (LPC coefficients) -> Durand-Kerner (polynomial roots) ->
- * pole-to-resonance conversion -> candidate filtering -> frame-to-frame
- * continuity tracking. No DOM/Web Audio references — takes a plain
+ * Pitched voice (>= 4 harmonics found by harmonicEnvelope.ts): envelope drawn
+ * through the harmonic peaks -> its autocorrelation. Anything else (silence,
+ * noise, unvoiced, very short buffers): decimate -> pre-emphasis -> Hamming
+ * window -> autocorrelation of the signal. Both then share Levinson-Durbin
+ * (LPC coefficients) -> Durand-Kerner (polynomial roots) -> pole-to-resonance
+ * conversion -> candidate filtering -> frequency ordering -> frame-to-frame
+ * continuity tracking. Plain LPC alone locks poles onto harmonics once f0
+ * passes ~300 Hz; see wiki/components.md "Formant accuracy vs pitch". No DOM/Web Audio references — takes a plain
  * Float32Array + sampleRate so it works identically for a live-mic analyser
  * buffer or a loaded-track playback analyser buffer.
  */
+
+import { analyseHarmonics, envelopeAutocorrelation } from "./harmonicEnvelope";
 
 export interface FormantEstimate {
   f1: number | null;
@@ -195,12 +201,25 @@ function permutationsOf(n: number): number[][] {
   return results;
 }
 
+// Continuity assignment can leave slots out of frequency order (e.g. F2 above
+// F3 after a swap that smoothing then preserves). Formants are ordered by
+// definition, so re-sort the non-null values into the occupied slots; the
+// sorted result is also what the caller feeds back as the next frame's prev.
+function orderByFrequency(est: FormantEstimate): FormantEstimate {
+  const slots: (keyof FormantEstimate)[] = ["f1", "f2", "f3"];
+  const used = slots.filter((k) => est[k] !== null);
+  const sorted = used.map((k) => est[k] as number).sort((a, b) => a - b);
+  const out: FormantEstimate = { f1: null, f2: null, f3: null };
+  used.forEach((k, i) => { out[k] = sorted[i]; });
+  return out;
+}
+
 function assignWithContinuity(candidates: number[], prev?: FormantEstimate): FormantEstimate {
   const prevSlots: (number | null)[] = prev ? [prev.f1, prev.f2, prev.f3] : [null, null, null];
   const haveAnyPrev = prevSlots.some((v) => v !== null);
 
   if (!haveAnyPrev || candidates.length === 0) {
-    return { f1: candidates[0] ?? null, f2: candidates[1] ?? null, f3: candidates[2] ?? null };
+    return orderByFrequency({ f1: candidates[0] ?? null, f2: candidates[1] ?? null, f3: candidates[2] ?? null });
   }
 
   // At most 3 candidates/slots survive filtering, so brute-forcing all
@@ -229,34 +248,16 @@ function assignWithContinuity(candidates: number[], prev?: FormantEstimate): For
     return TRACK_SMOOTHING * raw + (1 - TRACK_SMOOTHING) * prevVal;
   };
 
-  return {
+  return orderByFrequency({
     f1: smooth(assigned[0], prevSlots[0]),
     f2: smooth(assigned[1], prevSlots[1]),
     f3: smooth(assigned[2], prevSlots[2]),
-  };
+  });
 }
 
 // ─── entry point ────────────────────────────────────────────────────────────
 
-export function estimateFormants(samples: Float32Array, sampleRate: number, prevEstimate?: FormantEstimate): FormantEstimate {
-  const { data: decimated, sr } = decimate(samples, sampleRate, DECIMATED_SR);
-  if (decimated.length < 32) return NULL_ESTIMATE;
-
-  const emphasized = preEmphasize(decimated);
-  const window = hammingWindow(emphasized.length);
-  const windowed = new Float64Array(emphasized.length);
-  for (let i = 0; i < emphasized.length; i++) windowed[i] = emphasized[i] * window[i];
-
-  const order = Math.min(Math.round(sr / 1000) + 2, Math.floor(windowed.length / 2) - 1);
-  if (order < 4) return NULL_ESTIMATE;
-
-  const r = autocorrelate(windowed, order);
-  const lpc = levinsonDurbin(r, order);
-  if (!lpc) return NULL_ESTIMATE;
-
-  const roots = durandKerner(lpc);
-  if (!roots) return NULL_ESTIMATE;
-
+function candidatesFromRoots(roots: Complex[], sr: number): number[] {
   const candidates: number[] = [];
   for (const root of roots) {
     if (root.im <= 0) continue; // one root per conjugate pair
@@ -268,7 +269,51 @@ export function estimateFormants(samples: Float32Array, sampleRate: number, prev
     if (bandwidth < 0 || bandwidth > MAX_BANDWIDTH_HZ) continue;
     candidates.push(freq);
   }
-  candidates.sort((a, b) => a - b);
+  return candidates.sort((a, b) => a - b);
+}
 
+function lpcOrderFor(sr: number): number {
+  return Math.round(sr / 1000) + 2;
+}
+
+// Pitched voice: fit LPC to the envelope drawn through the harmonic peaks, so
+// poles can't lock onto individual harmonics (the failure mode of plain LPC
+// above ~300 Hz f0). Null when the frame has no usable harmonic structure.
+function harmonicCandidates(samples: Float32Array, sampleRate: number): number[] | null {
+  const harmonics = analyseHarmonics(samples, sampleRate);
+  if (!harmonics) return null;
+  const order = lpcOrderFor(DECIMATED_SR);
+  const r = envelopeAutocorrelation(harmonics, order, DECIMATED_SR / 2, PRE_EMPHASIS);
+  const lpc = levinsonDurbin(r, order);
+  if (!lpc) return null;
+  const roots = durandKerner(lpc);
+  if (!roots) return null;
+  return candidatesFromRoots(roots, DECIMATED_SR);
+}
+
+function plainLpcCandidates(samples: Float32Array, sampleRate: number): number[] | null {
+  const { data: decimated, sr } = decimate(samples, sampleRate, DECIMATED_SR);
+  if (decimated.length < 32) return null;
+
+  const emphasized = preEmphasize(decimated);
+  const window = hammingWindow(emphasized.length);
+  const windowed = new Float64Array(emphasized.length);
+  for (let i = 0; i < emphasized.length; i++) windowed[i] = emphasized[i] * window[i];
+
+  const order = Math.min(lpcOrderFor(sr), Math.floor(windowed.length / 2) - 1);
+  if (order < 4) return null;
+
+  const r = autocorrelate(windowed, order);
+  const lpc = levinsonDurbin(r, order);
+  if (!lpc) return null;
+
+  const roots = durandKerner(lpc);
+  if (!roots) return null;
+  return candidatesFromRoots(roots, sr);
+}
+
+export function estimateFormants(samples: Float32Array, sampleRate: number, prevEstimate?: FormantEstimate): FormantEstimate {
+  const candidates = harmonicCandidates(samples, sampleRate) ?? plainLpcCandidates(samples, sampleRate);
+  if (!candidates) return NULL_ESTIMATE;
   return assignWithContinuity(candidates.slice(0, 3), prevEstimate);
 }

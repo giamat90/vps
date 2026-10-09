@@ -53,6 +53,10 @@ This starts:
 
 Hot reload works for React/TypeScript changes. Rust changes require a full restart (`Ctrl+C` → `npm run tauri dev`).
 
+## Tests
+
+`npm test` runs the vitest suite (`src/lib/*.test.ts`) once. Currently covers the formant estimator and its harmonic-envelope helper; see [UI/analysis notes in components.md](components.md). Tests are not run by `release.yml`.
+
 ## Building for Release
 
 ```powershell

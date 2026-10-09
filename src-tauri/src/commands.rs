@@ -25,9 +25,10 @@ pub struct ProcessingStatus {
 /// version marker like stSpectrumMinDb/MaxDb: any cached blob below this
 /// predates the bump and gets transparently recomputed rather than left
 /// stale at the old resolution.
-/// Raised again 1024 -> 1152 when the window changed Chebyshev -> Blackman:
-/// the bin count is only a cache-invalidation marker there.
-const ST_SPECTRUM_MIN_BINS: i64 = 1152;
+/// Raised again 1024 -> 1152 when the window changed Chebyshev -> Blackman,
+/// and 1152 -> 1280 when empty low-frequency log bins started being filled
+/// from the nearest FFT bin: the bin count is only a cache-invalidation marker.
+const ST_SPECTRUM_MIN_BINS: i64 = 1280;
 
 /// Ensure sidecar is running, spawning if needed. Returns a lock guard.
 fn ensure_sidecar(

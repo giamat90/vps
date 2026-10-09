@@ -614,10 +614,10 @@ def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
     """
     F_MIN, F_MAX = 30.0, 20000.0
     MIN_DB, MAX_DB = -100.0, 0.0
-    # 1152, not 1024: purely a cache-invalidation marker (see
-    # ST_SPECTRUM_MIN_BINS in commands.rs) so blobs stored with the old
-    # Chebyshev window get recomputed with Blackman.
-    N_BINS = 1152
+    # 1280, not 1152: purely a cache-invalidation marker (see
+    # ST_SPECTRUM_MIN_BINS in commands.rs) so blobs stored before empty log
+    # bins were filled from the nearest FFT bin get recomputed.
+    N_BINS = 1280
 
     fft_size = 8192
     hop_length = 2048  # coarser than compute_spectrogram — this is a snapshot line, not a waterfall
@@ -658,6 +658,13 @@ def compute_short_term_spectrum(audio: np.ndarray, sr: int) -> dict:
         if mask.any():
             # max-in-range — matches the live panel's frequency bin mapping
             result[:, bi] = stft[mask, :].max(axis=0)
+        else:
+            # Below ~950 Hz a log bin is narrower than the FFT's bin spacing
+            # (~5.4 Hz) and can contain no FFT bin at all; leaving it at 0
+            # drew as a -100 dB "picket fence". Take the nearest FFT bin, as
+            # the live curve does.
+            nearest = int(np.argmin(np.abs(freqs - np.sqrt(f_lo * f_hi))))
+            result[:, bi] = stft[nearest, :]
 
     result_db = librosa.amplitude_to_db(result, ref=1.0)
     result_u8 = np.clip((result_db - MIN_DB) / (MAX_DB - MIN_DB) * 255.0, 0, 255).astype(np.uint8)

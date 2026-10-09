@@ -144,7 +144,7 @@ export default function ShortTermSpectrumPanel() {
 
         ctx.fillStyle = isEdge ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.6)";
         ctx.textAlign = "right";
-        ctx.fillText(`${db}`, AXIS_W - 6, y);
+        ctx.fillText(`${db}`, AXIS_W - 6, Math.max(6 * dpr, Math.min(plotH - 6 * dpr, y)));
       }
 
       // ── decade grid + bottom Hz labels ──────────────────────────────────
@@ -253,8 +253,14 @@ export default function ShortTermSpectrumPanel() {
           ctx.stroke();
           ctx.setLineDash([]);
 
+          const label = `F${i + 1} ${Math.round(f)}Hz`;
+          const labelY = plotH - 3 * dpr - i * 12 * dpr;
+          ctx.lineJoin    = "round";
+          ctx.lineWidth   = 3 * dpr;
+          ctx.strokeStyle = "rgba(15, 15, 30, 0.9)";
+          ctx.strokeText(label, x, labelY);
           ctx.fillStyle = color;
-          ctx.fillText(`F${i + 1} ${Math.round(f)}Hz`, x, plotH - 3 * dpr - i * 12 * dpr);
+          ctx.fillText(label, x, labelY);
         });
       }
 

@@ -568,6 +568,40 @@ export class AudioEngine {
     return out;
   }
 
+  // Mono window centered on the current song time from the song's vocals or
+  // the loaded take, using the same song-time -> file-time mapping as
+  // _seekVocals/_seekTake. Reads WaveSurfer's already-decoded buffer, so it
+  // works while paused or scrubbed. Null when nothing is audible there (no
+  // buffer yet, or the playhead is before the take starts).
+  getTrackSamples(track: "vocals" | "take", windowSize: number): { samples: Float32Array; sampleRate: number } | null {
+    const ws = track === "vocals" ? this.vocals : this.take;
+    const buffer = ws?.getDecodedData();
+    if (!buffer) return null;
+    const songTime = this.getCurrentTime();
+    let fileTime: number;
+    if (track === "vocals") {
+      fileTime = songTime - this._vocalsOffset;
+    } else {
+      const takeStart = this._takeOffset + this._takeManualOffset;
+      if (songTime < takeStart) return null;
+      fileTime = this._takeAudioOffset + (songTime - takeStart);
+    }
+    if (fileTime < 0) return null;
+    const channels: Float32Array[] = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) channels.push(buffer.getChannelData(c));
+    const length = channels[0].length;
+    const start = Math.floor(fileTime * buffer.sampleRate) - Math.floor(windowSize / 2);
+    const samples = new Float32Array(windowSize);
+    for (let i = 0; i < windowSize; i++) {
+      const srcIdx = start + i;
+      if (srcIdx < 0 || srcIdx >= length) continue;
+      let sum = 0;
+      for (const ch of channels) sum += ch[srcIdx];
+      samples[i] = sum / channels.length;
+    }
+    return { samples, sampleRate: buffer.sampleRate };
+  }
+
   getExerciseTrackSampleRate(): number | null {
     return this.exerciseTrack?.getDecodedData()?.sampleRate ?? null;
   }
