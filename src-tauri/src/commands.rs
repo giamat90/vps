@@ -44,30 +44,50 @@ fn ensure_sidecar(
 
 /// Backfill helper: compute the Short-Term Spectrum dataset for an audio file
 /// already on disk, for library entries that predate this feature. Returns
-/// None (logged, non-fatal) on any failure — callers just skip the backfill.
+/// None on any failure, always logged as a warning with the file concerned —
+/// non-fatal, callers just skip the backfill and retry on the next open.
 fn compute_st_spectrum(
     state: &SidecarState,
     audio_path: &str,
     audio_offset: f64,
 ) -> Option<serde_json::Value> {
-    let guard = ensure_sidecar(state).ok()?;
-    let sidecar = guard.as_ref()?;
+    let guard = match ensure_sidecar(state) {
+        Ok(guard) => guard,
+        Err(e) => {
+            log::warn!("compute_st_spectrum backfill skipped for {audio_path}: sidecar unavailable: {e}");
+            return None;
+        }
+    };
+    let Some(sidecar) = guard.as_ref() else {
+        log::warn!("compute_st_spectrum backfill skipped for {audio_path}: sidecar not running");
+        return None;
+    };
     let cmd = serde_json::json!({
         "cmd": "compute_st_spectrum",
         "audioPath": audio_path,
         "audioOffset": audio_offset,
     });
-    sidecar.send_command(&cmd).ok()?;
+    if let Err(e) = sidecar.send_command(&cmd) {
+        log::warn!("compute_st_spectrum backfill skipped for {audio_path}: could not send command: {e}");
+        return None;
+    }
     let timeout = Duration::from_secs(120);
     loop {
         match sidecar.recv_timeout(timeout) {
             Ok(SidecarMessage::Result { data, .. }) => return Some(data),
             Ok(SidecarMessage::Error { message, .. }) => {
-                log::warn!("compute_st_spectrum backfill error: {message}");
+                log::warn!("compute_st_spectrum backfill error for {audio_path}: {message}");
                 return None;
             }
             Ok(SidecarMessage::Progress { .. }) => continue,
-            _ => return None,
+            Ok(_) => {
+                log::warn!("compute_st_spectrum backfill for {audio_path}: unexpected sidecar message");
+                return None;
+            }
+            Err(e) => {
+                log::warn!("compute_st_spectrum backfill for {audio_path}: no result: {e}");
+                return None;
+            }
         }
     }
 }
@@ -551,8 +571,15 @@ pub async fn load_analysis(
                         }
                     }
                 }
-                if let Ok(json) = serde_json::to_string_pretty(&analysis) {
-                    let _ = std::fs::write(&path, json);
+                // The spectrum is already in the value returned below, so a failed
+                // write only means the backfill runs again on the next open.
+                match serde_json::to_string_pretty(&analysis) {
+                    Ok(json) => {
+                        if let Err(e) = std::fs::write(&path, json) {
+                            log::warn!("Could not cache backfilled spectrum in {}: {e}", path.display());
+                        }
+                    }
+                    Err(e) => log::warn!("Could not serialize backfilled analysis for {}: {e}", path.display()),
                 }
             }
         }
