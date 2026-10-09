@@ -109,6 +109,17 @@ describe("loadExerciseTakeIntoTrack", () => {
     expect(useExerciseStore.getState()).toMatchObject({ loadedTrackKind: "take", loadedTrackId: "a" });
   });
 
+  it("hands the clock to the track when monitoring was already running the free timer", async () => {
+    h.player.state.isMonitoring = true;
+    await useExerciseStore.getState().loadExerciseTakeIntoTrack(take("a"), container);
+    expect(h.engine.stopExerciseTimer).toHaveBeenCalled();
+  });
+
+  it("leaves the timer alone when nothing is monitoring", async () => {
+    await useExerciseStore.getState().loadExerciseTakeIntoTrack(take("a"), container);
+    expect(h.engine.stopExerciseTimer).not.toHaveBeenCalled();
+  });
+
   it("precomputes the spectrogram from the decoded buffer and stores it", async () => {
     await useExerciseStore.getState().loadExerciseTakeIntoTrack(take("a"), container);
     expect(h.computeTrackSpectrogram).toHaveBeenCalledWith({ tag: "buffer" });
@@ -163,6 +174,19 @@ describe("loadExerciseTakeIntoTrack", () => {
 });
 
 describe("clearLoadedTrack", () => {
+  it("restarts the free timer when monitoring continues without a track", () => {
+    Object.assign(h.player.state, { isMonitoring: true, exerciseMode: true });
+    useExerciseStore.getState().clearLoadedTrack();
+    expect(h.engine.startExerciseTimer).toHaveBeenCalled();
+  });
+
+  it("does not start a timer when not monitoring, or outside exercise mode", () => {
+    useExerciseStore.getState().clearLoadedTrack();
+    Object.assign(h.player.state, { isMonitoring: true, exerciseMode: false });
+    useExerciseStore.getState().clearLoadedTrack();
+    expect(h.engine.startExerciseTimer).not.toHaveBeenCalled();
+  });
+
   it("unloads the track, clears analysis and resets the clock", () => {
     useExerciseStore.setState({ loadedTrackId: "a", loadedTrackKind: "take", exerciseTrackSpectrogram: {} as never, isComputingSpectrogram: true });
     useAnalysisStore.setState({ songOnsets: [1] });

@@ -24,8 +24,11 @@ export default function DualTuner() {
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const isPlaying    = usePlayerStore((s) => s.isPlaying);
   const currentTime  = usePlayerStore((s) => s.currentTime);
+  const exerciseMode = usePlayerStore((s) => s.exerciseMode);
   const songPitch    = useAnalysisStore((s) => s.songPitch);
   const takePitch    = useAnalysisStore((s) => s.takePitch);
+  // Free Exercise has no song; a loaded track's pitch (stored as takePitch) is the reference.
+  const refPitch     = exerciseMode ? takePitch : songPitch;
   const appendLivePitch = useAnalysisStore((s) => s.appendLivePitch);
   const clearLivePitch  = useAnalysisStore((s) => s.clearLivePitch);
 
@@ -34,11 +37,11 @@ export default function DualTuner() {
   const rafRef      = useRef<number>(0);
 
   const currentTimeRef   = useRef(currentTime);
-  const songPitchRef     = useRef(songPitch);
+  const refPitchRef      = useRef(refPitch);
   const appendLiveRef    = useRef(appendLivePitch);
   const clearLiveRef     = useRef(clearLivePitch);
   useEffect(() => { currentTimeRef.current = currentTime; },    [currentTime]);
-  useEffect(() => { songPitchRef.current = songPitch; },        [songPitch]);
+  useEffect(() => { refPitchRef.current = refPitch; },          [refPitch]);
   useEffect(() => { appendLiveRef.current = appendLivePitch; }, [appendLivePitch]);
   useEffect(() => { clearLiveRef.current = clearLivePitch; },   [clearLivePitch]);
 
@@ -70,7 +73,7 @@ export default function DualTuner() {
       const reading = det.getCurrentPitch();
       if (reading) {
         const t   = currentTimeRef.current;
-        const ref = pitchAtTime(songPitchRef.current, t);
+        const ref = pitchAtTime(refPitchRef.current, t);
         if (ref && ref.frequency > 0) {
           setLiveCents(centsDeviation(reading.frequency, ref.frequency));
         } else {
