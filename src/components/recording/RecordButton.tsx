@@ -41,6 +41,7 @@ function RecordButton() {
         className={`count-in-btn ${countInBars > 0 ? "count-in-btn--active" : ""}`}
         onClick={cycleCountIn}
         disabled={isRecording || isCountingIn || isSavingTake}
+        aria-label={countInBars > 0 ? `Count-in ${countInBars} bar${countInBars > 1 ? "s" : ""}` : "Count-in off"}
         title={
           countInBars > 0
             ? `Count-in: ${countInBars} bar${countInBars > 1 ? "s" : ""} of click before recording starts (click to change)`
@@ -54,6 +55,7 @@ function RecordButton() {
         onClick={handleClick}
         disabled={isSavingTake}
         title={isRecording ? "Stop recording" : isCountingIn ? "Cancel count-in" : "Record"}
+        aria-label={isRecording ? "Stop recording" : isCountingIn ? "Cancel count-in" : "Record"}
       >
         {isCountingIn ? (
           <span className="record-btn__countdown">{countInBeatsRemaining}</span>
@@ -61,8 +63,8 @@ function RecordButton() {
           <span className="record-btn__dot" />
         )}
       </button>
-      {isSavingTake && <span className="record-btn__saving-label">Analyzing…</span>}
-      {error && <span className="record-btn__error">{error}</span>}
+      {isSavingTake && <span className="record-btn__saving-label" role="status">Analyzing…</span>}
+      {error && <span className="record-btn__error" role="alert">{error}</span>}
     </div>
   );
 }

@@ -106,7 +106,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   return (
     <div className="practice-room">
       <header className="practice-room__header">
-        <button className="practice-room__back" onClick={onBack}>
+        <button className="practice-room__back" onClick={onBack} aria-label="Back to library">
           &larr; Back
         </button>
         <div className="practice-room__song-info">
@@ -133,6 +133,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
                 className="practice-room__rename"
                 onClick={startEditingTitle}
                 title="Rename song"
+                aria-label="Rename song"
               >
                 &#9998;
               </button>
@@ -176,6 +177,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
                 <button
                   className={`analysis-tab ${showAnalysis ? "analysis-tab--active" : ""}`}
                   onClick={() => setShowAnalysis((v) => !v)}
+                  aria-expanded={showAnalysis}
                 >
                   Analysis {activeTakeId || isInstrument ? "" : "(select take)"}
                 </button>

@@ -13,3 +13,4 @@
 | [Python Sidecar](python-sidecar.md) | JSON-lines IPC, stem separation, pitch detection, pitch shifting |
 | [Components](components.md) | Frontend component reference and Zustand store |
 | [Dev Setup](dev-setup.md) | Prerequisites, build commands, and local development notes |
+| [UI Polish](ui-polish.md) | Design tokens, `polish.css` layer, accessibility conventions |

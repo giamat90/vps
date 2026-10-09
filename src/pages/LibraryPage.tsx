@@ -102,7 +102,19 @@ function SongCard({ song, onSelect, onDelete, onRename }: SongCardProps) {
   const isInstrument = song.kind === "instrument";
 
   return (
-    <div className="song-card" onClick={onSelect}>
+    <div
+      className="song-card"
+      role="button"
+      tabIndex={0}
+      onClick={onSelect}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onSelect();
+        }
+      }}
+    >
       <div className="song-card__info">
         <div className="song-card__title">
           {isEditingTitle ? (
@@ -133,6 +145,7 @@ function SongCard({ song, onSelect, onDelete, onRename }: SongCardProps) {
             className="song-card__rename"
             onClick={startEditingTitle}
             title="Rename song"
+            aria-label="Rename song"
           >
             &#9998;
           </button>
@@ -213,6 +226,7 @@ function SongCard({ song, onSelect, onDelete, onRename }: SongCardProps) {
           className="song-card__delete"
           onClick={onDelete}
           title="Delete song"
+          aria-label="Delete song"
         >
           &times;
         </button>
@@ -239,6 +253,7 @@ function DraggableSongRow({ song, onSelect, onDelete, onRename }: DraggableSongR
         {...attributes}
         {...listeners}
         title="Drag to reorder or move to a folder"
+        aria-label="Drag to reorder or move to a folder"
       >
         ⠿
       </button>
@@ -307,6 +322,7 @@ function FolderSection({
           {...attributes}
           {...listeners}
           title="Drag to reorder folder"
+          aria-label="Drag to reorder folder"
         >
           ⠿
         </button>
@@ -344,6 +360,7 @@ function FolderSection({
           className="library-page__folder-rename"
           onClick={startEditingName}
           title="Rename folder"
+          aria-label="Rename folder"
         >
           &#9998;
         </button>
@@ -351,6 +368,7 @@ function FolderSection({
           className="library-page__folder-delete"
           onClick={() => onDeleteFolder(folder.id)}
           title="Delete folder (songs move back to the library)"
+          aria-label="Delete folder"
         >
           &times;
         </button>
@@ -519,6 +537,8 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
             className={`library-page__settings-btn${showSettings ? " library-page__settings-btn--active" : ""}`}
             onClick={() => setShowSettings((v) => !v)}
             title="Recording settings"
+            aria-label="Recording settings"
+            aria-expanded={showSettings}
           >
             ⚙
           </button>
@@ -526,6 +546,7 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
             className="library-page__about-btn"
             onClick={() => setShowAbout(true)}
             title="About"
+            aria-label="About"
           >
             ⓘ
           </button>
@@ -611,11 +632,11 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
         </div>
       )}
 
-      {isLoading && <p className="library-page__loading">Loading...</p>}
+      {isLoading && <p className="library-page__loading" role="status">Loading…</p>}
 
       {!isLoading && songs.length === 0 && sortedFolders.length === 0 && (
         <p className="library-page__empty">
-          No songs yet. Upload one to get started.
+          No songs yet. Drop an audio file or paste a YouTube link above to get started.
         </p>
       )}
 

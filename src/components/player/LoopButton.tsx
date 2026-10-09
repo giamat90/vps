@@ -15,6 +15,8 @@ function LoopButton() {
       className={`loop-btn${punchLoop ? " loop-btn--active" : ""}`}
       title={!hasRegion ? "Set a punch region first" : punchLoop ? "Disable loop" : "Loop region"}
       disabled={disabled}
+      aria-label="Loop punch region"
+      aria-pressed={punchLoop}
       onClick={() => setPunchLoop(!punchLoop)}
     >
       ⟳
