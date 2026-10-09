@@ -54,3 +54,6 @@ tauri-updater-key.pem
 # Personal dev-machine convenience scripts (not shared project tooling)
 /build.bat
 /tech_lead.bat
+
+# Lyrics real-data test fixtures (fetched lyrics are copyrighted - never committed)
+sidecar/tests/_local/
