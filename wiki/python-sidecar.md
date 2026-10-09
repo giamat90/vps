@@ -167,6 +167,26 @@ Renders a single mixdown WAV from a list of sources, honoring the frontend's liv
 
 Each source is loaded only over the `[startSec, endSec)` window; takes are aligned via `fileTime = projectTime - (startPosition + manualOffset) + audioOffset`. A take that begins *inside* the window is preceded by silence (before 2026-10-09 it slid to the window start whenever the window began before the take), and the first `audioOffset` seconds of its file (latency padding) are never played, matching live playback. Sources are resampled/upmixed to a common rate and channel count, summed with per-source gain, then peak-safe scaled before writing.
 
+### `align_lyrics`
+
+Aligns lyric text to a song's vocals stem (`lyrics.py`, see [Lyrics Sync](lyrics.md)): CTC forced alignment over a wav2vec2 acoustic model, returning every line and word with start/end seconds. Streams `progress` (model download on first use, then the vocals being processed in 20 s windows). The model weights are fetched into `modelsDir` once; a file that fails to load is deleted so the next call re-downloads.
+
+```json
+{"cmd": "align_lyrics", "vocalsPath": "/path/to/vocals.wav", "lyrics": "line one\nline two", "modelsDir": "/home/u/.vps/models"}
+```
+
+Result: `{aligner, lines: [{text, start, end, score, words: [{text, start, end, score}]}], meanScore, evidenceRatio, alignedWords, totalWords, warning}`. `warning` is non-null when the text probably does not fit the recording (see the calibration notes in Lyrics Sync). Errors are plain messages: vocals missing/undecodable/silent, no words or no pronounceable letters in the text, text too long for the audio. `VPS_LYRICS_ENGINE=uniform` swaps in a model-free test engine; never set it outside tests.
+
+### `find_lyrics`
+
+Looks a song up on LRCLIB (`https://lrclib.net/api/search`, identified by a `User-Agent`, 20 s timeout). Titles are cleaned of video decoration (`(Official Video)`, `[HQ]`, `lyrics`) first; candidates are ranked by duration closeness (within 15 s), then synced-over-plain, then title overlap. When a synced version exists its timestamps are stripped and the text returned, because synced versions write repeated choruses out in full, which plain text often does not.
+
+```json
+{"cmd": "find_lyrics", "title": "Band - Song (Official Video)", "artist": null, "duration": 213.4}
+```
+
+Result: `{text, synced, title, artist, duration, source: "lrclib"}`.
+
 ### `ping` / `quit`
 
 ```json

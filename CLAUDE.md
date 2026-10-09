@@ -128,6 +128,8 @@ VPS/
 │   │   │   └── ShortTermSpectrumComparisonPanel.tsx  song-vs-take spectral envelope comparison
 │   │   ├── coaching/
 │   │   │   └── CoachPanel.tsx      AI coaching tips
+│   │   ├── lyrics/
+│   │   │   └── LyricsPanel.tsx     synced lyrics: paste/find online/sync, karaoke view, click-to-seek
 │   │   ├── settings/
 │   │   │   ├── PitchAlgorithmControl.tsx  SRH/pYIN/HPS/CREPE selector (library-page settings panel)
 │   │   │   └── YouTubeCookiesControl.tsx  optional cookies.txt picker for import_youtube, avoids the flaky live-browser cookie fallback
@@ -138,6 +140,7 @@ VPS/
 │   │   ├── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
 │   │   ├── zoomPan.ts         pure zoom-to-cursor / pan math for timeline ctrl+wheel/shift+wheel (byte-identical to SPS)
 │   │   ├── metronomeSync.ts   pure phase-lock math for the metronome downbeat anchor (byte-identical to SPS)
+│   │   ├── lyrics.ts          pure lyric timing logic (active line/word, seek time)
 │   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
 │   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
 │   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic)
@@ -147,6 +150,7 @@ VPS/
 │   │   ├── library.ts         song list + import flow (Zustand)
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
+│   │   ├── lyrics.ts          synced lyrics state: load/find/sync/remove (Zustand)
 │   │   ├── updater.ts         auto-update state (Zustand)
 │   │   └── settings.ts        app settings, e.g. pitchAlgorithm (Zustand, localStorage-persisted)
 │   ├── pages/
@@ -157,6 +161,7 @@ VPS/
 ├── src-tauri/src/
 │   ├── commands.rs    Tauri command handlers
 │   ├── library.rs     Song struct + library.json CRUD
+│   ├── lyrics.rs      lyrics.json persistence + sidecar round trip (commands are thin wrappers in commands.rs)
 │   ├── storage.rs     Path helpers (~/.vps/)
 │   ├── sidecar.rs     Python sidecar process manager
 │   └── lib.rs         Tauri builder + invoke_handler registration
@@ -164,6 +169,7 @@ VPS/
 ├── sidecar/
 │   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, ping, quit)
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
+│   ├── lyrics.py      lyrics sync: text parsing, CTC forced alignment over wav2vec2, LRCLIB lookup (see wiki/lyrics.md)
 │   ├── analysis.py    Take analysis (SRH + onsets + dynamics + vibrato + spectrum), RMS loudness normalization, mixdown rendering
 │   ├── yt_importer.py yt-dlp + processor pipeline
 │   ├── version_check.py  proactive + reactive yt-dlp staleness checks (see wiki/known-issues.md upstream in MPS)
@@ -261,9 +267,12 @@ interface PitchPoint {       // frontend-internal representation
 │       ├── instrumental.wav      Demucs instrumental
 │       ├── analysis.json         pitchData + onsets + dynamics
 │       ├── takes.json            Take[] metadata
+│       ├── lyrics.json           synced lyrics (see wiki/lyrics.md)
 │       ├── pitched/{n}/          pitch-shifted WAV cache (n = semitone steps)
 │       └── takes/
 │           └── {takeId}.wav      RMS-normalized take (raw .webm kept only if normalization failed)
+├── models/
+│   └── wav2vec2_…960h.pth        lyrics-sync speech model, downloaded on first use
 └── exercises/
     ├── exercises.json            ExerciseTake[] metadata
     └── takes/{takeId}.webm       Free Exercise recordings
@@ -288,6 +297,9 @@ interface PitchPoint {       // frontend-internal representation
 | `delete_take(songId, takeId)` | `void` | |
 | `rename_take(songId, takeId, name)` | `Take` | empty/whitespace name clears back to default |
 | `set_take_manual_offset(songId, takeId, offset)` | `Take` | `0` resets to the auto-detected position |
+| `load_lyrics(songId)` / `delete_lyrics(songId)` | `Lyrics` or `null` / `void` | `lyrics.json` of the song |
+| `sync_lyrics(songId, text, source?)` | `Lyrics` | aligns the text to `vocals.wav` via sidecar `align_lyrics`, persists, emits `lyrics-progress`; see wiki/lyrics.md |
+| `find_lyrics(songId)` | `FoundLyrics` | LRCLIB lookup via sidecar, nothing saved |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
 | `import_exercise_file(filePath, duration, algorithm?)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
@@ -428,6 +440,8 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 | `import_yt` | yt-dlp download → `process` pipeline; bot-detection browser cookie fallback | 900 s |
 | `convert_take` | decode a take (webm/opus) via `librosa.load` + write WAV via `soundfile`; used for take export | 120 s |
 | `mix_export` | render a single mixdown WAV from a list of `{path, gain, isTake, startPosition?, audioOffset?}` sources, trimmed to a `[startSec, endSec)` window; sums per-source gain, resamples/upmixes as needed, peak-safe scales | 120 s |
+| `align_lyrics` | CTC forced alignment of lyric text to a vocals stem (first use downloads ~360 MB of model weights) | 600 s per message |
+| `find_lyrics` | LRCLIB lookup by title/artist/duration | 60 s |
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices

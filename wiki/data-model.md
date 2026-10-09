@@ -138,6 +138,27 @@ interface ProcessingStatus {
 }
 ```
 
+### Lyrics
+
+Stored as `lyrics.json` in the song directory. See [Lyrics Sync](lyrics.md).
+
+```ts
+interface LyricWord { text: string; start: number; end: number; score: number }   // seconds; score 0 = could not be placed
+interface LyricLine { text: string; start: number; end: number; score: number; words: LyricWord[] }
+interface Lyrics {
+  version: number;
+  source: "paste" | "lrclib";
+  text: string;               // exactly as supplied, kept for edit + re-sync
+  aligner: string;
+  alignedAt: string;          // ISO timestamp
+  meanScore: number;
+  warning?: string | null;    // text probably does not fit the recording
+  lines: LyricLine[];
+}
+interface FoundLyrics { text: string; synced: boolean; title: string; artist: string; source: string }
+interface LyricsProgress { songId: string; progress: number; stage: string }   // "lyrics-progress" event
+```
+
 ### CoachingTip
 
 ```ts
@@ -163,9 +184,12 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 │       ├── instrumental.wav   separated instrumental (Demucs)
 │       ├── analysis.json      pitchData + onsets + dynamics
 │       ├── takes.json         Take[] metadata
+│       ├── lyrics.json        synced lyrics (see lyrics.md); written atomically
 │       ├── pitched/{n}/       pitch-shifted WAV cache (n = semitone steps)
 │       └── takes/
 │           └── {takeId}.wav   RMS-normalized take audio (raw {takeId}.webm kept only when normalization failed)
+├── models/
+│   └── wav2vec2_fairseq_base_ls960_asr_ls960.pth   speech model for lyrics sync, downloaded on first use
 └── exercises/
     ├── exercises.json         ExerciseTake[] metadata
     └── takes/
@@ -194,6 +218,10 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `set_take_manual_offset` | `songId, takeId, offset: f64` | `Take` (`0` resets to the auto-detected position) |
 | `load_analysis` | `songId: string` | `{ pitchData, onsets, dynamics, stSpectrum… }` (backfills the song spectrum via sidecar) |
 | `pitch_shift_song` | `songDir: string, nSteps: number` | `{ vocalsPath, instrumentalPath }` |
+| `load_lyrics` | `songId: string` | `Lyrics` or `null` |
+| `sync_lyrics` | `songId, text: string, source?: "paste"/"lrclib"` | `Lyrics` (aligns via sidecar `align_lyrics`, persists `lyrics.json`, emits `"lyrics-progress"`; errors for instrument songs / no vocals / empty text) |
+| `find_lyrics` | `songId: string` | `FoundLyrics` (sidecar `find_lyrics`; nothing is saved) |
+| `delete_lyrics` | `songId: string` | `void` (no error when there are none) |
 | `save_exercise_take` | `audioData: number[], duration: f64, algorithm?: string` | `ExerciseTake` |
 | `import_exercise_file` | `filePath: string, duration: f64, algorithm?: string` | `ExerciseTake` (copies an arbitrary external audio file into `~/.vps/exercises/takes/`, analyzes it identically to a recorded take — shares its analyze+persist logic with `save_exercise_take` via a private `analyze_and_persist_exercise_take` helper) |
 | `list_exercise_takes` | — | `ExerciseTake[]` |
@@ -210,3 +238,4 @@ All commands are async and return a `Promise`. Errors are thrown as strings.
 | Event | Direction | Payload |
 |-------|-----------|---------|
 | `"processing-progress"` | Rust → frontend | `ProcessingStatus` |
+| `"lyrics-progress"` | Rust → frontend | `LyricsProgress` |

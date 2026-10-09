@@ -14,4 +14,5 @@
 | [Components](components.md) | Frontend component reference and Zustand store |
 | [Dev Setup](dev-setup.md) | Prerequisites, build commands, and local development notes |
 | [Testing](testing.md) | The three test suites (vitest, cargo, pytest), CI, fixtures, cross-language contract tests |
+| [Lyrics Sync](lyrics.md) | Forced alignment of lyrics to the vocals stem: design, wire protocol, accuracy measurements, tests |
 | [UI Polish](ui-polish.md) | Design tokens, `polish.css` layer, accessibility conventions |
