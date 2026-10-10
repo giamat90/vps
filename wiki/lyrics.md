@@ -2,7 +2,7 @@
 
 Place every line and word of a song's lyrics on the separated vocals stem, then show them karaoke-style in the Practice Room. Click a line to jump to it.
 
-Shipped on branch `feature/lyrics-sync`. VPS only; the sidecar module is project-agnostic and is the intended base for an SPS port (see MPS `wiki/feature-parity.md`).
+Shipped in `v0.1.62` (PR #3). Ported to SPS (`v0.0.40`); the engine now lives in the shared `mps-core` package, see [Shared code](shared-core.md).
 
 ## User flow
 
@@ -23,7 +23,7 @@ vocals.wav ─▶ 16 kHz mono ─▶ wav2vec2 ─▶ log-probs per 20 ms frame �
 
 | Step | Where | Notes |
 |---|---|---|
-| Parse | `sidecar/lyrics.py` `parse_lyrics` | one entry per non-empty line; `[Chorus]` markers and LRC `[00:12.3]` tags dropped; `(backing vocals)` kept because they are sung |
+| Parse | `mps_core.lyrics.parse_lyrics` (shared package) | one entry per non-empty line; `[Chorus]` markers and LRC `[00:12.3]` tags dropped; `(backing vocals)` kept because they are sung |
 | Normalise | `normalize_word` | lowercase, fold diacritics and `ß æ œ ø`, keep `a-z'` only; words with no letters (numbers, symbols) cannot be aligned and are parked between their neighbours |
 | Acoustic model | `Wav2Vec2Aligner` | torchaudio `WAV2VEC2_ASR_BASE_960H` (English, 360 MB), fetched on first use into `~/.vps/models/` with progress and an atomic `.part` rename. Inference is windowed (20 s + 2 s context each side) because attention is quadratic in length |
 | Alignment | `ctc_forced_align` | numpy Viterbi over the CTC lattice, not torchaudio's, so it runs and is tested in CI without torch; a test asserts it produces the same path as `torchaudio.functional.forced_align` |
@@ -47,8 +47,8 @@ Rust (`src-tauri/src/lyrics.rs`, thin wrappers in `commands.rs`): `load_lyrics`,
 
 ### Frontend
 
-- `src/lib/lyrics.ts`: pure timing logic. `activeLineIndex` (binary search; a line lights one lead-in early so it is exactly where a click seeks to, and stays lit up to 4 s after it ends), `activeWordIndex`, `lineSeekTime`.
-- `src/stores/lyrics.ts`: load/find/sync/remove, progress subscription, and stale-result protection (a result for a song that is no longer open is dropped).
+- `@giamat90/mps-core/lyrics` (`timing.ts`): pure timing logic. `activeLineIndex` (binary search; a line lights one lead-in early so it is exactly where a click seeks to, and stays lit up to 4 s after it ends), `activeWordIndex`, `lineSeekTime`.
+- `@giamat90/mps-core/lyrics` (`store.ts`): load/find/sync/remove, progress subscription, and stale-result protection (a result for a song that is no longer open is dropped).
 - `src/components/lyrics/LyricsPanel.tsx`: tab + editor + karaoke view. Store selectors return the *index*, not the time, so the list re-renders only when the line or word changes rather than 30 times a second.
 
 ## Accuracy: what was measured
@@ -91,25 +91,21 @@ This is advisory text under the lyrics; the lyrics are still saved and shown.
 
 **The most common real failure is collapsed choruses**: lyric sites often print a chorus once. Forced alignment cannot recover repeats that are not in the text, so lines drift. Mitigations: *Find online* prefers LRCLIB's synced version, which writes every repeat out; the editor hint says to write repeats in full; the evidence-ratio warning fires for gross cases.
 
-Constants and their calibration comment live at the top of `sidecar/lyrics.py`.
+Constants and their calibration comment live at the top of `mps_core/lyrics.py` in the shared package.
 
 ## Tests
 
 | Layer | File | Covers |
 |---|---|---|
-| sidecar | `tests/test_lyrics_text.py` | parsing, normalisation, tokenising |
-| sidecar | `tests/test_lyrics_ctc.py` | Viterbi correctness, repeats need a blank, too-short audio, equals torchaudio's path |
-| sidecar | `tests/test_lyrics_align.py` | timeline, interpolation of unsingable words, audio handling, warnings, errors (scripted fake acoustic model, `tests/lyrics_helpers.py`) |
-| sidecar | `tests/test_lyrics_model.py` | atomic download, windowed inference keeps absolute time across chunk boundaries, damaged model recovery |
-| sidecar | `tests/test_lyrics_lrclib.py` | title cleaning, candidate ranking, offline lookup |
+| mps-core (`python/tests/`) | `test_lyrics_text.py`, `test_lyrics_ctc.py`, `test_lyrics_align.py`, `test_lyrics_model.py`, `test_lyrics_lrclib.py`, `test_lyrics_identity.py` | parsing, Viterbi (equals torchaudio's path), timeline and warnings via a scripted acoustic model, atomic download and windowed inference, LRCLIB lookup, app identity (moved out of this repository with the code) |
 | sidecar | `tests/test_lyrics_protocol.py` | the commands over the real stdio protocol |
 | sidecar | `tests/test_lyrics_real.py` | **local only**: real stems from `~/.vps` vs LRCLIB + vocal energy; skips itself without the library, the cached weights or network. Fetched lyrics are cached under `tests/_local/` (git-ignored) because they are copyrighted and must never be committed |
 | rust | `src/lyrics.rs`, `integration_tests.rs` | wire format, atomic persistence, validation without spawning the sidecar, and a full round trip through the real sidecar |
-| frontend | `lib/lyrics.test.ts`, `stores/lyrics.test.ts`, `lib/tauri.test.ts` | timing logic, store races, IPC wrappers (the contract test also covers the four new commands) |
+| frontend | in mps-core: `lyrics/timing.test.ts`, `store.test.ts`, `ipc.test.ts`; here: `tests/contract/ipcContract.test.ts` | timing logic, store races, IPC wrappers; the contract test reads the package's wrappers against this app's Rust handlers |
 
 ### Test-only engine
 
-`VPS_LYRICS_ENGINE=uniform` selects `UniformAligner`, which spreads the letters evenly over the non-silent part of the file. It exists only so the Rust ↔ Python wire path can run in CI without the model. It is never a fallback.
+`VPS_LYRICS_ENGINE=uniform` (the `VPS` prefix of this app's `AppIdentity` in `sidecar/main.py`) selects `UniformAligner`, which spreads the letters evenly over the non-silent part of the file. It exists only so the Rust ↔ Python wire path can run in CI without the model. It is never a fallback.
 
 ### Running the real-data tests
 

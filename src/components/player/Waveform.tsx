@@ -3,7 +3,7 @@ import { usePlayerStore, getEngine, type TrackKey } from "../../stores/player";
 import { useAnalysisStore } from "../../stores/analysis";
 import TimeRuler from "./TimeRuler";
 import type { Song, Take } from "../../lib/types";
-import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "../../lib/zoomPan";
+import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "@giamat90/mps-core/zoomPan";
 
 // Live-preview analysis updates during a take drag are throttled to the same
 // ~30fps notification rate the audio engine's rAF tick already uses, since

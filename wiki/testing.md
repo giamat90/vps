@@ -23,8 +23,8 @@ cd sidecar
 ## Frontend conventions
 
 - `vitest.config.ts`: node environment, `restoreMocks`/`clearMocks` on, `unstubGlobals` on. `src/test/setup.ts` installs an in-memory `localStorage`; everything else a test needs (`navigator.mediaDevices`, `AudioContext`, `MediaRecorder`, `OffscreenCanvas`, `requestAnimationFrame`, timers) it stubs itself with `vi.stubGlobal`.
-- Stores are tested against mocked boundaries: `../lib/tauri` (or `@tauri-apps/api/core` when the wrappers themselves are under test), `../audio/engine`, `../audio/recorder`, `../audio/metronome`. `player.test.ts` re-imports the store with `vi.resetModules()` where module-level state matters (device watcher, persisted calibrations).
-- `tests/contract/ipcContract.test.ts` parses `src/lib/tauri.ts`, `src-tauri/src/commands.rs` and `lib.rs` and fails if a wrapper calls an unregistered command, sends an argument Rust does not accept, or omits a required one. It lives outside `src/` because it needs Node's `fs`; `tsc` only checks `src/`.
+- Stores are tested against mocked boundaries: `../lib/tauri` (or `@tauri-apps/api/core` when the wrappers themselves are under test), `../audio/engine`, and the shared `@giamat90/mps-core/recorder` / `@giamat90/mps-core/metronome` (mocked by their package specifier). `player.test.ts` re-imports the store with `vi.resetModules()` where module-level state matters (device watcher, persisted calibrations).
+- `tests/contract/ipcContract.test.ts` parses `src/lib/tauri.ts` (and the lyrics wrappers shipped in `@giamat90/mps-core`), `src-tauri/src/commands.rs` and `lib.rs` and fails if a wrapper calls an unregistered command, sends an argument Rust does not accept, or omits a required one. It lives outside `src/` because it needs Node's `fs`; `tsc` only checks `src/`.
 - `src/lib/__fixtures__/synthVowel.ts` — seeded source-filter voice with known formants (shared by the formant tests).
 
 ## Rust conventions
@@ -54,4 +54,5 @@ Details in [Lyrics Sync](lyrics.md#tests). In short: the alignment algorithm is 
 
 - New Tauri command → add the wrapper to `src/lib/tauri.ts` (the contract test then forces the Rust registration to match) and a case in `src/lib/tauri.test.ts`.
 - Bumped the short-term-spectrum resolution → change `N_BINS` (Python) and `ST_SPECTRUM_MIN_BINS` (Rust) together; a test fails if they diverge.
-- Bumped `MIN_YT_DLP_VERSION` → update `requirements.txt`, `requirements-test.txt` and the SPS copy (see MPS conventions #10).
+- Bumped the yt-dlp floor → change `MIN_YT_DLP_VERSION` in `mps-core` (`version_check.py`), then both requirements files here and in SPS (see MPS conventions #10); `tests/test_yt_dlp_floor.py` fails if they disagree.
+- Shared code (metronome, recorder, zoom/pan, updater store, lyrics engine and slice, version check) is tested in `mps-core`; see [Shared code](shared-core.md). Its tests no longer run here.

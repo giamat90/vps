@@ -52,7 +52,7 @@ VPS/
 │   │   └── coaching/             # CoachPanel
 │   ├── stores/                   # Zustand: library, player, analysis
 │   ├── audio/                    # AudioEngine, VocalRecorder, PitchDetector, analysisUtils
-│   ├── lib/                      # tauri.ts, types.ts, constants.ts
+│   ├── lib/                      # tauri.ts, types.ts, constants.ts (shared modules: @giamat90/mps-core)
 │   └── styles/                   # global.css
 ├── src-tauri/                    # Tauri shell & Rust backend
 │   └── src/

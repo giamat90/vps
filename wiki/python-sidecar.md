@@ -169,7 +169,7 @@ Each source is loaded only over the `[startSec, endSec)` window; takes are align
 
 ### `align_lyrics`
 
-Aligns lyric text to a song's vocals stem (`lyrics.py`, see [Lyrics Sync](lyrics.md)): CTC forced alignment over a wav2vec2 acoustic model, returning every line and word with start/end seconds. Streams `progress` (model download on first use, then the vocals being processed in 20 s windows). The model weights are fetched into `modelsDir` once; a file that fails to load is deleted so the next call re-downloads.
+Aligns lyric text to a song's vocals stem (`mps_core.lyrics` from the shared package, see [Lyrics Sync](lyrics.md)): CTC forced alignment over a wav2vec2 acoustic model, returning every line and word with start/end seconds. Streams `progress` (model download on first use, then the vocals being processed in 20 s windows). The model weights are fetched into `modelsDir` once; a file that fails to load is deleted so the next call re-downloads.
 
 ```json
 {"cmd": "align_lyrics", "vocalsPath": "/path/to/vocals.wav", "lyrics": "line one\nline two", "modelsDir": "/home/u/.vps/models"}

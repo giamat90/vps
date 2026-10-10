@@ -1,6 +1,6 @@
 import WaveSurfer from "wavesurfer.js";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { clamp, FOLLOW_MARGIN_RATIO, FOLLOW_RESUME_SUPPRESS_MS } from "../lib/zoomPan";
+import { clamp, FOLLOW_MARGIN_RATIO, FOLLOW_RESUME_SUPPRESS_MS } from "@giamat90/mps-core/zoomPan";
 
 const DRIFT_TOLERANCE_S = 0.05;
 const DRIFT_CHECK_INTERVAL_MS = 250;

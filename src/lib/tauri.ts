@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
-  ProcessingStatus, Song, Take, ExerciseTake, PitchAlgorithm, Folder, Lyrics, FoundLyrics, LyricsProgress,
+  ProcessingStatus, Song, Take, ExerciseTake, PitchAlgorithm, Folder,
 } from "./types";
 
 /** Process a song file through the Python sidecar */
@@ -203,32 +203,6 @@ export async function deleteExerciseTakeApi(takeId: string): Promise<void> {
 /** Import an arbitrary external audio file into Free Exercise as an ExerciseTake */
 export async function importExerciseFile(filePath: string, duration: number, algorithm?: PitchAlgorithm): Promise<ExerciseTake> {
   return invoke<ExerciseTake>("import_exercise_file", { filePath, duration, algorithm });
-}
-
-/** Saved lyrics for a song, or null when it has none yet */
-export async function loadLyrics(songId: string): Promise<Lyrics | null> {
-  return invoke<Lyrics | null>("load_lyrics", { songId });
-}
-
-/** Align lyric text to the song's vocals stem (first run downloads the model) */
-export async function syncLyrics(songId: string, text: string, source?: "paste" | "lrclib"): Promise<Lyrics> {
-  return invoke<Lyrics>("sync_lyrics", { songId, text, source });
-}
-
-/** Look the song's lyrics up online; returns text for review, nothing is saved */
-export async function findLyrics(songId: string): Promise<FoundLyrics> {
-  return invoke<FoundLyrics>("find_lyrics", { songId });
-}
-
-export async function deleteLyrics(songId: string): Promise<void> {
-  return invoke("delete_lyrics", { songId });
-}
-
-/** Listen for lyrics-sync progress events */
-export function onLyricsProgress(callback: (progress: LyricsProgress) => void): Promise<UnlistenFn> {
-  return listen<LyricsProgress>("lyrics-progress", (event) => {
-    callback(event.payload);
-  });
 }
 
 /** Listen for processing progress events */

@@ -31,8 +31,16 @@ if getattr(sys, "frozen", False):
 
 from processor import process, compute_st_spectrum_from_file
 from analysis import analyze_recording, convert_take_to_wav, mix_export
-from version_check import check_yt_dlp_freshness
-import lyrics
+from mps_core import lyrics
+from mps_core.app import AppIdentity
+from mps_core.version_check import check_yt_dlp_freshness
+
+APP = AppIdentity(
+    name="VPS-VocalPracticeStudio",
+    url="https://github.com/giamat90/vps",
+    data_dir="~/.vps",
+    env_prefix="VPS",
+)
 
 
 def send(msg: dict):
@@ -48,7 +56,7 @@ def make_progress_callback(cmd_name: str):
 
 def main():
     try:
-        advisory = check_yt_dlp_freshness()
+        advisory = check_yt_dlp_freshness(APP)
     except Exception as e:
         print(f"yt-dlp freshness check failed: {e}", file=sys.stderr, flush=True)
         advisory = None
@@ -136,6 +144,7 @@ def main():
                     cmd.get("lyrics", ""),
                     on_progress=make_progress_callback("align_lyrics"),
                     models_dir=cmd.get("modelsDir"),
+                    app=APP,
                 )
                 send({"type": "result", "cmd": "align_lyrics", "data": result})
 
@@ -144,6 +153,7 @@ def main():
                     cmd["title"],
                     artist=cmd.get("artist"),
                     duration=cmd.get("duration"),
+                    app=APP,
                 )
                 send({"type": "result", "cmd": "find_lyrics", "data": result})
 

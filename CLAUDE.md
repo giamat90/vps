@@ -87,8 +87,6 @@ VPS/
 ├── src/
 │   ├── audio/
 │   │   ├── engine.ts          AudioEngine class (WaveSurfer management)
-│   │   ├── recorder.ts        VocalRecorder (MediaRecorder wrapper)
-│   │   ├── metronome.ts       Metronome class (Web Audio lookahead-scheduled click track)
 │   │   ├── analysisUtils.ts   pitchAtTime/frequency↔MIDI/note-name helpers shared by PianoRoll/DualTuner/timing
 │   │   ├── pitchDetector.ts   real-time autocorrelation pitch reader (frequency/note/cents) for DualTuner/live monitoring
 │   │   ├── outputDevice.ts    pickHardwareOutput — picks the real hardware output for the selected mic (skips Default/Communications/Steam), shared by monitoring + both recording flows
@@ -137,10 +135,7 @@ VPS/
 │   ├── lib/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
 │   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
-│   │   ├── constants.ts       NOTE_NAMES, MIDI helpers, piano window constants (C0–C7)
-│   │   ├── zoomPan.ts         pure zoom-to-cursor / pan math for timeline ctrl+wheel/shift+wheel (byte-identical to SPS)
-│   │   ├── metronomeSync.ts   pure phase-lock math for the metronome downbeat anchor (byte-identical to SPS)
-│   │   ├── lyrics.ts          pure lyric timing logic (active line/word, seek time)
+│   │   ├── constants.ts       piano window constants and follow logic (C0–C7); NOTE_NAMES/MIDI helpers are in @giamat90/mps-core/music
 │   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
 │   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
 │   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic)
@@ -150,8 +145,6 @@ VPS/
 │   │   ├── library.ts         song list + import flow (Zustand)
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
-│   │   ├── lyrics.ts          synced lyrics state: load/find/sync/remove (Zustand)
-│   │   ├── updater.ts         auto-update state (Zustand)
 │   │   └── settings.ts        app settings, e.g. pitchAlgorithm (Zustand, localStorage-persisted)
 │   ├── pages/
 │   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)
@@ -169,10 +162,8 @@ VPS/
 ├── sidecar/
 │   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, ping, quit)
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
-│   ├── lyrics.py      lyrics sync: text parsing, CTC forced alignment over wav2vec2, LRCLIB lookup (see wiki/lyrics.md)
 │   ├── analysis.py    Take analysis (SRH + onsets + dynamics + vibrato + spectrum), RMS loudness normalization, mixdown rendering
 │   ├── yt_importer.py yt-dlp + processor pipeline
-│   ├── version_check.py  proactive + reactive yt-dlp staleness checks (see wiki/known-issues.md upstream in MPS)
 │   ├── fetch_models.py   vendors htdemucs weights into the frozen build at build time (not htdemucs_ft — that's an on-demand download, see the high_quality note in processor.py)
 │   ├── smoke_test.py     standalone sanity script, not part of the main.py dispatch loop
 │   ├── tests/         pytest suite (see wiki/testing.md); requirements-test.txt is its light dependency set
@@ -182,6 +173,10 @@ VPS/
 ```
 
 ---
+
+## Shared code (`@giamat90/mps-core`)
+
+Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, note/frequency maths (`music`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
 
 ## Data model
 
@@ -335,7 +330,7 @@ Three WaveSurfer instances in lockstep:
 
 ---
 
-## Recording flow (`src/stores/player.ts`, `src/audio/recorder.ts`)
+## Recording flow (`src/stores/player.ts`, `@giamat90/mps-core/recorder`)
 
 ### startRecording sequence
 ```
