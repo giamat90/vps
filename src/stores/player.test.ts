@@ -30,7 +30,7 @@ vi.mock("../audio/engine", () => ({
     finishCb: (() => void) | null = null;
     scrollCb: ((px: number, t: number) => void) | null = null;
     exerciseTrack = null;
-    load = vi.fn(async () => {});
+    load = vi.fn(async () => true);
     play = vi.fn(() => { h.state.playing = true; });
     pause = vi.fn(() => { h.state.playing = false; });
     stop = vi.fn(() => { h.state.playing = false; });
@@ -245,6 +245,14 @@ describe("loadSong", () => {
     });
     expect(s.song?.id).toBe("s1");
     expect(eng().zoomAll).toHaveBeenCalledWith(2, 0);
+  });
+
+  it("leaves everything alone when the engine says a newer load replaced this one", async () => {
+    (mod.getEngine().load as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce(false);
+    await loadedSong();
+    expect(eng().zoomAll).not.toHaveBeenCalled();
+    expect(eng().timeCb).toBeNull();
+    expect(store().getState()).toMatchObject({ song: null, duration: 0 });
   });
 
   it("mutes the duplicate instrumental track for an instrument song only", async () => {
