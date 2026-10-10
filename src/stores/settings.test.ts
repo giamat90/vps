@@ -14,29 +14,35 @@ beforeEach(() => {
 describe("loading persisted settings", () => {
   it("falls back to defaults when nothing is stored", async () => {
     const s = (await freshStore()).getState();
-    expect(s.pitchAlgorithm).toBe("srh");
     expect(s.youtubeCookiesPath).toBeNull();
     expect(s.collapsedFolders).toEqual({});
   });
 
   it("restores valid stored values", async () => {
-    localStorage.setItem(KEY, JSON.stringify({
-      pitchAlgorithm: "crepe", youtubeCookiesPath: "/c.txt", collapsedFolders: { f1: true },
-    }));
+    localStorage.setItem(KEY, JSON.stringify({ youtubeCookiesPath: "/c.txt", collapsedFolders: { f1: true } }));
     const s = (await freshStore()).getState();
-    expect(s.pitchAlgorithm).toBe("crepe");
     expect(s.youtubeCookiesPath).toBe("/c.txt");
     expect(s.collapsedFolders).toEqual({ f1: true });
   });
 
-  it.each(["srh", "pyin", "hps", "crepe", "praat"])("accepts algorithm %s", async (alg) => {
-    localStorage.setItem(KEY, JSON.stringify({ pitchAlgorithm: alg }));
-    expect((await freshStore()).getState().pitchAlgorithm).toBe(alg);
-  });
+  // Until v0.1.63 the user picked the algorithm in Settings and it was persisted.
+  // Nobody may stay pinned to that old choice: the app decides it now.
+  it.each(["crepe", "praat", "pyin", "hps", "srh", "garbage", 42])(
+    "ignores a pitchAlgorithm of %j stored by an older version",
+    async (legacy) => {
+      localStorage.setItem(KEY, JSON.stringify({ pitchAlgorithm: legacy, youtubeCookiesPath: "/c.txt" }));
+      const state = (await freshStore()).getState();
+      expect(state).not.toHaveProperty("pitchAlgorithm");
+      expect(state.youtubeCookiesPath).toBe("/c.txt");
+    },
+  );
 
-  it.each([["piano"], ["SRH"], [42], [null], [["srh"]]])("rejects unknown algorithm %j and uses the default", async (alg) => {
-    localStorage.setItem(KEY, JSON.stringify({ pitchAlgorithm: alg }));
-    expect((await freshStore()).getState().pitchAlgorithm).toBe("srh");
+  it("drops the stale pitchAlgorithm from storage the next time anything is saved", async () => {
+    localStorage.setItem(KEY, JSON.stringify({ pitchAlgorithm: "crepe", collapsedFolders: {} }));
+    (await freshStore()).getState().setFolderCollapsed("a", true);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toEqual({
+      youtubeCookiesPath: null, collapsedFolders: { a: true },
+    });
   });
 
   it("ignores wrongly-typed cookies path and collapsedFolders", async () => {
@@ -55,7 +61,7 @@ describe("loading persisted settings", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     localStorage.setItem(KEY, "{not json");
     const s = (await freshStore()).getState();
-    expect(s.pitchAlgorithm).toBe("srh");
+    expect(s.collapsedFolders).toEqual({});
     expect(warn).toHaveBeenCalled();
   });
 
@@ -63,7 +69,7 @@ describe("loading persisted settings", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(localStorage, "getItem").mockImplementation(() => { throw new Error("blocked"); });
     const s = (await freshStore()).getState();
-    expect(s.pitchAlgorithm).toBe("srh");
+    expect(s.youtubeCookiesPath).toBeNull();
     expect(warn).toHaveBeenCalled();
   });
 });
@@ -71,11 +77,10 @@ describe("loading persisted settings", () => {
 describe("persisting changes", () => {
   const stored = () => JSON.parse(localStorage.getItem(KEY) ?? "{}");
 
-  it("writes the algorithm and keeps the other fields", async () => {
+  it("persists only the settings the user can change", async () => {
     const store = await freshStore();
-    store.getState().setPitchAlgorithm("hps");
-    expect(store.getState().pitchAlgorithm).toBe("hps");
-    expect(stored()).toEqual({ pitchAlgorithm: "hps", youtubeCookiesPath: null, collapsedFolders: {} });
+    store.getState().setYoutubeCookiesPath("/c.txt");
+    expect(stored()).toEqual({ youtubeCookiesPath: "/c.txt", collapsedFolders: {} });
   });
 
   it("writes and clears the cookies path", async () => {
@@ -97,10 +102,10 @@ describe("persisting changes", () => {
 
   it("round-trips through a fresh module load", async () => {
     const first = await freshStore();
-    first.getState().setPitchAlgorithm("praat");
+    first.getState().setYoutubeCookiesPath("/c.txt");
     first.getState().setFolderCollapsed("x", true);
     const second = (await freshStore()).getState();
-    expect(second.pitchAlgorithm).toBe("praat");
+    expect(second.youtubeCookiesPath).toBe("/c.txt");
     expect(second.collapsedFolders).toEqual({ x: true });
   });
 
@@ -108,8 +113,8 @@ describe("persisting changes", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     const store = await freshStore();
     vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new Error("quota"); });
-    store.getState().setPitchAlgorithm("pyin");
-    expect(store.getState().pitchAlgorithm).toBe("pyin");
+    store.getState().setYoutubeCookiesPath("/c.txt");
+    expect(store.getState().youtubeCookiesPath).toBe("/c.txt");
     expect(warn).toHaveBeenCalled();
   });
 });

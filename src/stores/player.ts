@@ -4,7 +4,6 @@ import { VocalRecorder } from "@giamat90/mps-core/recorder";
 import type { Song, Take } from "../lib/types";
 import { saveTake, listTakes, deleteTakeApi, renameTakeApi, setTakeManualOffsetApi, pitchShiftSong, saveExerciseTake, setMetronomeOffsetApi } from "../lib/tauri";
 import type { ExerciseTake } from "../lib/types";
-import { useSettingsStore } from "./settings";
 import { useAnalysisStore } from "./analysis";
 import { metronome } from "@giamat90/mps-core/metronome";
 import { countInDurationSeconds } from "@giamat90/mps-core/metronomeSync";
@@ -951,13 +950,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       const rawCompensated = recordingStartPos - _recordingLatencyS;
       const compensatedStartPos = Math.max(0, rawCompensated);
       const audioOffset = rawCompensated < 0 ? -rawCompensated : 0;
-      const take = await saveTake(
-        song.id,
-        audioData,
-        compensatedStartPos,
-        audioOffset,
-        useSettingsStore.getState().pitchAlgorithm,
-      );
+      const take = await saveTake(song.id, audioData, compensatedStartPos, audioOffset);
 
       // Instrumentation only: correlate future misalignment reports with take length
       // before deciding whether within-take clock drift is worth correcting.
@@ -1113,7 +1106,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
       const arrayBuffer = await blob.arrayBuffer();
       const audioData = Array.from(new Uint8Array(arrayBuffer));
-      const take = await saveExerciseTake(audioData, duration, useSettingsStore.getState().pitchAlgorithm);
+      const take = await saveExerciseTake(audioData, duration);
 
       set({ isSavingTake: false, currentTime: 0 });
       return take;

@@ -68,13 +68,13 @@ Separates a mixed audio file and extracts analysis data.
 
 **`htdemucs_ft` is not vendored into the frozen build** (`sidecar/fetch_models.py` only bundles the standard `htdemucs` weights — the fine-tuned model is an extra ~4×84 MB only needed for this opt-in path). On a frozen/installed build, the *first* `highQuality: true` call falls back to Demucs's normal network download of those weights inside the `process`/`import_yt` call, on top of `htdemucs_ft` already being a ~2-3x slower 4-model ensemble — easy to exceed `process`'s 600s / `import_yt`'s 900s timeout on a slow connection or in dev mode without the vendor cache populated (`sidecar/vendor/demucs-models/`, see `fetch_models.py`), especially combined with a cold sidecar spawn (see the cold-start timeout note below). Surfaces as "import/processing fails, but only with High Quality checked" — not a bad file or bad URL.
 
-`skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage. **`commands.rs` forces `algorithm: "piano"` for these imports** (overriding the user's vocal setting) — the track is a piano/instrument, not a voice. Recorded takes against an instrument song keep the vocal algorithm (they're the singer).
+`skipSeparation` (optional, default `false`) — set when importing an instrument practice track (`kind: "instrument"` in the [data model](data-model.md#song)). The input is already an isolated monophonic recording, so Demucs is skipped entirely: `processor.process()` loads the file directly via `librosa.load()`, writes it to `vocals.wav`, and `shutil.copyfile`s it to `instrumental.wav` (an identical duplicate, so the rest of the pipeline — `AudioEngine`, `pitch_shift_song`, `Waveform` — needs no special-casing). Progress reports `"loading-track"` instead of `"stem-separation"` for this stage. **`pitch::for_track` (`src-tauri/src/pitch.rs`) forces `algorithm: "piano"` for these imports** (overriding the vocal algorithm) — the track is a piano/instrument, not a voice. Recorded takes against an instrument song keep the vocal algorithm (they're the singer).
 
-`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"praat"`, `"pyin"`, `"hps"`, `"crepe"`, `"piano"`; user-selectable in the Settings panel (except `"piano"`, which is set automatically for instrument imports). See [Pitch Detection](#pitch-detection-user-selectable).
+`algorithm` (optional, default `"srh"`) — one of `"srh"`, `"praat"`, `"pyin"`, `"hps"`, `"crepe"`, `"piano"`. The app always sends it, from `pitch.rs`: SRH (or the `VPS_PITCH_ALGORITHM` experiment override), and `"piano"` for instrument imports. See [Pitch Detection](#pitch-detection).
 
 Steps (in `processor.py`):
 1. Demucs `htdemucs` (or `htdemucs_ft` if `highQuality`) — produces `vocals.wav` and `instrumental.wav`; **or**, if `skipSeparation`, load the input directly and duplicate it to both paths
-2. Pitch detection on the vocals track, algorithm per `algorithm` (see [Pitch Detection](#pitch-detection-user-selectable))
+2. Pitch detection on the vocals track, algorithm per `algorithm` (see [Pitch Detection](#pitch-detection))
 3. Onset detection
 4. RMS dynamics
 5. BPM estimation (full mix)
@@ -94,7 +94,7 @@ Analyzes a recorded take (after the singer finishes recording).
 
 `referencePath` (optional) — loudness reference stem, in practice always `vocals.wav`. When present, the take is **RMS-normalized** against it: gain = reference RMS / take RMS, peak-capped so nothing clips, written as a `{takeId}.wav` next to the raw recording and returned as `normalizedPath`. Rust's `save_take` then keeps the normalized WAV and deletes the raw `.webm` (falling back to the `.webm` if normalization failed). This is why recorded takes no longer sound quiet next to mastered Demucs stems.
 
-`algorithm` (optional, default `"srh"`) — same selectable pitch algorithm as `process`; should match whatever was used for the song so take/song pitch curves compare meaningfully.
+`algorithm` (optional, default `"srh"`) — same algorithm as `process` (the app sends the same `pitch::vocal()` for both) so take/song pitch curves compare meaningfully.
 
 Steps (in `analysis.py`):
 1. Pitch detection via `get_pitch_fn(algorithm)` (same dispatch as song processing) — resampled to 22050 Hz
@@ -194,13 +194,20 @@ Result: `{text, synced, title, artist, duration, source: "lrclib"}`.
 {"cmd": "quit"}
 ```
 
-## Pitch Detection (user-selectable)
+## Pitch Detection
 
-Pitch extraction on separated vocals is a **user-selectable algorithm**, chosen in the app's Settings
-panel (`src/components/settings/PitchAlgorithmControl.tsx`, backed by the `pitchAlgorithm` field in
-`src/stores/settings.ts`, persisted to `localStorage`). The choice is global — the same algorithm is
-used for song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s
-`analyze_recording()`), so song and take pitch ribbons stay comparable in the piano roll.
+Pitch extraction on separated vocals uses one algorithm, **fixed by the app**: end users do not
+choose it (a singer should not need to know what SRH or pYIN is). `src-tauri/src/pitch.rs` is the
+single place that decides: `DEFAULT = "srh"`, plus the `VPS_PITCH_ALGORITHM` environment variable for
+*our* experiments (`srh`, `praat`, `pyin`, `hps`, `crepe`; anything else is an error, never a silent
+fallback). The same algorithm is used for song vocals (`processor.py`'s `process()`) and recorded
+takes (`analysis.py`'s `analyze_recording()`), so song and take pitch ribbons stay comparable in the
+piano roll.
+
+The selector that used to live in the library Settings panel (`PitchAlgorithmControl`, the
+`pitchAlgorithm` setting persisted to `localStorage`) was removed. A stored value from an older
+version is ignored and dropped the next time settings are saved, so everyone moves to the shipped
+algorithm. Songs analysed earlier keep the pitch data they were analysed with until re-imported.
 
 `processor.py` holds a small dispatch registry:
 
@@ -209,10 +216,12 @@ PITCH_ALGORITHMS = {"srh": detect_pitch_srh, "pyin": detect_pitch, "hps": detect
 def get_pitch_fn(algorithm): return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
 ```
 
-The `algorithm` field flows: Settings UI → `useSettingsStore` → `processSong`/`saveTake`/`importYoutube`/
-`saveExerciseTake` (`src/lib/tauri.ts`) → Rust `commands.rs` → JSON `"algorithm"` field on the `process`/
-`analyze`/`import_yt` sidecar commands → `main.py` dispatch (defaults to `"srh"` if absent) →
-`get_pitch_fn(...)`.
+The `algorithm` field flows only backend-side: `pitch.rs` (`vocal()` / `for_track()`) → Rust `commands.rs`
+→ JSON `"algorithm"` field on the `process`/`analyze`/`import_yt` sidecar commands → `main.py` dispatch
+(defaults to `"srh"` if absent) → `get_pitch_fn(...)`. It is not an argument of any Tauri command.
+
+To promote an experiment winner, change `DEFAULT` in `pitch.rs` (and the docs/tests that name SRH).
+`sidecar/pitch_lab/README.md` describes the offline experiments.
 
 ### SRH (Summation of Residual Harmonics) — the default
 

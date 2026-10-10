@@ -27,7 +27,6 @@ vi.mock("./player", () => ({
 
 import { useExerciseStore } from "./exercise";
 import { useAnalysisStore } from "./analysis";
-import { useSettingsStore } from "./settings";
 
 const take = (id: string, extra: Partial<ExerciseTake> = {}): ExerciseTake => ({
   id, recordedAt: "2026-01-01", filepath: `/ex/${id}.webm`, duration: 4, ...extra,
@@ -209,15 +208,14 @@ describe("importExerciseFile", () => {
     });
   });
 
-  it("decodes the duration, imports with the chosen algorithm, adds and loads the take as 'imported'", async () => {
-    useSettingsStore.getState().setPitchAlgorithm("hps");
+  it("decodes the duration, imports, adds and loads the take as 'imported'", async () => {
     h.api.importExerciseFile.mockResolvedValue(take("imp", { duration: 7.5 }));
     const pending = useExerciseStore.getState().importExerciseFile("C:\\music\\a.wav", container);
     expect(useExerciseStore.getState().isImporting).toBe(true);
     await pending;
 
     expect(fetch).toHaveBeenCalledWith("asset://C:/music/a.wav");
-    expect(h.api.importExerciseFile).toHaveBeenCalledWith("C:\\music\\a.wav", 7.5, "hps");
+    expect(h.api.importExerciseFile).toHaveBeenCalledWith("C:\\music\\a.wav", 7.5);
     expect(useExerciseStore.getState().exerciseTakes.map((t) => t.id)).toEqual(["imp"]);
     expect(useExerciseStore.getState()).toMatchObject({ loadedTrackKind: "imported", loadedTrackId: "imp", isImporting: false });
   });

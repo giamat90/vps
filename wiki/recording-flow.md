@@ -322,7 +322,7 @@ No count-in, no latency compensation, no punch region — none of those concepts
 5. blob = await rec.stop()
 6. destroy mic analyser + rec.releaseStream()
 7. eng.setOutputDevice(selectedOutput)    restore normal routing
-8. saveExerciseTake(blob, duration, algorithm)   write ExerciseTake to disk via Tauri
+8. saveExerciseTake(blob, duration)              write ExerciseTake to disk via Tauri
 9. set isSavingTake=false (both success and error paths)
 ```
 

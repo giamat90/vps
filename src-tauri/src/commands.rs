@@ -135,19 +135,10 @@ pub async fn process_song(
     file_path: String,
     high_quality: Option<bool>,
     track_kind: Option<String>,
-    algorithm: Option<String>,
 ) -> Result<Song, String> {
     let track_kind = track_kind.unwrap_or_else(|| "vocal".to_string());
     let skip_separation = track_kind == "instrument";
-    // Instrument practice tracks (piano scales the singer pitches against) need
-    // a monophonic-instrument detector, not the voice-tuned default — see
-    // detect_pitch_piano in processor.py. Recorded takes stay on the vocal
-    // algorithm (save_take passes `algorithm` unchanged).
-    let algorithm = if skip_separation {
-        Some("piano".to_string())
-    } else {
-        algorithm
-    };
+    let algorithm = crate::pitch::for_track(skip_separation)?;
     let song_id = uuid::Uuid::new_v4().to_string();
     let output_dir = storage::song_dir(&song_id);
 
@@ -177,7 +168,7 @@ pub async fn process_song(
         "outputDir": output_dir_str,
         "highQuality": high_quality.unwrap_or(false),
         "skipSeparation": skip_separation,
-        "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
+        "algorithm": algorithm,
     });
 
     // Hold the lock for the duration of the processing to prevent concurrent jobs
@@ -461,9 +452,8 @@ pub async fn save_take(
     audio_data: Vec<u8>,
     start_position: f64,
     audio_offset: f64,
-    algorithm: Option<String>,
 ) -> Result<Take, String> {
-    save_take_impl(&state, song_id, audio_data, start_position, audio_offset, algorithm)
+    save_take_impl(&state, song_id, audio_data, start_position, audio_offset)
 }
 
 // The command bodies below take a plain `&SidecarState` rather than tauri's
@@ -474,8 +464,8 @@ pub(crate) fn save_take_impl(
     audio_data: Vec<u8>,
     start_position: f64,
     audio_offset: f64,
-    algorithm: Option<String>,
 ) -> Result<Take, String> {
+    let algorithm = crate::pitch::vocal()?;
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::song_dir(&song_id).join("takes");
     std::fs::create_dir_all(&takes_dir).map_err(|e| format!("Create takes dir: {e}"))?;
@@ -498,7 +488,7 @@ pub(crate) fn save_take_impl(
                     "recordingPath": file_path_str,
                     "outputDir": output_dir_str,
                     "audioOffset": audio_offset,
-                    "algorithm": algorithm.clone().unwrap_or_else(|| "srh".to_string()),
+                    "algorithm": algorithm,
                 });
                 if let Some(ref_path) = &reference_path_str {
                     cmd_obj["referencePath"] = serde_json::json!(ref_path);
@@ -798,7 +788,7 @@ fn analyze_and_persist_exercise_take(
     output_dir_str: &str,
     take_id: String,
     duration: f64,
-    algorithm: Option<String>,
+    algorithm: &str,
 ) -> Result<ExerciseTake, String> {
     let (pitch_data, dynamics, vibrato, normalized_path) = {
         let guard = ensure_sidecar(state);
@@ -808,7 +798,7 @@ fn analyze_and_persist_exercise_take(
                     "cmd": "analyze",
                     "recordingPath": analyze_path,
                     "outputDir": output_dir_str,
-                    "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
+                    "algorithm": algorithm,
                 });
                 let _ = sidecar.send_command(&cmd);
                 let timeout = std::time::Duration::from_secs(300);
@@ -880,17 +870,16 @@ pub async fn save_exercise_take(
     state: State<'_, SidecarState>,
     audio_data: Vec<u8>,
     duration: f64,
-    algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
-    save_exercise_take_impl(&state, audio_data, duration, algorithm)
+    save_exercise_take_impl(&state, audio_data, duration)
 }
 
 pub(crate) fn save_exercise_take_impl(
     state: &SidecarState,
     audio_data: Vec<u8>,
     duration: f64,
-    algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
+    let algorithm = crate::pitch::vocal()?;
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::exercises_takes_dir();
 
@@ -900,7 +889,7 @@ pub(crate) fn save_exercise_take_impl(
     let file_path_str = file_path.to_string_lossy().to_string();
     let output_dir_str = takes_dir.to_string_lossy().to_string();
 
-    analyze_and_persist_exercise_take(state, &file_path_str, file_path_str.clone(), &output_dir_str, take_id, duration, algorithm)
+    analyze_and_persist_exercise_take(state, &file_path_str, file_path_str.clone(), &output_dir_str, take_id, duration, &algorithm)
 }
 
 #[tauri::command]
@@ -908,17 +897,16 @@ pub async fn import_exercise_file(
     state: State<'_, SidecarState>,
     file_path: String,
     duration: f64,
-    algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
-    import_exercise_file_impl(&state, file_path, duration, algorithm)
+    import_exercise_file_impl(&state, file_path, duration)
 }
 
 pub(crate) fn import_exercise_file_impl(
     state: &SidecarState,
     file_path: String,
     duration: f64,
-    algorithm: Option<String>,
 ) -> Result<ExerciseTake, String> {
+    let algorithm = crate::pitch::vocal()?;
     let take_id = uuid::Uuid::new_v4().to_string();
     let takes_dir = storage::exercises_takes_dir();
     std::fs::create_dir_all(&takes_dir).map_err(|e| format!("Create exercise takes dir: {e}"))?;
@@ -936,7 +924,7 @@ pub(crate) fn import_exercise_file_impl(
 
     // Analyze the copied file, not the original source, so the persisted
     // ExerciseTake's filepath always matches what analyze actually ran against.
-    analyze_and_persist_exercise_take(state, &dest_str, dest_str.clone(), &output_dir_str, take_id, duration, algorithm)
+    analyze_and_persist_exercise_take(state, &dest_str, dest_str.clone(), &output_dir_str, take_id, duration, &algorithm)
 }
 
 #[tauri::command]
@@ -963,12 +951,12 @@ pub async fn import_youtube(
     state: State<'_, SidecarState>,
     url: String,
     high_quality: Option<bool>,
-    algorithm: Option<String>,
     cookies_path: Option<String>,
 ) -> Result<Song, String> {
     if !url.contains("youtube.com/") && !url.contains("youtu.be/") {
         return Err("Not a valid YouTube URL".to_string());
     }
+    let algorithm = crate::pitch::vocal()?;
 
     let song_id = uuid::Uuid::new_v4().to_string();
     let output_dir = storage::song_dir(&song_id);
@@ -979,7 +967,7 @@ pub async fn import_youtube(
         "url": url,
         "outputDir": output_dir_str,
         "highQuality": high_quality.unwrap_or(false),
-        "algorithm": algorithm.unwrap_or_else(|| "srh".to_string()),
+        "algorithm": algorithm,
         "cookiesPath": cookies_path,
     });
 

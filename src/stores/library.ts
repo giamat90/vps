@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { Folder, PitchAlgorithm, ProcessingStatus, Song } from "../lib/types";
+import type { Folder, ProcessingStatus, Song } from "../lib/types";
 import {
   createFolder as createFolderApi,
   deleteFolder as deleteFolderApi,
@@ -23,13 +23,8 @@ interface LibraryState {
   error: string | null;
 
   fetchSongs: () => Promise<void>;
-  uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument", algorithm?: PitchAlgorithm) => Promise<void>;
-  importYoutube: (
-    url: string,
-    highQuality?: boolean,
-    algorithm?: PitchAlgorithm,
-    cookiesPath?: string | null,
-  ) => Promise<void>;
+  uploadSong: (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument") => Promise<void>;
+  importYoutube: (url: string, highQuality?: boolean, cookiesPath?: string | null) => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
   renameSong: (songId: string, title: string) => Promise<void>;
   fetchFolders: () => Promise<void>;
@@ -45,6 +40,11 @@ interface LibraryState {
 function friendlyError(raw: unknown, context: "youtube" | "upload", hasCookiesFile = false): string {
   const msg = String(raw ?? "").toLowerCase();
 
+  // Experiment-only switch (src-tauri/src/pitch.rs): its message already names the
+  // bad value and the valid ones, which the generic text below would hide.
+  if (msg.includes("vps_pitch_algorithm")) {
+    return String(raw);
+  }
   if (msg.includes("known-good floor")) {
     return "The YouTube downloader (yt-dlp) is out of date and YouTube has changed something it can't handle. Update it: `pip install -U -r requirements.txt` in the sidecar venv (dev), or reinstall the app (installed build).";
   }
@@ -106,10 +106,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }
   },
 
-  uploadSong: async (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument", algorithm?: PitchAlgorithm) => {
+  uploadSong: async (filePath: string, highQuality?: boolean, trackKind?: "vocal" | "instrument") => {
     set({ error: null, processing: { songId: "", stage: "Preparing…", progress: 0, isComplete: false } });
     try {
-      const song = await processSong(filePath, highQuality, trackKind, algorithm);
+      const song = await processSong(filePath, highQuality, trackKind);
       set((state) => ({
         songs: [...state.songs, song],
         processing: null,
@@ -120,15 +120,10 @@ export const useLibraryStore = create<LibraryState>((set) => ({
     }
   },
 
-  importYoutube: async (
-    url: string,
-    highQuality?: boolean,
-    algorithm?: PitchAlgorithm,
-    cookiesPath?: string | null,
-  ) => {
+  importYoutube: async (url: string, highQuality?: boolean, cookiesPath?: string | null) => {
     set({ error: null, processing: { songId: "", stage: "Connecting…", progress: 0, isComplete: false } });
     try {
-      const song = await importYoutubeApi(url, highQuality, algorithm, cookiesPath);
+      const song = await importYoutubeApi(url, highQuality, cookiesPath);
       set((state) => ({
         songs: [...state.songs, song],
         processing: null,

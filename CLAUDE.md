@@ -32,7 +32,7 @@ Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log wi
 | Backend language | Rust | 1.94.1+ |
 | Compute sidecar | Python | 3.10+ |
 | Stem separation | Demucs | `htdemucs` (default) / `htdemucs_ft` (high-quality opt-in) |
-| Pitch detection (song + take) | User-selectable: SRH (default, custom Drugman & Dutoit 2011) / Praat (`praat-parselmouth`) / pYIN / HPS / CREPE (`torchcrepe`); `piano` (pYIN A1–C7, auto-forced for `kind:"instrument"` imports, not user-selectable) | — |
+| Pitch detection (song + take) | SRH (custom Drugman & Dutoit 2011), fixed by the app — end users do not choose. Alternatives for experiments only: Praat (`praat-parselmouth`) / pYIN / HPS / CREPE (`torchcrepe`), via `VPS_PITCH_ALGORITHM`; `piano` (pYIN A1–C7, forced for `kind:"instrument"` imports) | — |
 | Pitch shifting | librosa phase vocoder | — |
 
 **Platform:** Windows 11, x86_64. WebView2 is pre-installed.
@@ -129,7 +129,6 @@ VPS/
 │   │   ├── lyrics/
 │   │   │   └── LyricsPanel.tsx     synced lyrics: paste/find online/sync, karaoke view, click-to-seek
 │   │   ├── settings/
-│   │   │   ├── PitchAlgorithmControl.tsx  SRH/pYIN/HPS/CREPE selector (library-page settings panel)
 │   │   │   └── YouTubeCookiesControl.tsx  optional cookies.txt picker for import_youtube, avoids the flaky live-browser cookie fallback
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
 │   ├── lib/
@@ -145,7 +144,7 @@ VPS/
 │   │   ├── library.ts         song list + import flow (Zustand)
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
-│   │   └── settings.ts        app settings, e.g. pitchAlgorithm (Zustand, localStorage-persisted)
+│   │   └── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
 │   ├── pages/
 │   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)
 │   │   ├── PracticeRoom.tsx   main practice UI (waveforms + analysis + recording)
@@ -153,6 +152,7 @@ VPS/
 │   └── styles/global.css
 ├── src-tauri/src/
 │   ├── commands.rs    Tauri command handlers
+│   ├── pitch.rs       which pitch algorithm runs: the shipped default + the VPS_PITCH_ALGORITHM experiment override
 │   ├── library.rs     Song struct + library.json CRUD
 │   ├── lyrics.rs      lyrics.json persistence + sidecar round trip (commands are thin wrappers in commands.rs)
 │   ├── storage.rs     Path helpers (~/.vps/)
@@ -277,7 +277,7 @@ interface PitchPoint {       // frontend-internal representation
 
 | Command | Returns | Notes |
 |---|---|---|
-| `process_song(filePath, kind?, highQuality?, algorithm?)` | `Song` | Demucs + pitch detection (algorithm per Settings, default SRH); 10-min timeout; `kind: "instrument"` skips separation |
+| `process_song(filePath, kind?, highQuality?)` | `Song` | Demucs + pitch detection (algorithm from `pitch.rs`: SRH, `piano` for instruments); 10-min timeout; `kind: "instrument"` skips separation |
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
 | `rename_song(songId, title)` | `Song` | |
@@ -287,7 +287,7 @@ interface PitchPoint {       // frontend-internal representation
 | `delete_folder(folderId)` | `void` | member songs' `folderId` cleared, songs not deleted |
 | `reorder_folders(orderedIds)` | `Folder[]` | reassigns `sortIndex` 0..N |
 | `move_songs(folderId, orderedSongIds)` | `Song[]` | sets `folderId` + sequential `sortIndex` on exactly the given songs — one call covers both a same-folder reorder and a cross-folder move-at-position |
-| `save_take(songId, audioData, startPosition, audioOffset, algorithm?)` | `Take` | sidecar `analyze` (pitch + spectrum) + RMS-normalizes loudness against vocals.wav |
+| `save_take(songId, audioData, startPosition, audioOffset)` | `Take` | sidecar `analyze` (pitch + spectrum) + RMS-normalizes loudness against vocals.wav |
 | `list_takes(songId)` | `Take[]` | reads takes.json |
 | `delete_take(songId, takeId)` | `void` | |
 | `rename_take(songId, takeId, name)` | `Take` | empty/whitespace name clears back to default |
@@ -296,10 +296,10 @@ interface PitchPoint {       // frontend-internal representation
 | `sync_lyrics(songId, text, source?)` | `Lyrics` | aligns the text to `vocals.wav` via sidecar `align_lyrics`, persists, emits `lyrics-progress`; see wiki/lyrics.md |
 | `find_lyrics(songId)` | `FoundLyrics` | LRCLIB lookup via sidecar, nothing saved |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
-| `import_exercise_file(filePath, duration, algorithm?)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
+| `import_exercise_file(filePath, duration)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
-| `import_youtube(url, highQuality?, algorithm?, cookiesPath?)` | `Song` | yt-dlp + Demucs; 15-min timeout; `cookiesPath` (Settings → YouTube cookies file) is tried before the live-browser cookie cascade |
+| `import_youtube(url, highQuality?, cookiesPath?)` | `Song` | yt-dlp + Demucs; 15-min timeout; `cookiesPath` (Settings → YouTube cookies file) is tried before the live-browser cookie cascade |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
 | `export_all(entries, suggestedName)` | `void` | bundles vocals/instrumental + every take into one zip (`zip` crate) via a single native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |
@@ -440,14 +440,15 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices
-- **User-selectable, single global setting** — `src/stores/settings.ts`'s `pitchAlgorithm` (`"srh" | "pyin" | "hps" | "crepe" | "praat"`), chosen via `PitchAlgorithmControl` in the library-page Settings panel, applies identically to song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s `analyze_recording()`) so the two pitch ribbons stay comparable. Dispatch is a small registry in `processor.py` (`PITCH_ALGORITHMS` / `get_pitch_fn`); defaults to `"srh"` when absent.
+- **Fixed by the app, not chosen by the user** — a singer should not have to know what SRH or pYIN is. `src-tauri/src/pitch.rs` holds `DEFAULT` (`"srh"`) and is the only place a command asks which algorithm to use: no IPC command takes an `algorithm`, there is no setting and no UI. The same algorithm runs for song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s `analyze_recording()`) so the two pitch ribbons stay comparable. Dispatch is a small registry in `processor.py` (`PITCH_ALGORITHMS` / `get_pitch_fn`).
+- **Changing the algorithm is an experiment, then a one-line change.** Offline: `sidecar/pitch_lab/`. In the real app: launch with `VPS_PITCH_ALGORITHM=<srh|praat|pyin|hps|crepe>`; an unknown value fails the import/recording loudly instead of silently running SRH. Promoting a winner = change `DEFAULT` in `pitch.rs`; `sidecar/tests/test_pitch.py` keeps the Rust list and the sidecar registry in step. A legacy `pitchAlgorithm` in `localStorage` from older versions is ignored and dropped. Songs already analysed keep their stored pitch data until re-imported.
 - **SRH** (Summation of Residual Harmonics, Drugman & Dutoit 2011) — **the default** (reinstated 2026-07-12 after Praat held the default from `v0.1.37`; the user's own in-app A/B across all five algorithms rated SRH clearly best, CREPE second). Originally chosen because pYIN and CREPE both tracked upper harmonics instead of the fundamental on strong chest-voice singers. SRH sums harmonic energy and subtracts inter-harmonic energy — structurally immune to dominant upper harmonics. Validated on Chris Cornell vocals vs VoceVista.
   - Resamples to 22050 Hz, `frame_length=2756` (125 ms, per Babacan et al. 2019), 0.5 Hz candidate grid, `n_harmonics=7` (was 5 until 2026-10-08, see `wiki/python-sidecar.md`), `voicing_threshold=0.22`, parabolic interpolation, median + Gaussian smoothing on voiced frames.
-- **pYIN** (`detect_pitch` in `processor.py`) — was unused dead code for a period (comparison baseline only in `sidecar/pitch_lab/`), now selectable again as a live option.
+- **pYIN** (`detect_pitch` in `processor.py`) — was unused dead code for a period (comparison baseline only in `sidecar/pitch_lab/`), an experiment candidate (`VPS_PITCH_ALGORITHM=pyin`).
 - **HPS** (`detect_pitch_hps`) — new; Harmonic Product Spectrum, no new dependency, more octave-jitter-prone than SRH by design (multiplicative harmonic combination).
 - **CREPE** (`detect_pitch_crepe`) — new; deep-learning tracker via `torchcrepe` (`"tiny"` model, reuses the `torch` dependency Demucs already needs), slower than the DSP algorithms on full-song audio. Rated second-best in the 2026-07-12 in-app A/B.
 - **Praat** (`detect_pitch_praat`) — was the default in `v0.1.37`–`v0.1.38`, promoted after a lab A/B on two test tracks plus an in-app listening test; superseded back to SRH in `v0.1.39` (2026-07-12) per a broader in-app A/B across all five algorithms. Autocorrelation method (Boersma 1993) via `praat-parselmouth`. VoceVista's algorithm is unpublished, but its documented behavior (time-domain detector separate from the FFT, "prefer harmonic fundamental" option, pitch floor/ceiling) matches Praat's octave-cost + Viterbi-path design, and the singing-voice comparative study in `Researches/1912.12609v1` found Praat best at voicing determination — still a reasonable alternative, just no longer the default. Praat defaults kept; skips `_smooth_voiced` (its path finding already smooths, same reasoning as pYIN's HMM). Parameter sweeps: `pitch_lab`'s `praat_variant()`.
-- **Piano** (`detect_pitch_piano`) — **not user-selectable**; `commands.rs` forces `algorithm: "piano"` for instrument imports (`skip_separation`). pYIN over A1–C7 (55–2093 Hz), short median filter only (no `_smooth_voiced` — a scale's discrete steps shouldn't be smoothed). For the piano/instrument practice track a singer pitches against, not a voice. Takes recorded against an instrument song keep the vocal algorithm.
+- **Piano** (`detect_pitch_piano`) — **never an experiment choice**; `pitch::for_track` forces `piano` for instrument imports (`skip_separation`). pYIN over A1–C7 (55–2093 Hz), short median filter only (no `_smooth_voiced` — a scale's discrete steps shouldn't be smoothed). For the piano/instrument practice track a singer pitches against, not a voice. Takes recorded against an instrument song keep the vocal algorithm.
 - **Algorithm validation workspace:** `sidecar/pitch_lab/` — reuses the production SRH/pYIN/HPS/CREPE functions to visualize, sonify, and cross-compare pitch detection on real Demucs-split tracks. See `sidecar/pitch_lab/README.md`.
 
 ---
@@ -495,7 +496,7 @@ metronomeOffset: number   // song time (s) where the metronome's beat 1 lands; p
 - **Branch:** `master`
 - **Current version:** see `CHANGELOG.md` (newest entry) or `package.json`. **Every version bump must add a `CHANGELOG.md` entry in the same `chore: release` commit.** The release workflow publishes that entry as the GitHub release body and the in-app updater notes (`scripts/release-notes.sh`); a tag with no entry fails the build.
 - For recent work, **run `git log --oneline -30`** — do not trust a hand-written summary here; this section went stale twice before (see `MPS/wiki/known-issues.md`). Major feature milestones are documented in the wiki pages, which are updated per-feature via `docs:` commits.
-- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, selectable pitch-detection algorithm (SRH/pYIN/HPS/CREPE/Praat), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence), library folders + drag-to-reorder (group songs into flat user-named folders, drag to reorder/move — see `wiki/components.md#library-folders-drag-and-drop`).
+- Feature surface at a glance: practice room (3-track playback + recording + pitch/vibrato/dynamics/timing analysis), Free Exercise page (song-less recording, or a loaded past take/imported file, with live pitch + synced/scrubbable PianoRoll+Spectrogram + Short-Term Spectrum + real-time formants), key transpose, instrument-track import (skips separation), per-track mixer + fixed transport bar, Export Mixdown, per-device latency calibration with staleness/confidence hardening, RMS take-loudness normalization, fixed SRH pitch detection (alternatives only via the `VPS_PITCH_ALGORITHM` experiment override), auto-update, self-contained installer, timeline zoom/pan (ctrl+wheel zoom-to-cursor, shift+wheel pan, auto-follow playhead while playing), metronome downbeat offset (drag a marker on the ruler, or Set-to-playhead, to phase-lock the click track past intro silence), library folders + drag-to-reorder (group songs into flat user-named folders, drag to reorder/move — see `wiki/components.md#library-folders-drag-and-drop`).
 
 ---
 

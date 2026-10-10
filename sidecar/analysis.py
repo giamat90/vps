@@ -1,6 +1,6 @@
 """
 Analyze a user's vocal recording (take).
-Pitch algorithm is user-selectable (SRH default — spectral, avoids locking
+Pitch algorithm is chosen by the caller (SRH default — spectral, avoids locking
 onto the second formant); see processor.get_pitch_fn.
 """
 

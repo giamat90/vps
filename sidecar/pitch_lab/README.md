@@ -84,15 +84,24 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    harmonic, or pitch tracking through a breath/consonant will all be audible as the tone visibly
    disagreeing with what you hear.
 
-   **Available algorithms — all six are now user-selectable in the shipped app's Settings panel
-   (SRH/pYIN/HPS/CREPE/Praat) except First-Peak:** `srh` (default), `praat` (briefly the default,
-   2026-07-11 to 2026-07-12), `pyin`,
+   **Available algorithms — the five production ones are what the app can run (end users do not
+   choose; see "Trying an algorithm in the real app" below), First-Peak is lab-only:** `srh` (the
+   shipped default), `praat` (briefly the default, 2026-07-11 to 2026-07-12), `pyin`,
    `hps`, `crepe` (all production — see `processor.py`'s `PITCH_ALGORITHMS` registry), plus `firstpeak` — a deliberately naive baseline
    that picks the first spectral peak above a threshold scanning up from `fmin`, with no harmonic
    reasoning at all. It's not a real candidate, but it's cheap to include everywhere and gives a "zero
    harmonic logic" floor to judge the others against, so every comparison tool in this lab
    (`compare.py`, `postprocess_compare.py`, `batch_report.py`, and manual `visualize.py`/`sonify.py`
    runs) should include it rather than skip it for convenience.
+
+   **Trying an algorithm in the real app.** The app no longer has an algorithm picker: the shipped
+   algorithm is `DEFAULT` in `src-tauri/src/pitch.rs`, and what we ship is decided by experiments
+   like the ones in this lab. To judge a candidate on real songs in the app itself, launch it with
+   `VPS_PITCH_ALGORITHM=praat` (any of `srh praat pyin hps crepe`) in the environment — it applies
+   to song import, YouTube import, recorded takes and Free Exercise. An unknown value makes the
+   import/recording fail with a message naming the valid values instead of quietly running SRH.
+   Songs already in the library keep the pitch data they were analysed with, so re-import a song
+   to compare; promoting a winner means changing `DEFAULT` (and the docs/tests that name it).
 
 3. **Experiment with parameters without touching `processor.py`:**
    `algorithms.py`'s `srh_variant()` is a full reimplementation of

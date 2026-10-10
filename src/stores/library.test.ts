@@ -60,13 +60,13 @@ describe("uploadSong", () => {
   it("shows a preparing status, then appends the song and clears processing", async () => {
     let resolve!: (s: Song) => void;
     api.processSong.mockReturnValue(new Promise<Song>((r) => { resolve = r; }));
-    const pending = useLibraryStore.getState().uploadSong("/x.mp3", true, "vocal", "srh");
+    const pending = useLibraryStore.getState().uploadSong("/x.mp3", true, "vocal");
     expect(useLibraryStore.getState().processing).toEqual({ songId: "", stage: "Preparing…", progress: 0, isComplete: false });
     resolve(song("new"));
     await pending;
     expect(useLibraryStore.getState().songs.map((s) => s.id)).toEqual(["new"]);
     expect(useLibraryStore.getState().processing).toBeNull();
-    expect(api.processSong).toHaveBeenCalledWith("/x.mp3", true, "vocal", "srh");
+    expect(api.processSong).toHaveBeenCalledWith("/x.mp3", true, "vocal");
   });
 
   it("clears a previous error when starting", async () => {
@@ -88,17 +88,34 @@ describe("uploadSong", () => {
   });
 });
 
+describe("a backend rejection of the pitch-algorithm experiment override", () => {
+  const rejection =
+    'VPS_PITCH_ALGORITHM="yin" is not a pitch algorithm; use one of: srh, praat, pyin, hps, crepe';
+
+  it("is shown as written for an upload, not as 'make sure it is a valid audio format'", async () => {
+    api.processSong.mockRejectedValue(rejection);
+    await useLibraryStore.getState().uploadSong("/x.mp3");
+    expect(useLibraryStore.getState().error).toBe(rejection);
+  });
+
+  it("is shown as written for a YouTube import", async () => {
+    api.importYoutube.mockRejectedValue(rejection);
+    await useLibraryStore.getState().importYoutube("https://youtu.be/x");
+    expect(useLibraryStore.getState().error).toBe(rejection);
+  });
+});
+
 describe("importYoutube error mapping", () => {
   const fail = async (message: string, cookiesPath?: string | null) => {
     api.importYoutube.mockRejectedValue(message);
-    await useLibraryStore.getState().importYoutube("https://youtu.be/x", false, "srh", cookiesPath);
+    await useLibraryStore.getState().importYoutube("https://youtu.be/x", false, cookiesPath);
     return useLibraryStore.getState().error ?? "";
   };
 
   it("passes every argument through and appends the song on success", async () => {
     api.importYoutube.mockResolvedValue(song("yt"));
-    await useLibraryStore.getState().importYoutube("u", true, "hps", "/c.txt");
-    expect(api.importYoutube).toHaveBeenCalledWith("u", true, "hps", "/c.txt");
+    await useLibraryStore.getState().importYoutube("u", true, "/c.txt");
+    expect(api.importYoutube).toHaveBeenCalledWith("u", true, "/c.txt");
     expect(useLibraryStore.getState().songs.map((s) => s.id)).toEqual(["yt"]);
     expect(useLibraryStore.getState().processing).toBeNull();
   });

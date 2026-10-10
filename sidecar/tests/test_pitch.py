@@ -34,12 +34,22 @@ class TestRegistry:
     def test_unknown_or_missing_falls_back_to_srh(self, value):
         assert processor.get_pitch_fn(value) is processor.detect_pitch_srh
 
-    def test_frontend_algorithm_list_matches_the_backend(self):
-        ts = (Path(__file__).resolve().parents[2] / "src" / "stores" / "settings.ts").read_text(encoding="utf-8")
-        listed = re.search(r"VALID_ALGORITHMS: PitchAlgorithm\[\] = \[(.*?)\]", ts, re.S).group(1)
-        frontend = set(re.findall(r'"(\w+)"', listed))
+    @staticmethod
+    def _rust_pitch_module():
+        return (Path(__file__).resolve().parents[2] / "src-tauri" / "src" / "pitch.rs").read_text(encoding="utf-8")
+
+    def test_rust_algorithm_list_matches_the_backend(self):
+        rs = self._rust_pitch_module()
+        listed = re.search(r"EXPERIMENTAL: \[&str; \d+\] = \[(.*?)\]", rs, re.S).group(1)
+        rust = set(re.findall(r'"(\w+)"', listed))
         backend = set(processor.PITCH_ALGORITHMS) - {"piano"}
-        assert frontend == backend, "piano is backend-only (forced for instrument imports)"
+        assert rust == backend, "piano is backend-only (forced for instrument imports)"
+
+    def test_the_shipped_default_is_what_the_sidecar_falls_back_to(self):
+        rs = self._rust_pitch_module()
+        default = re.search(r'pub const DEFAULT: &str = "(\w+)"', rs).group(1)
+        assert processor.get_pitch_fn(default) is processor.get_pitch_fn(None)
+        assert processor.get_pitch_fn(None) is processor.detect_pitch_srh
 
 
 class TestSRH:
