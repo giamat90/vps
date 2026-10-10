@@ -38,7 +38,7 @@ cd sidecar
 
 - `tests/helpers.py` synthesises audio with a known pitch/level/spectrum; nothing depends on checked-in audio fixtures.
 - `tests/test_protocol.py` drives the real `main.py` over stdio exactly like `SidecarManager` does (ready, ping, invalid JSON, unknown command, exceptions → `error` with traceback, progress ordering, non-ASCII paths, `quit`, EOF).
-- Cross-language invariants asserted from the Python side: `N_BINS` == Rust `ST_SPECTRUM_MIN_BINS`; every `"cmd"` string Rust sends is handled by `main.py`; the frontend's `VALID_ALGORITHMS` == `PITCH_ALGORITHMS` (minus the backend-only `piano`); `MIN_YT_DLP_VERSION` == the `requirements*.txt` floors.
+- Cross-language invariants asserted from the Python side: `N_BINS` == Rust `ST_SPECTRUM_MIN_BINS`; every `"cmd"` string Rust sends is handled by `main.py`; Rust's `pitch::EXPERIMENTAL` == `PITCH_ALGORITHMS` (minus the backend-only `piano`) and `pitch::DEFAULT` == the sidecar's fallback; `MIN_YT_DLP_VERSION` == the `requirements*.txt` floors.
 
 ## Lyrics sync tests
 

@@ -201,7 +201,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | Command | Arguments | Returns |
 |---------|-----------|---------|
 | `process_song` | `filePath: string, highQuality?: boolean, trackKind?: "vocal"\|"instrument"` | `Song` |
-| `import_youtube` | `url: string, highQuality?: boolean` | `Song` |
+| `import_youtube` | `url: string, highQuality?: boolean, cookiesPath?: string` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
 | `rename_song` | `songId, title: string` | `Song` |
@@ -222,8 +222,8 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `sync_lyrics` | `songId, text: string, source?: "paste"/"lrclib"` | `Lyrics` (aligns via sidecar `align_lyrics`, persists `lyrics.json`, emits `"lyrics-progress"`; errors for instrument songs / no vocals / empty text) |
 | `find_lyrics` | `songId: string` | `FoundLyrics` (sidecar `find_lyrics`; nothing is saved) |
 | `delete_lyrics` | `songId: string` | `void` (no error when there are none) |
-| `save_exercise_take` | `audioData: number[], duration: f64, algorithm?: string` | `ExerciseTake` |
-| `import_exercise_file` | `filePath: string, duration: f64, algorithm?: string` | `ExerciseTake` (copies an arbitrary external audio file into `~/.vps/exercises/takes/`, analyzes it identically to a recorded take — shares its analyze+persist logic with `save_exercise_take` via a private `analyze_and_persist_exercise_take` helper) |
+| `save_exercise_take` | `audioData: number[], duration: f64` | `ExerciseTake` |
+| `import_exercise_file` | `filePath: string, duration: f64` | `ExerciseTake` (copies an arbitrary external audio file into `~/.vps/exercises/takes/`, analyzes it identically to a recorded take — shares its analyze+persist logic with `save_exercise_take` via a private `analyze_and_persist_exercise_take` helper) |
 | `list_exercise_takes` | — | `ExerciseTake[]` |
 | `delete_exercise_take` | `takeId: string` | `void` |
 | `export_stem` | `stemPath, suggestedName: string` | `void` (native Save As dialog) |
