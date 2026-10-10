@@ -91,7 +91,7 @@ fn the_rust_commands_and_the_python_sidecar_work_together() {
     let ref_rms = rms_dbfs(&read_wav(&ref_wav).samples);
 
     let raw = crate::test_util::wav_bytes(&tones(&[(220.0, 0.4), (440.0, 0.2), (660.0, 0.1)], sr, 3.0), sr);
-    let take = save_take(&state, "song-1".into(), raw, 12.5, 0.25, Some("srh".into())).expect("save_take");
+    let take = save_take(&state, "song-1".into(), raw, 12.5, 0.25).expect("save_take");
 
     assert_eq!(take.song_id, "song-1");
     assert_eq!((take.start_position, take.audio_offset), (12.5, 0.25));
@@ -128,7 +128,7 @@ fn the_rust_commands_and_the_python_sidecar_work_together() {
 
     // 5 ─ Free Exercise: recording and importing a file.
     let ex_audio = crate::test_util::wav_bytes(&tones(&[(330.0, 0.3)], sr, 2.0), sr);
-    let ex = save_exercise_take(&state, ex_audio, 2.0, None).expect("save_exercise_take");
+    let ex = save_exercise_take(&state, ex_audio, 2.0).expect("save_exercise_take");
     assert!(ex.filepath.ends_with(".wav") && std::path::Path::new(&ex.filepath).exists());
     assert_eq!(ex.duration, 2.0);
     assert!(ex.pitch_data.is_some());
@@ -137,13 +137,29 @@ fn the_rust_commands_and_the_python_sidecar_work_together() {
 
     let external = home.path().join("my song.wav");
     write_wav(&external, &tones(&[(262.0, 0.2)], sr, 2.0), sr);
-    let imported = import_exercise_file(&state, external.to_string_lossy().to_string(), 2.0, Some("pyin".into())).expect("import");
+    // The experiment override must reach the real sidecar: pyin is a different
+    // detector from the shipped default, and an invalid name must fail the command.
+    std::env::set_var(crate::pitch::OVERRIDE_ENV, "pyin");
+    let imported = import_exercise_file(&state, external.to_string_lossy().to_string(), 2.0);
+    let files_before = storage::exercises_takes_dir().read_dir().unwrap().count();
+    std::env::set_var(crate::pitch::OVERRIDE_ENV, "not-an-algorithm");
+    let rejected = import_exercise_file(&state, external.to_string_lossy().to_string(), 2.0).unwrap_err();
+    let rejected_recording = save_exercise_take(&state, vec![1, 2, 3], 1.0).unwrap_err();
+    std::env::remove_var(crate::pitch::OVERRIDE_ENV);
+    assert!(rejected.contains(crate::pitch::OVERRIDE_ENV), "{rejected}");
+    assert!(rejected_recording.contains(crate::pitch::OVERRIDE_ENV), "{rejected_recording}");
+    assert_eq!(
+        storage::exercises_takes_dir().read_dir().unwrap().count(),
+        files_before,
+        "a rejected override must not leave a copied or written file behind"
+    );
+    let imported = imported.expect("import");
     assert!(std::path::Path::new(&imported.filepath).exists(), "importing a .wav must not delete its only copy");
     assert_ne!(imported.filepath, external.to_string_lossy(), "the import is a copy inside the library");
     assert!(external.exists(), "the user's original is untouched");
     assert!(imported.pitch_data.is_some());
 
-    let missing = import_exercise_file(&state, "/no/such/file.wav".into(), 1.0, None).unwrap_err();
+    let missing = import_exercise_file(&state, "/no/such/file.wav".into(), 1.0).unwrap_err();
     assert!(missing.contains("File not found"), "{missing}");
 
     let all = tauri::async_runtime::block_on(list_exercise_takes()).unwrap();

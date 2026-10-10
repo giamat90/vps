@@ -16,12 +16,12 @@ beforeEach(() => {
 
 describe("tauri.ts wrappers send the exact command name and payload the Rust side expects", () => {
   const cases: [string, () => Promise<unknown>, string, Record<string, unknown> | undefined][] = [
-    ["processSong", () => api.processSong("/a.mp3", true, "instrument", "praat"), "process_song",
-      { filePath: "/a.mp3", highQuality: true, trackKind: "instrument", algorithm: "praat" }],
+    ["processSong", () => api.processSong("/a.mp3", true, "instrument"), "process_song",
+      { filePath: "/a.mp3", highQuality: true, trackKind: "instrument" }],
     ["listSongs", () => api.listSongs(), "list_songs", undefined],
     ["deleteSong", () => api.deleteSong("s1"), "delete_song", { songId: "s1" }],
-    ["saveTake", () => api.saveTake("s1", [1, 2], 3, 0.5, "srh"), "save_take",
-      { songId: "s1", audioData: [1, 2], startPosition: 3, audioOffset: 0.5, algorithm: "srh" }],
+    ["saveTake", () => api.saveTake("s1", [1, 2], 3, 0.5), "save_take",
+      { songId: "s1", audioData: [1, 2], startPosition: 3, audioOffset: 0.5 }],
     ["listTakes", () => api.listTakes("s1"), "list_takes", { songId: "s1" }],
     ["deleteTakeApi", () => api.deleteTakeApi("s1", "t1"), "delete_take", { songId: "s1", takeId: "t1" }],
     ["renameTakeApi", () => api.renameTakeApi("s1", "t1", "x"), "rename_take", { songId: "s1", takeId: "t1", name: "x" }],
@@ -37,20 +37,20 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["moveSongs", () => api.moveSongs(null, ["a", "b"]), "move_songs", { folderId: null, orderedSongIds: ["a", "b"] }],
     ["loadAnalysis", () => api.loadAnalysis("s1"), "load_analysis", { songId: "s1" }],
     ["pitchShiftSong", () => api.pitchShiftSong("/dir", -2), "pitch_shift_song", { songDir: "/dir", nSteps: -2 }],
-    ["importYoutube", () => api.importYoutube("u", false, "hps", "/c.txt"), "import_youtube",
-      { url: "u", highQuality: false, algorithm: "hps", cookiesPath: "/c.txt" }],
+    ["importYoutube", () => api.importYoutube("u", false, "/c.txt"), "import_youtube",
+      { url: "u", highQuality: false, cookiesPath: "/c.txt" }],
     ["exportStem", () => api.exportStem("/s.wav", "vocals.wav"), "export_stem", { stemPath: "/s.wav", suggestedName: "vocals.wav" }],
     ["exportAll", () => api.exportAll([{ path: "/a", archiveName: "a" }], "all.zip"), "export_all",
       { entries: [{ path: "/a", archiveName: "a" }], suggestedName: "all.zip" }],
     ["exportTake", () => api.exportTake("/t.wav", "take.wav"), "export_take", { takePath: "/t.wav", suggestedName: "take.wav" }],
     ["exportMix", () => api.exportMix([{ path: "/p", gain: 1, isTake: false }], 1, 9, "mix.wav"), "export_mix",
       { sources: [{ path: "/p", gain: 1, isTake: false }], startSec: 1, endSec: 9, suggestedName: "mix.wav" }],
-    ["saveExerciseTake", () => api.saveExerciseTake([9], 4.5, "pyin"), "save_exercise_take",
-      { audioData: [9], duration: 4.5, algorithm: "pyin" }],
+    ["saveExerciseTake", () => api.saveExerciseTake([9], 4.5), "save_exercise_take",
+      { audioData: [9], duration: 4.5 }],
     ["listExerciseTakes", () => api.listExerciseTakes(), "list_exercise_takes", undefined],
     ["deleteExerciseTakeApi", () => api.deleteExerciseTakeApi("e1"), "delete_exercise_take", { takeId: "e1" }],
-    ["importExerciseFile", () => api.importExerciseFile("/f.wav", 12, "srh"), "import_exercise_file",
-      { filePath: "/f.wav", duration: 12, algorithm: "srh" }],
+    ["importExerciseFile", () => api.importExerciseFile("/f.wav", 12), "import_exercise_file",
+      { filePath: "/f.wav", duration: 12 }],
   ];
 
   it.each(cases)("%s", async (_name, call, command, payload) => {
@@ -69,8 +69,19 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
   it("defaults saveTake's audioOffset to 0", async () => {
     await api.saveTake("s", [1], 2);
     expect(invoke).toHaveBeenCalledWith("save_take", {
-      songId: "s", audioData: [1], startPosition: 2, audioOffset: 0, algorithm: undefined,
+      songId: "s", audioData: [1], startPosition: 2, audioOffset: 0,
     });
+  });
+
+  // toHaveBeenCalledWith ignores keys whose value is undefined, so a wrapper that
+  // still sent `algorithm: undefined` would pass the table above.
+  it("no wrapper sends an algorithm key: the backend alone decides it", async () => {
+    for (const [, call] of cases) {
+      invoke.mockClear();
+      await call();
+      const payload = invoke.mock.calls[0][1] as Record<string, unknown> | undefined;
+      expect(Object.keys(payload ?? {})).not.toContain("algorithm");
+    }
   });
 
   it("returns what invoke resolves", async () => {

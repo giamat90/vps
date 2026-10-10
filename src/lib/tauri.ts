@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
-  ProcessingStatus, Song, Take, ExerciseTake, PitchAlgorithm, Folder,
+  ProcessingStatus, Song, Take, ExerciseTake, Folder,
 } from "./types";
 
 /** Process a song file through the Python sidecar */
@@ -9,9 +9,8 @@ export async function processSong(
   filePath: string,
   highQuality?: boolean,
   trackKind?: "vocal" | "instrument",
-  algorithm?: PitchAlgorithm
 ): Promise<Song> {
-  return invoke<Song>("process_song", { filePath, highQuality, trackKind, algorithm });
+  return invoke<Song>("process_song", { filePath, highQuality, trackKind });
 }
 
 /** List all songs in the library */
@@ -30,9 +29,8 @@ export async function saveTake(
   audioData: number[],
   startPosition: number,
   audioOffset = 0,
-  algorithm?: PitchAlgorithm,
 ): Promise<Take> {
-  return invoke<Take>("save_take", { songId, audioData, startPosition, audioOffset, algorithm });
+  return invoke<Take>("save_take", { songId, audioData, startPosition, audioOffset });
 }
 
 /** List takes for a song */
@@ -60,7 +58,7 @@ export async function setMetronomeOffsetApi(songId: string, offset: number | nul
   return invoke<Song>("set_metronome_offset", { songId, offset });
 }
 
-/** Rename a song's library title (e.g. to tell apart reprocessed variants using a different pitch algorithm). Empty/whitespace is rejected. */
+/** Rename a song's library title. Empty/whitespace is rejected. */
 export async function renameSongApi(songId: string, title: string): Promise<Song> {
   return invoke<Song>("rename_song", { songId, title });
 }
@@ -126,10 +124,9 @@ export async function pitchShiftSong(
 export async function importYoutube(
   url: string,
   highQuality?: boolean,
-  algorithm?: PitchAlgorithm,
   cookiesPath?: string | null,
 ): Promise<Song> {
-  return invoke<Song>("import_youtube", { url, highQuality, algorithm, cookiesPath });
+  return invoke<Song>("import_youtube", { url, highQuality, cookiesPath });
 }
 
 /** Open a native Save As dialog and copy a stem WAV to user-chosen location */
@@ -186,8 +183,8 @@ export async function exportMix(
 }
 
 /** Save a free-exercise recorded take */
-export async function saveExerciseTake(audioData: number[], duration: number, algorithm?: PitchAlgorithm): Promise<ExerciseTake> {
-  return invoke<ExerciseTake>("save_exercise_take", { audioData, duration, algorithm });
+export async function saveExerciseTake(audioData: number[], duration: number): Promise<ExerciseTake> {
+  return invoke<ExerciseTake>("save_exercise_take", { audioData, duration });
 }
 
 /** List all exercise takes */
@@ -201,8 +198,8 @@ export async function deleteExerciseTakeApi(takeId: string): Promise<void> {
 }
 
 /** Import an arbitrary external audio file into Free Exercise as an ExerciseTake */
-export async function importExerciseFile(filePath: string, duration: number, algorithm?: PitchAlgorithm): Promise<ExerciseTake> {
-  return invoke<ExerciseTake>("import_exercise_file", { filePath, duration, algorithm });
+export async function importExerciseFile(filePath: string, duration: number): Promise<ExerciseTake> {
+  return invoke<ExerciseTake>("import_exercise_file", { filePath, duration });
 }
 
 /** Listen for processing progress events */

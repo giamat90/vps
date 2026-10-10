@@ -4,7 +4,6 @@ import type { ExerciseTake } from "../lib/types";
 import { listExerciseTakes, deleteExerciseTakeApi, importExerciseFile as importExerciseFileApi } from "../lib/tauri";
 import { getEngine, usePlayerStore } from "./player";
 import { useAnalysisStore } from "./analysis";
-import { useSettingsStore } from "./settings";
 import { computeTrackSpectrogram, type TrackSpectrogram } from "../lib/exerciseSpectrogram";
 
 interface ExerciseState {
@@ -119,8 +118,7 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
     set({ isImporting: true });
     try {
       const duration = await _decodeDuration(filePath);
-      const algorithm = useSettingsStore.getState().pitchAlgorithm;
-      const take = await importExerciseFileApi(filePath, duration, algorithm);
+      const take = await importExerciseFileApi(filePath, duration);
       get().addExerciseTake(take);
       await get().loadExerciseTakeIntoTrack(take, container);
       set({ loadedTrackKind: "imported", loadedTrackId: take.id });

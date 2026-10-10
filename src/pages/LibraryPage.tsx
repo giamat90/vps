@@ -17,7 +17,6 @@ import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
 import ImportOptions from "../components/upload/ImportOptions";
 import RecordingOffsetControl from "../components/recording/RecordingOffsetControl";
-import PitchAlgorithmControl from "../components/settings/PitchAlgorithmControl";
 import YouTubeCookiesControl from "../components/settings/YouTubeCookiesControl";
 import { exportStem, pitchShiftSong } from "../lib/tauri";
 import type { Folder, Song } from "../lib/types";
@@ -435,7 +434,6 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const [trackKind, setTrackKind] = useState<"vocal" | "instrument">("vocal");
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
-  const pitchAlgorithm = useSettingsStore((s) => s.pitchAlgorithm);
   const isProcessing = useLibraryStore((s) => s.processing !== null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -579,14 +577,13 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
           disabled={isProcessing}
         />
         <div className="library-page__import-sources">
-          <DropZone highQuality={highQuality} trackKind={trackKind} algorithm={pitchAlgorithm} />
-          <YouTubeImport highQuality={highQuality} algorithm={pitchAlgorithm} />
+          <DropZone highQuality={highQuality} trackKind={trackKind} />
+          <YouTubeImport highQuality={highQuality} />
         </div>
       </div>
 
       {showSettings && (
         <div className="library-page__settings">
-          <PitchAlgorithmControl />
           <YouTubeCookiesControl />
           <RecordingOffsetControl />
         </div>

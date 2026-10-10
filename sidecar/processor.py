@@ -1,6 +1,6 @@
 """
 Core processing pipeline for uploaded songs.
-Demucs stem separation → pitch extraction (user-selectable algorithm) → librosa onsets/dynamics/BPM → key detection.
+Demucs stem separation → pitch extraction (algorithm chosen by the caller, SRH by default) → librosa onsets/dynamics/BPM → key detection.
 """
 
 import base64
@@ -291,7 +291,7 @@ def detect_pitch_hps(audio: np.ndarray, sr: int, n_harmonics: int = 5, fmin: flo
     makes it sensitive to any single weak/missing harmonic, which is exactly
     why SRH (additive, with inter-harmonic subtraction) was chosen as the
     default for strong chest-voice singers — see wiki/python-sidecar.md.
-    Offered here as a selectable alternative, not the default.
+    An alternative to SRH, not the default.
     """
     target_sr = 22050
     if sr != target_sr:
@@ -501,10 +501,12 @@ PITCH_ALGORITHMS = {
 
 def get_pitch_fn(algorithm: str | None):
     """
-    Look up the pitch-detection function for a user-selected algorithm.
+    Look up the pitch-detection function by name.
     Defaults to SRH for unknown/absent values — reinstated as default after
     in-app A/B testing across all algorithms rated it clearly best, ahead of
-    CREPE (see detect_pitch_srh's docstring).
+    CREPE (see detect_pitch_srh's docstring). The app (src-tauri/src/pitch.rs)
+    rejects unknown names before they get here, so a typo in an experiment
+    does not silently run SRH.
     """
     return PITCH_ALGORITHMS.get(algorithm or "srh", detect_pitch_srh)
 

@@ -822,11 +822,9 @@ describe("stopRecording: latency compensation and take saving", () => {
     expect(audioOffset).toBeCloseTo(0.07, 9);
   });
 
-  it("passes the configured pitch algorithm to the sidecar", async () => {
-    const { useSettingsStore } = await import("./settings");
-    useSettingsStore.getState().setPitchAlgorithm("praat");
+  it("leaves the pitch algorithm to the backend: saveTake gets no algorithm argument", async () => {
     await recordFrom(5, 50);
-    expect(h.api.saveTake.mock.calls[0][4]).toBe("praat");
+    expect(h.api.saveTake.mock.calls[0]).toHaveLength(4);
   });
 
   it("selects the new take and releases the mic and output routing", async () => {
@@ -1140,7 +1138,7 @@ describe("free exercise recording", () => {
     h.state.currentTime = 6;
     const result = await store().getState().stopExerciseRecording();
     expect(result).toEqual({ id: "e1", duration: 6 });
-    expect(h.api.saveExerciseTake).toHaveBeenCalledWith([7, 8, 9], 6, "srh");
+    expect(h.api.saveExerciseTake).toHaveBeenCalledWith([7, 8, 9], 6);
     expect(eng().stopExerciseTimer).toHaveBeenCalled();
     expect(store().getState()).toMatchObject({ isRecording: false, isSavingTake: false, currentTime: 0 });
   });

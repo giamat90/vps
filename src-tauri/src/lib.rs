@@ -1,6 +1,7 @@
 mod commands;
 mod library;
 mod lyrics;
+mod pitch;
 mod sidecar;
 mod storage;
 #[cfg(test)]
