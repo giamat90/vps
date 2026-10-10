@@ -69,7 +69,7 @@ export class AudioEngine {
     songDir: string,
     vocalsContainer: HTMLElement,
     instrumentalContainer: HTMLElement,
-  ): Promise<void> {
+  ): Promise<boolean> {
     this.destroy();
 
     // Normalize to forward slashes so convertFileSrc works correctly on Windows
@@ -93,52 +93,58 @@ export class AudioEngine {
       autoCenter: false,
     };
 
-    this.vocals = WaveSurfer.create({
+    const vocals = WaveSurfer.create({
       ...waveOptions,
       container: vocalsContainer,
       url: vocalsUrl,
     });
-
-    this.instrumental = WaveSurfer.create({
+    const instrumental = WaveSurfer.create({
       ...waveOptions,
       container: instrumentalContainer,
       url: instrumentalUrl,
       waveColor: "#4a6fa5",
       progressColor: "#4ade80",
     });
+    this.vocals = vocals;
+    this.instrumental = instrumental;
+    const isCurrent = () => this.vocals === vocals && this.instrumental === instrumental;
 
     // Wait for both to be ready; reject immediately on WaveSurfer error
     await Promise.all([
       new Promise<void>((resolve, reject) => {
-        this.vocals!.on("ready", () => resolve());
+        vocals.on("ready", () => resolve());
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.vocals!.on("error", (err: any) => reject(new Error("Vocals failed to load: " + (err?.message ?? err))));
+        vocals.on("error", (err: any) => reject(new Error("Vocals failed to load: " + (err?.message ?? err))));
       }),
       new Promise<void>((resolve, reject) => {
-        this.instrumental!.on("ready", () => resolve());
+        instrumental.on("ready", () => resolve());
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this.instrumental!.on("error", (err: any) => reject(new Error("Instrumental failed to load: " + (err?.message ?? err))));
+        instrumental.on("error", (err: any) => reject(new Error("Instrumental failed to load: " + (err?.message ?? err))));
       }),
     ]);
 
-    // Guard: destroy() may have been called (e.g. by React StrictMode cleanup) during the await.
-    if (!this.vocals || !this.instrumental) return;
+    // destroy() or a newer load() may have replaced these instances during the
+    // await (React StrictMode runs the load effect twice). Compare identity,
+    // not null: a newer load's still-undecoded instances are non-null, and
+    // carrying on with them would size the song to 0 and make zoom() throw.
+    if (!isCurrent()) return false;
 
     if (this._lastOutputDeviceId) {
       await Promise.all([
-        this.vocals.setSinkId(this._lastOutputDeviceId).catch((e) =>
+        vocals.setSinkId(this._lastOutputDeviceId).catch((e) =>
           console.warn("[engine] setSinkId on vocals failed:", e)
         ),
-        this.instrumental.setSinkId(this._lastOutputDeviceId).catch((e) =>
+        instrumental.setSinkId(this._lastOutputDeviceId).catch((e) =>
           console.warn("[engine] setSinkId on instrumental failed:", e)
         ),
       ]);
+      if (!isCurrent()) return false;
     }
 
     // Duration is always based on the instrumental (the reference track).
     // Vocals/take may be shorter when recording starts mid-song.
-    this._duration = this.instrumental.getDuration();
-    this._vocalsDuration = this.vocals.getDuration();
+    this._duration = instrumental.getDuration();
+    this._vocalsDuration = vocals.getDuration();
     this._vocalsOffset = 0;
 
     // Sync: when user clicks on one waveform, seek the other.
@@ -147,7 +153,7 @@ export class AudioEngine {
     // seekTo(0) → vocals fires "seeking" → instrumental.seekTo(0) → instrumental fires
     // "seeking" → vocals.seekTo(0) → … each iteration queued a new async task,
     // growing the task queue and RAM indefinitely after every stop.
-    this.vocals.on("interaction", (newTime) => {
+    vocals.on("interaction", (newTime) => {
       // Map vocals file time → instrumental song time, then seek instrumental + take
       const instrTime = newTime + this._vocalsOffset;
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
@@ -156,7 +162,7 @@ export class AudioEngine {
       this._notifySeek(instrTime);
     });
 
-    this.instrumental.on("interaction", (newTime) => {
+    instrumental.on("interaction", (newTime) => {
       // Map instrumental song time → vocals/take file time, accounting for start offset
       this._seekVocals(newTime);
       this._seekTake(newTime);
@@ -164,11 +170,12 @@ export class AudioEngine {
     });
 
     // Finish fires on the instrumental so partial takes don't prematurely end playback
-    this.instrumental.on("finish", () => {
+    instrumental.on("finish", () => {
       this._isPlaying = false;
       this._stopTimeUpdate();
       this._finishCb?.();
     });
+    return true;
   }
 
   play(): void {
