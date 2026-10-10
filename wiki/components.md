@@ -576,3 +576,28 @@ Each song in the library list is rendered by a `SongCard` component with local s
 
 - **Pitch control** — ±6 semitone offset (−/+ buttons + value display + × reset). At 0 the export is direct; at any other value `pitchShiftSong(song.directory, n)` is called first and the shifted WAV paths are passed to `exportStem`. The suggested filename includes the offset, e.g. `Song - Vocals (+3st).wav`.
 - **Export buttons** — for `kind: "vocal"` songs (default), "↓ Vocals" and "↓ Instr." trigger `exportStem` via a native Save-As dialog, both disabled and showing `…` while pitch-shifting is in progress. For `kind: "instrument"` songs, a single "↓ Download" button exports the practice track (still via `handleExport("vocals")`, since `vocals.wav` holds the actual audio for instrument-kind songs). Instrument-kind cards also show an "Instrument" badge (`song-card__badge`) next to the title.
+
+## Panel visibility (Panels menu)
+
+The practice room has more on it than anyone wants at once, so everything optional can be shown or hidden from the **Panels** menu in the header (`src/components/panels/PanelMenu.tsx`). The state is `usePracticePanels` in `src/stores/panels.ts`, a `createPanelStore` from `@giamat90/mps-core/panels`, persisted under `vps_panels`.
+
+| Panel id | Shows | Default |
+|---|---|---|
+| `takes` | `TakeList` in the sidebar | on |
+| `lyrics` | `LyricsPanel` (never offered for instrument tracks) | on |
+| `pianoRoll` | `PianoKeyboard` + `PianoRoll` | on |
+| `spectrum` | `ShortTermSpectrumComparisonPanel` | off |
+| `dynamics` | `DynamicsCurve` | off |
+| `vibrato` | `VibratoCard` | on |
+| `timing` | `TimingChart` | off |
+| `coach` | `CoachPanel` | on |
+
+Always on: waveforms, transport, tempo, mic/output, transpose, monitor, record. The analysis block only appears once the song analysis has loaded; the sidebar disappears when none of its panels is on.
+
+Rules for a panel:
+- **A hidden panel is not mounted.** It must be a pure view: nothing may depend on it being on screen. `TakeList` used to fetch the takes on mount; that moved into `loadSong` for exactly this reason. Anything a panel needs to keep running goes in a store or the page, not the panel.
+- **Only the user decides.** There is no automatic open/close: the old "Analysis" tab that opened when a take was selected or while recording was removed.
+- A panel that is on but has nothing to show (vibrato without a take) still renders nothing, as before.
+- Add a panel by adding it to `PRACTICE_PANELS` (its default is a product decision), rendering it behind `visible.<id>` in `PracticeRoom`, and extending `PracticeRoom.test.ts`.
+- Known limit: hiding Lyrics while a sync is running unmounts the panel (its cleanup clears the lyrics store). The sync still finishes and is saved; showing the panel again loads the result.
+- The piano roll's ruler also sets the punch region; with it hidden, use the main timeline ruler.

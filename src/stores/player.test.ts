@@ -122,6 +122,7 @@ beforeEach(async () => {
   Object.values(h.metronome).forEach((fn) => fn.mockReset());
   Object.values(h.rec).forEach((fn) => fn.mockReset());
   h.rec.init.mockResolvedValue(undefined);
+  h.api.listTakes.mockResolvedValue([]);
   h.rec.stop.mockImplementation(async () => new Blob([Uint8Array.from([7, 8, 9])]));
   h.rec.getStream.mockReturnValue({ getAudioTracks: () => [{ getSettings: () => ({ latency: 0.01 }) }] });
   h.rec.getProcessedStream.mockReturnValue(null);
@@ -245,6 +246,21 @@ describe("loadSong", () => {
     });
     expect(s.song?.id).toBe("s1");
     expect(eng().zoomAll).toHaveBeenCalledWith(2, 0);
+  });
+
+  it("fetches the song's takes itself: no panel has to be mounted for them to load", async () => {
+    h.api.listTakes.mockResolvedValue([take(), take({ id: "t2" })]);
+    await loadedSong();
+    await vi.waitFor(() => expect(store().getState().takes).toHaveLength(2));
+    expect(h.api.listTakes).toHaveBeenCalledWith("s1");
+  });
+
+  it("logs a failing take fetch instead of leaving an unhandled rejection", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    h.api.listTakes.mockRejectedValue(new Error("disk"));
+    await loadedSong();
+    await vi.waitFor(() => expect(error).toHaveBeenCalled());
+    expect(store().getState().song?.id).toBe("s1");
   });
 
   it("leaves everything alone when the engine says a newer load replaced this one", async () => {

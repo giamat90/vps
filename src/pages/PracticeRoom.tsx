@@ -19,9 +19,11 @@ import VibratoCard from "../components/analysis/VibratoCard";
 import TimingChart from "../components/analysis/TimingChart";
 import CoachPanel from "../components/coaching/CoachPanel";
 import LyricsPanel from "../components/lyrics/LyricsPanel";
+import PanelMenu from "../components/panels/PanelMenu";
 import { useLibraryStore } from "../stores/library";
 import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
+import { availablePracticePanels, usePracticePanels } from "../stores/panels";
 
 interface PracticeRoomProps {
   songId: string;
@@ -33,8 +35,6 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const cleanup = usePlayerStore((s) => s.cleanup);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
-  const isRecording = usePlayerStore((s) => s.isRecording);
-  const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const song = songs.find((s) => s.id === songId);
   const isInstrument = song?.kind === "instrument";
   const renameSong = useLibraryStore((s) => s.renameSong);
@@ -59,14 +59,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const clearAnalysis = useAnalysisStore((s) => s.clear);
   const isAnalysisLoaded = useAnalysisStore((s) => s.isLoaded);
 
-  const [showAnalysis, setShowAnalysis] = useState(false);
-
-  // Instrument practice tracks exist to be pitched against — the piano's pitch
-  // ribbon is the whole point, so open the analysis panel without waiting for
-  // a recorded take.
-  useEffect(() => {
-    if (isInstrument) setShowAnalysis(true);
-  }, [isInstrument]);
+  const visible = usePracticePanels((s) => s.visible);
 
   // Load song analysis on mount
   useEffect(() => {
@@ -87,10 +80,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
       return;
     }
     const take = takes.find((t) => t.id === activeTakeId);
-    if (take) {
-      loadTakeAnalysis(take);
-      setShowAnalysis(true);
-    }
+    if (take) loadTakeAnalysis(take);
   }, [activeTakeId, takes]);
 
   if (!song) {
@@ -147,6 +137,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             {song.detectedKey && <span>{song.detectedKey}</span>}
           </div>
         </div>
+        <PanelMenu store={usePracticePanels} panels={availablePracticePanels({ isInstrument })} />
         <DownloadAllButton song={song} />
         <ExportMixButton />
       </header>
@@ -172,41 +163,40 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             <Waveform song={song} />
           </div>
 
-          {!isInstrument && <LyricsPanel songId={songId} />}
+          {!isInstrument && visible.lyrics && <LyricsPanel songId={songId} />}
 
-          {isAnalysisLoaded && (
+          {isAnalysisLoaded && (visible.pianoRoll || visible.spectrum || visible.dynamics) && (
             <div className="practice-room__analysis">
-              <div className="practice-room__analysis-tabs">
-                <button
-                  className={`analysis-tab ${showAnalysis ? "analysis-tab--active" : ""}`}
-                  onClick={() => setShowAnalysis((v) => !v)}
-                  aria-expanded={showAnalysis}
-                >
-                  Analysis {activeTakeId || isInstrument ? "" : "(select take)"}
-                </button>
+              <div className="practice-room__analysis-body">
+                {visible.pianoRoll && (
+                  <>
+                    <PianoKeyboard />
+                    <PianoRoll />
+                  </>
+                )}
+                {visible.spectrum && <ShortTermSpectrumComparisonPanel />}
+                {visible.dynamics && <DynamicsCurve />}
               </div>
-              {(showAnalysis || isRecording || isMonitoring) && (
-                <div className="practice-room__analysis-body">
-                  <PianoKeyboard />
-                  <PianoRoll />
-                  <ShortTermSpectrumComparisonPanel />
-                  <DynamicsCurve />
-                </div>
-              )}
             </div>
           )}
         </div>
 
-        <aside className="practice-room__sidebar">
-          <div className="practice-room__takes-wrap">
-            <TakeList />
-          </div>
-          <div className="practice-room__sidebar-bottom">
-            <VibratoCard />
-            <TimingChart />
-            <CoachPanel />
-          </div>
-        </aside>
+        {(visible.takes || visible.vibrato || visible.timing || visible.coach) && (
+          <aside className="practice-room__sidebar">
+            {visible.takes && (
+              <div className="practice-room__takes-wrap">
+                <TakeList />
+              </div>
+            )}
+            {(visible.vibrato || visible.timing || visible.coach) && (
+              <div className="practice-room__sidebar-bottom">
+                {visible.vibrato && <VibratoCard />}
+                {visible.timing && <TimingChart />}
+                {visible.coach && <CoachPanel />}
+              </div>
+            )}
+          </aside>
+        )}
       </div>
     </div>
   );
