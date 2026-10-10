@@ -157,8 +157,30 @@ describe("load", () => {
     engine.destroy();
     vocals.emit("ready");
     instrumental.emit("ready");
-    await expect(loading).resolves.toBeUndefined();
+    await expect(loading).resolves.toBe(false);
     expect(engine.getDuration()).toBe(0);
+  });
+
+  it("reports that the stems are live once they have decoded", async () => {
+    const engine = new AudioEngine();
+    await expect(engine.load("/s", {} as HTMLElement, {} as HTMLElement)).resolves.toBe(true);
+  });
+
+  it("tells a load that a newer load replaced it, even when its own stems finish decoding late", async () => {
+    ws.config.autoReady = false;
+    const engine = new AudioEngine();
+    const first = engine.load("/s", {} as HTMLElement, {} as HTMLElement);
+    const [firstVocals, firstInstrumental] = ws.instances;
+    const second = engine.load("/s", {} as HTMLElement, {} as HTMLElement);
+    const [secondVocals, secondInstrumental] = ws.instances.slice(2);
+    firstVocals.emit("ready");
+    firstInstrumental.emit("ready");
+    await expect(first).resolves.toBe(false);
+    expect(engine.getDuration()).toBe(0);
+    secondVocals.emit("ready");
+    secondInstrumental.emit("ready");
+    await expect(second).resolves.toBe(true);
+    expect(engine.getDuration()).toBe(100);
   });
 });
 

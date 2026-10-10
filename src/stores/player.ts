@@ -388,7 +388,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     const eng = getEngine();
-    await eng.load(song.directory, vocalsEl, instrumentalEl);
+    if (!(await eng.load(song.directory, vocalsEl, instrumentalEl))) return;
     eng.onTimeUpdate((time) => {
       set({ currentTime: time, isPlaying: eng.isPlaying });
       const s = get();
