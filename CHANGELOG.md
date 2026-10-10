@@ -10,6 +10,7 @@ Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
 ### Added
 - A "Panels" menu in the practice-room header: tick which panels to show (Takes, Lyrics, Piano roll, Spectrum comparison, Dynamics, Vibrato, Timing, Coach), or Show all / Hide all / Reset. Your choice is remembered. The spectrum comparison, dynamics and timing views now start hidden.
+- The practice room is one vertical column: the right-hand sidebar is gone. Takes sit under the waveforms and the vibrato, timing and coach cards under the pitch views, so hiding a panel gives its space back.
 
 ### Changed
 - The "Analysis" tab is gone: the piano roll is a panel like the others and no longer opens or closes by itself when you select a take or record.

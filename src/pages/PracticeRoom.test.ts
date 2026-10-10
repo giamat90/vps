@@ -89,12 +89,27 @@ describe("PracticeRoom panels", () => {
     for (const c of ["spectrum", "dynamics", "timing"]) expect(ids).not.toContain(c);
   });
 
-  it("shows nothing optional once everything is hidden, and drops the empty sidebar", async () => {
+  it("shows nothing optional once everything is hidden, and drops the empty groups", async () => {
     const html = await render(all(false));
     const optional = ["takes", "lyrics", "pianoRoll", "pianoKeyboard", "spectrum", "dynamics", "vibrato", "timing", "coach"];
     expect(shown(html).filter((c) => optional.includes(c))).toEqual([]);
-    expect(html).not.toContain("practice-room__sidebar");
-    expect(html).not.toContain("practice-room__analysis");
+    for (const cls of ["practice-room__takes", "practice-room__feedback", "practice-room__analysis"]) {
+      expect(html).not.toContain(cls);
+    }
+  });
+
+  it("is one vertical column: there is never a side widget, whatever is on", async () => {
+    for (const overrides of [{}, all(true), all(false), only("takes"), only("coach")]) {
+      const html = await render(overrides);
+      expect(html).not.toContain("practice-room__sidebar");
+      expect(html).not.toContain("<aside");
+    }
+  });
+
+  it("stacks the panels top to bottom: waveforms, lyrics, takes, pitch views, then feedback", async () => {
+    const ids = shown(await render(all(true)));
+    const order = ["waveform", "lyrics", "takes", "pianoKeyboard", "pianoRoll", "spectrum", "dynamics", "vibrato", "timing", "coach"];
+    expect(ids.filter((c) => order.includes(c))).toEqual(order);
   });
 
   it.each([
@@ -113,11 +128,12 @@ describe("PracticeRoom panels", () => {
     expect(shown(await render({ [id]: true }))).toContain(id);
   });
 
-  it("keeps the sidebar while any of its panels is on, and shows only those", async () => {
+  it("keeps the feedback group while any of vibrato, timing or coach is on, and shows only those", async () => {
     const html = await render(only("coach"));
-    expect(html).toContain("practice-room__sidebar");
+    expect(html).toContain("practice-room__feedback");
     expect(shown(html)).toContain("coach");
     expect(shown(html)).not.toContain("takes");
+    expect(html).not.toContain("practice-room__takes");
   });
 
   it("has no analysis panels until the analysis has loaded, but still shows takes and lyrics", async () => {

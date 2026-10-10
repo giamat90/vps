@@ -165,6 +165,12 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
           {!isInstrument && visible.lyrics && <LyricsPanel songId={songId} />}
 
+          {visible.takes && (
+            <div className="practice-room__takes">
+              <TakeList />
+            </div>
+          )}
+
           {isAnalysisLoaded && (visible.pianoRoll || visible.spectrum || visible.dynamics) && (
             <div className="practice-room__analysis">
               <div className="practice-room__analysis-body">
@@ -179,24 +185,15 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
               </div>
             </div>
           )}
-        </div>
 
-        {(visible.takes || visible.vibrato || visible.timing || visible.coach) && (
-          <aside className="practice-room__sidebar">
-            {visible.takes && (
-              <div className="practice-room__takes-wrap">
-                <TakeList />
-              </div>
-            )}
-            {(visible.vibrato || visible.timing || visible.coach) && (
-              <div className="practice-room__sidebar-bottom">
-                {visible.vibrato && <VibratoCard />}
-                {visible.timing && <TimingChart />}
-                {visible.coach && <CoachPanel />}
-              </div>
-            )}
-          </aside>
-        )}
+          {(visible.vibrato || visible.timing || visible.coach) && (
+            <div className="practice-room__feedback">
+              {visible.vibrato && <VibratoCard />}
+              {visible.timing && <TimingChart />}
+              {visible.coach && <CoachPanel />}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
