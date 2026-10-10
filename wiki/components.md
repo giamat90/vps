@@ -38,6 +38,8 @@ App
 │   └── DynamicsCurve      — RMS dynamics over time
 ├── coaching/
 │   └── CoachPanel         — AI coaching tips panel
+├── lyrics/
+│   └── LyricsPanel        — synced lyrics: paste / find online / sync, karaoke view, click a line to seek (PracticeRoom, non-instrument songs)
 └── updater/
     └── UpdateDialog       — auto-update modal (release notes, install/restart, progress)
 ```
@@ -112,6 +114,10 @@ Components subscribe to individual slices to avoid unnecessary re-renders. The s
 | `minPxPerSec` | `number` | Timeline zoom level (WaveSurfer's own px-per-second unit); ctrl+wheel changes this |
 | `scrollTime` | `number` | Song time (seconds) at the left edge of the visible timeline window; shift+wheel changes this |
 | `metronomeOffset` | `number` | Song time (seconds) where the metronome's beat 1 lands; persisted per song via `set_metronome_offset` |
+
+### Lyrics Store (`src/stores/lyrics.ts`)
+
+`{ songId, lyrics, draft, draftSource, status: "idle"|"loading"|"finding"|"syncing", progress, stage, error, notice }` with `load`, `setDraft`, `findOnline`, `sync`, `remove`, `clear`. Every async action re-checks `songId` before writing, so a result for a song that is no longer open is dropped. See [Lyrics Sync](lyrics.md).
 
 ### Exercise Store (`src/stores/exercise.ts`)
 
@@ -447,6 +453,7 @@ Song practice page. Requires a processed song.
 │ ┌─ practice-room__main (flex: 1) ──────────────────┐  │
 │ │  Waveform (vocals + instrumental + take,          │  │
 │ │            mute/solo/volume per track row)        │  │
+│ │  LyricsPanel (non-instrument songs)               │  │
 │ │  Analysis panel (when isAnalysisLoaded):          │  │
 │ │    PianoKeyboard · PianoRoll · DynamicsCurve      │  │
 │ └────────────────────────────────────────────────── ┘  │

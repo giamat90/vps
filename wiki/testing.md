@@ -40,6 +40,10 @@ cd sidecar
 - `tests/test_protocol.py` drives the real `main.py` over stdio exactly like `SidecarManager` does (ready, ping, invalid JSON, unknown command, exceptions → `error` with traceback, progress ordering, non-ASCII paths, `quit`, EOF).
 - Cross-language invariants asserted from the Python side: `N_BINS` == Rust `ST_SPECTRUM_MIN_BINS`; every `"cmd"` string Rust sends is handled by `main.py`; the frontend's `VALID_ALGORITHMS` == `PITCH_ALGORITHMS` (minus the backend-only `piano`); `MIN_YT_DLP_VERSION` == the `requirements*.txt` floors.
 
+## Lyrics sync tests
+
+Details in [Lyrics Sync](lyrics.md#tests). In short: the alignment algorithm is tested without torch (a numpy Viterbi checked against torchaudio's when present, and a scripted fake acoustic model); the Rust and Python path runs in CI through the model-free `VPS_LYRICS_ENGINE=uniform` engine; `tests/test_lyrics_real.py` runs real separated stems against LRCLIB and the vocal energy, **locally only** (skips without `~/.vps`, the cached weights or network; fetched lyrics are cached in git-ignored `sidecar/tests/_local/` and never committed).
+
 ## Known limitations the suite documents
 
 - `_smooth_voiced` (median 6 + Gaussian σ 1.5) keeps only ~40 % of a 5.5 Hz vibrato's depth, so the reported vibrato depth is under-stated; `test_preserves_a_vibrato_shaped_contour` is an `xfail` that will flip to XPASS if the smoothing is ever retuned.

@@ -32,6 +32,7 @@ if getattr(sys, "frozen", False):
 from processor import process, compute_st_spectrum_from_file
 from analysis import analyze_recording, convert_take_to_wav, mix_export
 from version_check import check_yt_dlp_freshness
+import lyrics
 
 
 def send(msg: dict):
@@ -128,6 +129,23 @@ def main():
                     cookies_path=cmd.get("cookiesPath"),
                 )
                 send({"type": "result", "cmd": "import_yt", "data": result})
+
+            elif cmd.get("cmd") == "align_lyrics":
+                result = lyrics.align_lyrics(
+                    cmd["vocalsPath"],
+                    cmd.get("lyrics", ""),
+                    on_progress=make_progress_callback("align_lyrics"),
+                    models_dir=cmd.get("modelsDir"),
+                )
+                send({"type": "result", "cmd": "align_lyrics", "data": result})
+
+            elif cmd.get("cmd") == "find_lyrics":
+                result = lyrics.find_lyrics(
+                    cmd["title"],
+                    artist=cmd.get("artist"),
+                    duration=cmd.get("duration"),
+                )
+                send({"type": "result", "cmd": "find_lyrics", "data": result})
 
             elif cmd.get("cmd") == "ping":
                 send({"type": "pong"})

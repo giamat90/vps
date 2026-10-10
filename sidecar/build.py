@@ -41,6 +41,8 @@ args = [
     "--hidden-import=soundfile",
     "--hidden-import=torch",
     "--hidden-import=torchaudio",
+    # Lyrics sync loads wav2vec2 via torchaudio.pipelines at call time.
+    "--hidden-import=torchaudio.pipelines",
     "--hidden-import=torchcrepe",
     # parselmouth is a single native extension (Praat embedded as a .pyd);
     # collect-all grabs the binary since static analysis can't see into it.

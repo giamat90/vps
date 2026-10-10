@@ -7,7 +7,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invoke(
 vi.mock("@tauri-apps/api/event", () => ({ listen: (...args: unknown[]) => listen(...args) }));
 
 import * as api from "./tauri";
-import type { ProcessingStatus } from "./types";
+import type { LyricsProgress, ProcessingStatus } from "./types";
 
 beforeEach(() => {
   invoke.mockReset();
@@ -51,6 +51,11 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["deleteExerciseTakeApi", () => api.deleteExerciseTakeApi("e1"), "delete_exercise_take", { takeId: "e1" }],
     ["importExerciseFile", () => api.importExerciseFile("/f.wav", 12, "srh"), "import_exercise_file",
       { filePath: "/f.wav", duration: 12, algorithm: "srh" }],
+    ["loadLyrics", () => api.loadLyrics("s1"), "load_lyrics", { songId: "s1" }],
+    ["syncLyrics", () => api.syncLyrics("s1", "la la", "lrclib"), "sync_lyrics",
+      { songId: "s1", text: "la la", source: "lrclib" }],
+    ["findLyrics", () => api.findLyrics("s1"), "find_lyrics", { songId: "s1" }],
+    ["deleteLyrics", () => api.deleteLyrics("s1"), "delete_lyrics", { songId: "s1" }],
   ];
 
   it.each(cases)("%s", async (_name, call, command, payload) => {
@@ -62,7 +67,7 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
 
   it("covers every exported command wrapper", () => {
     const wrappers = Object.entries(api).filter(([, v]) => typeof v === "function").map(([k]) => k);
-    const covered = new Set(cases.map(([name]) => name).concat("onProcessingProgress"));
+    const covered = new Set(cases.map(([name]) => name).concat("onProcessingProgress", "onLyricsProgress"));
     expect(wrappers.filter((w) => !covered.has(w))).toEqual([]);
   });
 
@@ -97,5 +102,21 @@ describe("onProcessingProgress", () => {
     const status: ProcessingStatus = { songId: "s", progress: 0.5, stage: "pitch", isComplete: false };
     listen.mock.calls[0][1]({ payload: status });
     expect(callback).toHaveBeenCalledWith(status);
+  });
+});
+
+describe("onLyricsProgress", () => {
+  it("subscribes to the lyrics-progress event and unwraps the payload", async () => {
+    const unlisten = vi.fn();
+    listen.mockResolvedValueOnce(unlisten);
+    const callback = vi.fn();
+
+    const result = await api.onLyricsProgress(callback);
+
+    expect(result).toBe(unlisten);
+    expect(listen).toHaveBeenCalledWith("lyrics-progress", expect.any(Function));
+    const progress: LyricsProgress = { songId: "s", progress: 0.7, stage: "Listening to the vocals" };
+    listen.mock.calls[0][1]({ payload: progress });
+    expect(callback).toHaveBeenCalledWith(progress);
   });
 });

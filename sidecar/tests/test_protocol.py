@@ -19,8 +19,9 @@ SR = 22050
 
 
 class Sidecar:
-    def __init__(self, home):
-        env = {**os.environ, "USERPROFILE": str(home), "HOME": str(home), "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
+    def __init__(self, home, extra_env=None):
+        env = {**os.environ, "USERPROFILE": str(home), "HOME": str(home), "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",
+               **(extra_env or {})}
         self.proc = subprocess.Popen(
             [sys.executable, "main.py"],
             cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
