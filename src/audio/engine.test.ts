@@ -293,6 +293,48 @@ describe("user clicks on a waveform keep the others in sync", () => {
   });
 });
 
+describe("a click on a waveform while paused tells the UI the new position", () => {
+  it("instrumental click reports the clicked song time", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    const cb = vi.fn();
+    engine.onTimeUpdate(cb);
+    instrumental.emit("interaction", 40);
+    expect(cb).toHaveBeenLastCalledWith(40);
+  });
+
+  it("vocals click reports song time, i.e. the clicked file time plus the vocals start offset", async () => {
+    const { engine, vocals } = await loadedEngine();
+    await reloadVocals(engine, vocals, 10);
+    const cb = vi.fn();
+    engine.onTimeUpdate(cb);
+    vocals.emit("interaction", 20);
+    expect(cb).toHaveBeenLastCalledWith(30);
+  });
+
+  it("take click reports song time through the take's start, audio offset and manual offset", async () => {
+    const { engine } = await loadedEngine();
+    const { take } = await withTake(engine, { duration: 30, start: 20, audioOffset: 2, manual: 1 });
+    const cb = vi.fn();
+    engine.onTimeUpdate(cb);
+    take.emit("interaction", 5);
+    expect(cb).toHaveBeenLastCalledWith(5 - 2 + 20 + 1);
+  });
+
+  it("never reports a time outside the song", async () => {
+    const { engine, vocals } = await loadedEngine();
+    await reloadVocals(engine, vocals, 90);
+    const cb = vi.fn();
+    engine.onTimeUpdate(cb);
+    vocals.emit("interaction", 50);
+    expect(cb).toHaveBeenLastCalledWith(100);
+  });
+
+  it("does not need a registered listener", async () => {
+    const { instrumental } = await loadedEngine();
+    expect(() => instrumental.emit("interaction", 10)).not.toThrow();
+  });
+});
+
 describe("loadVocalsFromPath", () => {
   it("reloads the stem, resumes if it was playing, and resyncs to the instrumental", async () => {
     const { engine, vocals, instrumental } = await loadedEngine();
@@ -680,6 +722,14 @@ describe("exercise track", () => {
     expect(track.seekTo).toHaveBeenLastCalledWith(0);
     engine.seekExerciseTrack(999);
     expect(track.seekTo).toHaveBeenLastCalledWith(1);
+  });
+
+  it("a click on the track reports the clicked time to the UI", async () => {
+    const { engine, track } = await loaded(20);
+    const cb = vi.fn();
+    engine.onTimeUpdate(cb);
+    track.emit("interaction", 12);
+    expect(cb).toHaveBeenLastCalledWith(12);
   });
 
   it("ignores a seek on a zero-length track", async () => {
