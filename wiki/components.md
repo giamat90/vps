@@ -449,32 +449,30 @@ Song practice page. Requires a processed song.
 │  TransportControls · TempoControl ·                   │
 │  [Input / Output (stacked)] · KeyTranspose ·           │
 │  MonitorButton · RecordButton                          │
-├─ practice-room__body (flex row) ──────────────────────┤
-│ ┌─ practice-room__main (flex: 1) ──────────────────┐  │
-│ │  Waveform (vocals + instrumental + take,          │  │
-│ │            mute/solo/volume per track row)        │  │
-│ │  LyricsPanel (non-instrument songs)               │  │
-│ │  Analysis panel (when isAnalysisLoaded):          │  │
-│ │    PianoKeyboard · PianoRoll · DynamicsCurve      │  │
-│ └────────────────────────────────────────────────── ┘  │
-│ ┌─ practice-room__sidebar (15rem, flex col) ────────┐  │
-│ │  practice-room__takes-wrap (flex: 1 1 50%, auto)  │  │
-│ │    TakeList                                       │  │
-│ │  practice-room__sidebar-bottom (flex: 1 1 50%, auto)│ │
-│ │    VibratoCard · TimingChart · CoachPanel         │  │
-│ └───────────────────────────────────────────────────┘  │
+├─ practice-room__body → practice-room__main (one column)┤
+│  Waveform (vocals + instrumental + take,              │
+│            mute/solo/volume per track row)            │
+│  LyricsPanel            (panel `lyrics`, non-instrument)│
+│  practice-room__takes   (panel `takes`: TakeList)     │
+│  practice-room__analysis (when isAnalysisLoaded):     │
+│    PianoKeyboard · PianoRoll   (panel `pianoRoll`)    │
+│    ShortTermSpectrumComparisonPanel (`spectrum`)      │
+│    DynamicsCurve               (`dynamics`)           │
+│  practice-room__feedback                              │
+│    VibratoCard · TimingChart · CoachPanel             │
+│    (panels `vibrato`, `timing`, `coach`)              │
 └───────────────────────────────────────────────────────┘
 ```
 
-**Topbar:** `practice-room__topbar` sits between the header and the body — above both `practice-room__main` and `practice-room__sidebar` — and consolidates every transport/recording control that used to be split across a controls row and a transport row inside the scrollable main column: `TransportControls` (play/stop/time), `TempoControl`, the Input/Output device pair (stacked in `practice-room__io-group`), `KeyTranspose`, `MonitorButton`, and `RecordButton`. It's `position: sticky; top: 0` so it stays visible regardless of which side (main or sidebar) is scrolled — though in practice `.practice-room` itself doesn't scroll (only `practice-room__main` and the sidebar zones do), so the sticky rule is a safety net rather than load-bearing.
+**Topbar:** `practice-room__topbar` sits between the header and the body — above `practice-room__main` — and consolidates every transport/recording control that used to be split across a controls row and a transport row inside the scrollable main column: `TransportControls` (play/stop/time), `TempoControl`, the Input/Output device pair (stacked in `practice-room__io-group`), `KeyTranspose`, `MonitorButton`, and `RecordButton`. It's `position: sticky; top: 0` so it stays visible while the column below it scrolls — though in practice `.practice-room` itself doesn't scroll (only `practice-room__main` does), so the sticky rule is a safety net rather than load-bearing.
 
-**Sidebar layout:** The sidebar splits 50/50 between `practice-room__takes-wrap` (TakeList) and `practice-room__sidebar-bottom` (VibratoCard, TimingChart, CoachPanel), each independently scrollable (`overflow-y: auto`) so neither zone can crowd out the other. The full `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__sidebar`) for the `overflow-y: auto` zones to engage.
+**Layout:** one vertical column (`practice-room__main`, `overflow-y: auto`) with no side widgets: waveforms, lyrics, takes (`practice-room__takes`, capped at `16rem` and scrollable), the analysis block, then the feedback cards (`practice-room__feedback`). Groups that have nothing switched on are not rendered, so hiding a panel always gives its space back. The `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__main`) for the scroll to engage.
 
 **Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on, `isRecording`, or `isMonitoring`. `showAnalysis` is set automatically when the user selects a take, **and on mount for `kind: "instrument"` songs** — an instrument practice track exists to be pitched against, so its piano-pitch ribbon + Pitch Monitor open without waiting for a take, and the tab drops the "(select take)" hint. `PianoKeyboard` renders `<DualTuner />` internally, so the tuner *is* present here (comparing the live mic against the song/piano pitch) — despite older revisions of this note claiming it was ExercisePage-only. For instrument songs the PianoRoll/PitchMonitor legend reads "Piano" instead of "Song".
 
 ### VibratoCard
 
-Compact widget showing vibrato Rate (Hz), Depth (cents), and Evenness (%) for the currently selected take. Located in the sidebar bottom section.
+Compact widget showing vibrato Rate (Hz), Depth (cents), and Evenness (%) for the currently selected take. Shown in the feedback group below the analysis block.
 
 Rendered only when `takeVibrato` is non-null in the analysis store. If all values are zero, no vibrato was detected (pitch swings < 10 ct or pattern too irregular).
 
@@ -484,7 +482,7 @@ Rendered only when `takeVibrato` is non-null in the analysis store. If all value
 
 ### TakeList
 
-List of recorded takes for the current song, in `practice-room__takes-wrap`. Each row shows the take's display name (`take.name || "Take {n}"`) and the recorded date; clicking a row calls `setActiveTake`. Three icon buttons sit on each row (`take-item__actions`):
+List of recorded takes for the current song, in `practice-room__takes`. Each row shows the take's display name (`take.name || "Take {n}"`) and the recorded date; clicking a row calls `setActiveTake`. Three icon buttons sit on each row (`take-item__actions`):
 
 - **✎ rename** — or double-click the name itself — swaps the name for an inline `<input>` (local `editingId`/`editValue` state). Enter or blur commits via `renameTake(takeId, name)`; Escape cancels without saving. Trimmed-empty names clear back to the default `"Take N"` label (Rust command `rename_take` stores `None` in that case).
 - **↓ download** — calls `exportTake(take.filepath, "{Song Title} - {display name}.wav")`, opening a native Save-As dialog. The take is always exported as WAV: the Rust `export_take` command first sends a `convert_take` request to the Python sidecar (`analysis.py: convert_take_to_wav`, decodes the source webm/opus via `librosa.load` + writes `soundfile.write` — the same backend already used for take analysis, so no new dependency) into a temp file, copies that to the chosen destination, and deletes the temp file (`TempFile` RAII guard). The sidecar mutex guard is dropped in an inner block before the dialog `.await` so the command future stays `Send`. Mirrors the `exportStem` pattern used by `SongCard`. The download button shows `…` and disables itself while the conversion/dialog is in flight.
@@ -494,7 +492,7 @@ All three buttons call `e.stopPropagation()` so clicking them doesn't also selec
 
 ### CoachPanel
 
-Generates coaching tips from pitch deviation, timing deviation, vibrato, and dynamics comparisons (`generateTips`). Tips are hidden by default — a header toggle button (`coach-panel__toggle`, "See Tips (N)" / "Hide Tips") reveals `coach-panel__tips`. State is local (`useState`), so it resets to hidden whenever a new take is selected and the component remounts/rerenders with fresh tips. This keeps the sidebar bottom zone compact until the user opts in.
+Generates coaching tips from pitch deviation, timing deviation, vibrato, and dynamics comparisons (`generateTips`). Tips are hidden by default — a header toggle button (`coach-panel__toggle`, "See Tips (N)" / "Hide Tips") reveals `coach-panel__tips`. State is local (`useState`), so it resets to hidden whenever a new take is selected and the component remounts/rerenders with fresh tips. This keeps the feedback group compact until the user opts in.
 
 ### ExercisePage
 
@@ -576,3 +574,28 @@ Each song in the library list is rendered by a `SongCard` component with local s
 
 - **Pitch control** — ±6 semitone offset (−/+ buttons + value display + × reset). At 0 the export is direct; at any other value `pitchShiftSong(song.directory, n)` is called first and the shifted WAV paths are passed to `exportStem`. The suggested filename includes the offset, e.g. `Song - Vocals (+3st).wav`.
 - **Export buttons** — for `kind: "vocal"` songs (default), "↓ Vocals" and "↓ Instr." trigger `exportStem` via a native Save-As dialog, both disabled and showing `…` while pitch-shifting is in progress. For `kind: "instrument"` songs, a single "↓ Download" button exports the practice track (still via `handleExport("vocals")`, since `vocals.wav` holds the actual audio for instrument-kind songs). Instrument-kind cards also show an "Instrument" badge (`song-card__badge`) next to the title.
+
+## Panel visibility (Panels menu)
+
+The practice room has more on it than anyone wants at once, so everything optional can be shown or hidden from the **Panels** menu in the header (`src/components/panels/PanelMenu.tsx`). The state is `usePracticePanels` in `src/stores/panels.ts`, a `createPanelStore` from `@giamat90/mps-core/panels`, persisted under `vps_panels`.
+
+| Panel id | Shows | Default |
+|---|---|---|
+| `takes` | `TakeList` under the waveforms | on |
+| `lyrics` | `LyricsPanel` (never offered for instrument tracks) | on |
+| `pianoRoll` | `PianoKeyboard` + `PianoRoll` | on |
+| `spectrum` | `ShortTermSpectrumComparisonPanel` | off |
+| `dynamics` | `DynamicsCurve` | off |
+| `vibrato` | `VibratoCard` | on |
+| `timing` | `TimingChart` | off |
+| `coach` | `CoachPanel` | on |
+
+Always on: waveforms, transport, tempo, mic/output, transpose, monitor, record. The analysis block only appears once the song analysis has loaded; each group (takes, analysis, feedback) disappears when none of its panels is on. There is no side column: everything is one vertical stack.
+
+Rules for a panel:
+- **A hidden panel is not mounted.** It must be a pure view: nothing may depend on it being on screen. `TakeList` used to fetch the takes on mount; that moved into `loadSong` for exactly this reason. Anything a panel needs to keep running goes in a store or the page, not the panel.
+- **Only the user decides.** There is no automatic open/close: the old "Analysis" tab that opened when a take was selected or while recording was removed.
+- A panel that is on but has nothing to show (vibrato without a take) still renders nothing, as before.
+- Add a panel by adding it to `PRACTICE_PANELS` (its default is a product decision), rendering it behind `visible.<id>` in `PracticeRoom`, and extending `PracticeRoom.test.ts`.
+- Known limit: hiding Lyrics while a sync is running unmounts the panel (its cleanup clears the lyrics store). The sync still finishes and is saved; showing the panel again loads the result.
+- The piano roll's ruler also sets the punch region; with it hidden, use the main timeline ruler.

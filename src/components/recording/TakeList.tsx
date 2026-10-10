@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { usePlayerStore } from "../../stores/player";
 import { exportTake } from "../../lib/tauri";
 import type { Take } from "../../lib/types";
@@ -17,7 +17,6 @@ function TakeList() {
   const song = usePlayerStore((s) => s.song);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
-  const fetchTakes = usePlayerStore((s) => s.fetchTakes);
   const setActiveTake = usePlayerStore((s) => s.setActiveTake);
   const deleteTake = usePlayerStore((s) => s.deleteTake);
   const renameTake = usePlayerStore((s) => s.renameTake);
@@ -51,14 +50,6 @@ function TakeList() {
     setEditingId(null);
     renameTake(takeId, editValue);
   };
-
-  useEffect(() => {
-    // song loads asynchronously (Waveform's loadSong awaits eng.load()), so
-    // fetch again once it actually becomes available — otherwise this can
-    // fire while song is still null right after remount and never retry.
-    if (!song) return;
-    fetchTakes();
-  }, [song?.id]);
 
   if (takes.length === 0) {
     return (

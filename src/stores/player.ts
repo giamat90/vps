@@ -452,6 +452,9 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       metronomeOffset: Math.max(0, Math.min(eng.getDuration(), song.metronomeOffset ?? 0)),
     });
     applyEffectiveVolumes(get());
+    // Here rather than in the Takes panel: the take track needs the list
+    // whether or not that panel is on screen.
+    get().fetchTakes().catch((e: unknown) => console.error("[player] could not load takes:", e));
   },
 
   play: () => {

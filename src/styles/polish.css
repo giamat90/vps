@@ -322,10 +322,6 @@ input[type="range"]:focus-visible {
   box-shadow: 0 0.6rem 0.6rem -0.6rem rgba(0, 0, 0, 0.5);
 }
 
-.practice-room__sidebar-bottom {
-  border-top-color: var(--border);
-}
-
 /* Transport and record cluster */
 .transport {
   border-radius: var(--radius-lg);
