@@ -202,6 +202,21 @@ export async function importExerciseFile(filePath: string, duration: number): Pr
   return invoke<ExerciseTake>("import_exercise_file", { filePath, duration });
 }
 
+/** Open a panel in a window of its own at a screen position; focuses it when it already exists. */
+export async function detachPanel(panelId: string, x: number, y: number): Promise<void> {
+  return invoke("detach_panel", { panelId, x, y });
+}
+
+/** Called from a detached window: close it, which puts its panel back in the main window. */
+export async function dockPanel(): Promise<void> {
+  return invoke("dock_panel");
+}
+
+/** Close every detached window (leaving the practice room, or the song, ends them). */
+export async function closeDetachedWindows(): Promise<void> {
+  return invoke("close_detached_windows");
+}
+
 /** Listen for processing progress events */
 export function onProcessingProgress(
   callback: (status: ProcessingStatus) => void

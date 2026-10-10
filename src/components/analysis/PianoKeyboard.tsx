@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine, usePlayerStore } from "../../stores/player";
+import { usePlayerStore } from "../../stores/player";
+import { getPlaybackTime } from "../../windows/playbackClock";
 import DualTuner from "./DualTuner";
 import { frequencyToMidi, NOTE_NAMES } from "@giamat90/mps-core/music";
 import {
@@ -217,7 +218,7 @@ export default function PianoKeyboard() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      const t        = getEngine().getCurrentTime();
+      const t        = getPlaybackTime();
       const songMidi = getCurrentMidi(songPitch, t);
       const takeMidi = getCurrentMidi(takePitch, t);
       const liveMidi = getCurrentMidi(livePitch, t);
@@ -263,7 +264,7 @@ export default function PianoKeyboard() {
     pressRef.current.voice?.release();
     pressRef.current.midi = midi;
     pressRef.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
-    startPreview(midi, getEngine().getCurrentTime());
+    startPreview(midi, getPlaybackTime());
   };
 
   const onKeyboardMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -273,14 +274,14 @@ export default function PianoKeyboard() {
     pressRef.current.voice?.release();
     pressRef.current.midi = midi;
     pressRef.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
-    startPreview(midi, getEngine().getCurrentTime());
+    startPreview(midi, getPlaybackTime());
   };
 
   const onKeyboardMouseUp = () => {
     pressRef.current.voice?.release();
     pressRef.current.midi = null;
     pressRef.current.voice = null;
-    endPreview(getEngine().getCurrentTime());
+    endPreview(getPlaybackTime());
   };
 
   return (

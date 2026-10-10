@@ -19,11 +19,15 @@ import VibratoCard from "../components/analysis/VibratoCard";
 import TimingChart from "../components/analysis/TimingChart";
 import CoachPanel from "../components/coaching/CoachPanel";
 import LyricsPanel from "../components/lyrics/LyricsPanel";
+import LivePitchFeed from "../components/analysis/LivePitchFeed";
+import DetachHandle from "../components/panels/DetachHandle";
 import PanelMenu from "../components/panels/PanelMenu";
 import { useLibraryStore } from "../stores/library";
 import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
+import { useDetachedStore } from "../stores/detached";
 import { availablePracticePanels, usePracticePanels } from "../stores/panels";
+import { useMainBridge } from "../windows/useMainBridge";
 
 interface PracticeRoomProps {
   songId: string;
@@ -60,6 +64,9 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const isAnalysisLoaded = useAnalysisStore((s) => s.isLoaded);
 
   const visible = usePracticePanels((s) => s.visible);
+  const detached = useDetachedStore((s) => s.detached);
+
+  useMainBridge();
 
   // Load song analysis on mount
   useEffect(() => {
@@ -96,6 +103,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
   return (
     <div className="practice-room">
+      <LivePitchFeed />
       <header className="practice-room__header">
         <button className="practice-room__back" onClick={onBack} aria-label="Back to library">
           &larr; Back
@@ -163,7 +171,12 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             <Waveform song={song} />
           </div>
 
-          {!isInstrument && visible.lyrics && <LyricsPanel songId={songId} />}
+          {!isInstrument && visible.lyrics && !detached.lyrics && (
+            <div className="detachable">
+              <DetachHandle panel="lyrics" />
+              <LyricsPanel songId={songId} />
+            </div>
+          )}
 
           {visible.takes && (
             <div className="practice-room__takes">
@@ -171,14 +184,15 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             </div>
           )}
 
-          {isAnalysisLoaded && (visible.pianoRoll || visible.spectrum || visible.dynamics) && (
+          {isAnalysisLoaded && ((visible.pianoRoll && !detached.pianoRoll) || visible.spectrum || visible.dynamics) && (
             <div className="practice-room__analysis">
               <div className="practice-room__analysis-body">
-                {visible.pianoRoll && (
-                  <>
+                {visible.pianoRoll && !detached.pianoRoll && (
+                  <div className="detachable">
+                    <DetachHandle panel="pianoRoll" />
                     <PianoKeyboard />
                     <PianoRoll />
-                  </>
+                  </div>
                 )}
                 {visible.spectrum && <ShortTermSpectrumComparisonPanel />}
                 {visible.dynamics && <DynamicsCurve />}

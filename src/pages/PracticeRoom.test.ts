@@ -9,6 +9,7 @@ const h = vi.hoisted(() => {
   };
   return {
     stub,
+    detached: {} as Record<string, boolean>,
     library: { songs: [] as unknown[], renameSong: () => {} },
     player: { cleanup: () => {}, takes: [] as unknown[], activeTakeId: null as string | null },
     analysis: {
@@ -42,6 +43,17 @@ vi.mock("../components/analysis/VibratoCard", h.stub("vibrato"));
 vi.mock("../components/analysis/TimingChart", h.stub("timing"));
 vi.mock("../components/coaching/CoachPanel", h.stub("coach"));
 vi.mock("../components/lyrics/LyricsPanel", h.stub("lyrics"));
+vi.mock("../components/analysis/LivePitchFeed", h.stub("livePitchFeed"));
+vi.mock("../components/panels/DetachHandle", async () => {
+  const { createElement: el } = await import("react");
+  return {
+    default: ({ panel }: { panel: string }) => el("div", { "data-c": "detachHandle", "data-panel": panel }),
+  };
+});
+vi.mock("../windows/useMainBridge", () => ({ useMainBridge: () => {} }));
+vi.mock("../stores/detached", () => ({
+  useDetachedStore: (sel: (s: unknown) => unknown) => sel({ detached: h.detached }),
+}));
 vi.mock("../components/panels/PanelMenu", async () => {
   const { createElement: el } = await import("react");
   return {
@@ -74,6 +86,7 @@ beforeEach(() => {
   h.analysis.isLoaded = true;
   h.player.takes = [];
   h.player.activeTakeId = null;
+  h.detached = {};
 });
 
 describe("PracticeRoom panels", () => {
@@ -153,6 +166,42 @@ describe("PracticeRoom panels", () => {
     expect(menu(await render())).toContain("lyrics");
     h.library.songs = [song({ kind: "instrument" })];
     expect(menu(await render())).not.toContain("lyrics");
+  });
+
+  it("offers to detach exactly the panels that can be, each with its own handle", async () => {
+    const html = await render();
+    const handles = [...html.matchAll(/data-panel="(\w+)"/g)].map((m) => m[1]).sort();
+    expect(handles).toEqual(["lyrics", "pianoRoll"]);
+  });
+
+  it("offers no handle for a panel that is hidden", async () => {
+    const html = await render({ lyrics: false });
+    expect([...html.matchAll(/data-panel="(\w+)"/g)].map((m) => m[1])).toEqual(["pianoRoll"]);
+  });
+
+  it("takes a detached piano roll out of the main window and frees its space", async () => {
+    h.detached = { pianoRoll: true };
+    const ids = shown(await render(only("pianoRoll")));
+    for (const c of ["pianoRoll", "pianoKeyboard"]) expect(ids).not.toContain(c);
+    expect(await render(only("pianoRoll"))).not.toContain("practice-room__analysis");
+  });
+
+  it("takes a detached lyrics panel out of the main window", async () => {
+    h.detached = { lyrics: true };
+    expect(shown(await render())).not.toContain("lyrics");
+  });
+
+  it("keeps everything else where it was when one panel is detached", async () => {
+    const before = shown(await render());
+    h.detached = { pianoRoll: true };
+    const after = shown(await render());
+    expect(before.filter((c) => !after.includes(c)).sort()).toEqual(["pianoKeyboard", "pianoRoll"]);
+  });
+
+  it("keeps listening to the microphone whichever panels are on screen", async () => {
+    expect(shown(await render(all(false)))).toContain("livePitchFeed");
+    h.detached = { pianoRoll: true, lyrics: true };
+    expect(shown(await render(all(true)))).toContain("livePitchFeed");
   });
 
   it("no longer has the old Analysis tab: visibility is the user's, not automatic", async () => {

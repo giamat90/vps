@@ -4,6 +4,7 @@ mod lyrics;
 mod pitch;
 mod sidecar;
 mod storage;
+mod windows;
 #[cfg(test)]
 mod integration_tests;
 #[cfg(test)]
@@ -49,6 +50,9 @@ pub fn run() {
             commands::import_exercise_file,
             commands::list_exercise_takes,
             commands::delete_exercise_take,
+            windows::detach_panel,
+            windows::dock_panel,
+            windows::close_detached_windows,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -57,6 +61,15 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+            // Panels detached from the main window must not outlive it.
+            if let Some(main) = tauri::Manager::get_webview_window(app, "main") {
+                let handle = app.handle().clone();
+                main.on_window_event(move |event| {
+                    if matches!(event, tauri::WindowEvent::CloseRequested { .. } | tauri::WindowEvent::Destroyed) {
+                        windows::close_all(&handle);
+                    }
+                });
             }
             Ok(())
         })
