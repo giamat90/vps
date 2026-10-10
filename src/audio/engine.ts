@@ -153,12 +153,14 @@ export class AudioEngine {
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
       this.instrumental?.seekTo(instrProgress);
       this._seekTake(instrTime);
+      this._notifySeek(instrTime);
     });
 
     this.instrumental.on("interaction", (newTime) => {
       // Map instrumental song time → vocals/take file time, accounting for start offset
       this._seekVocals(newTime);
       this._seekTake(newTime);
+      this._notifySeek(newTime);
     });
 
     // Finish fires on the instrumental so partial takes don't prematurely end playback
@@ -363,6 +365,7 @@ export class AudioEngine {
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
       this.instrumental?.seekTo(instrProgress);
       this._seekVocals(instrTime);
+      this._notifySeek(instrTime);
     });
 
     this._takeIsPlaying = false;
@@ -507,6 +510,7 @@ export class AudioEngine {
 
     this.exerciseTrack.on("interaction", (newTime) => {
       this.seekExerciseTrack(newTime);
+      this._notifySeek(newTime, this.exerciseTrack?.getDuration() ?? 0);
     });
 
     this.exerciseTrack.on("finish", () => {
@@ -783,6 +787,13 @@ export class AudioEngine {
       this._rafId = requestAnimationFrame(tick);
     };
     this._rafId = requestAnimationFrame(tick);
+  }
+
+  // The rAF tick is the only other source of time updates and it stops while
+  // paused, so without this a click on a waveform would move the audio but
+  // leave the time readout and the lyrics on the old position until Play.
+  private _notifySeek(time: number, max = this._duration): void {
+    this._timeUpdateCb?.(Math.max(0, Math.min(max, time)));
   }
 
   private _correctDrift(): void {
