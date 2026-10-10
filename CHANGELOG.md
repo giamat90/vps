@@ -6,7 +6,7 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
-## [Unreleased]
+## [0.1.65] - 2026-10-10
 
 ### Added
 - A "Panels" menu in the practice-room header: tick which panels to show (Takes, Lyrics, Piano roll, Spectrum comparison, Dynamics, Vibrato, Timing, Coach), or Show all / Hide all / Reset. Your choice is remembered. The spectrum comparison, dynamics and timing views now start hidden.
