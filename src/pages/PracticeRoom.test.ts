@@ -168,15 +168,46 @@ describe("PracticeRoom panels", () => {
     expect(menu(await render())).not.toContain("lyrics");
   });
 
-  it("offers to detach exactly the panels that can be, each with its own handle", async () => {
-    const html = await render();
-    const handles = [...html.matchAll(/data-panel="(\w+)"/g)].map((m) => m[1]).sort();
-    expect(handles).toEqual(["lyrics", "pianoRoll"]);
+  const handles = (html: string) => [...html.matchAll(/data-panel="(\w+)"/g)].map((m) => m[1]).sort();
+
+  it("offers a handle on every panel that is on screen", async () => {
+    expect(handles(await render())).toEqual(["coach", "lyrics", "pianoRoll", "takes", "vibrato"]);
+    expect(handles(await render(all(true)))).toEqual(
+      ["coach", "dynamics", "lyrics", "pianoRoll", "spectrum", "takes", "timing", "vibrato"],
+    );
   });
 
   it("offers no handle for a panel that is hidden", async () => {
-    const html = await render({ lyrics: false });
-    expect([...html.matchAll(/data-panel="(\w+)"/g)].map((m) => m[1])).toEqual(["pianoRoll"]);
+    expect(handles(await render({ lyrics: false }))).not.toContain("lyrics");
+  });
+
+  it.each([
+    ["takes", ["takes"]],
+    ["lyrics", ["lyrics"]],
+    ["pianoRoll", ["pianoKeyboard", "pianoRoll"]],
+    ["spectrum", ["spectrum"]],
+    ["dynamics", ["dynamics"]],
+    ["vibrato", ["vibrato"]],
+    ["timing", ["timing"]],
+    ["coach", ["coach"]],
+  ])("takes a detached %s out of the main window and nothing else", async (id, gone) => {
+    const before = shown(await render(all(true)));
+    h.detached = { [id]: true };
+    const after = shown(await render(all(true)));
+    const removed = before.filter((c) => !after.includes(c) && c !== "detachHandle");
+    expect(removed.sort()).toEqual([...gone].sort());
+  });
+
+  it("frees the takes and feedback groups when every panel in them is detached", async () => {
+    h.detached = { takes: true, vibrato: true, timing: true, coach: true };
+    const html = await render(all(true));
+    expect(html).not.toContain("practice-room__takes");
+    expect(html).not.toContain("practice-room__feedback");
+  });
+
+  it("keeps the feedback group while one of its panels is still docked", async () => {
+    h.detached = { vibrato: true, timing: true };
+    expect(await render(all(true))).toContain("practice-room__feedback");
   });
 
   it("takes a detached piano roll out of the main window and frees its space", async () => {

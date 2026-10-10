@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { startDetachedBridge, type DetachedBridgeDeps } from "./detachedBridge";
-import { EVT_COMMAND, EVT_HELLO, EVT_LIVE, EVT_STATE, type SharedState, type StateMessage } from "./protocol";
+import {
+  EVT_COMMAND, EVT_HELLO, EVT_LIVE, EVT_SPECTRUM, EVT_STATE,
+  type SharedState, type SpectrumMessage, type StateMessage,
+} from "./protocol";
 import type { PitchPoint, Take } from "../lib/types";
+import type { DetachablePanel } from "./protocol";
 
 const pt = (time: number): PitchPoint => ({ time, frequency: 220, confidence: 1 });
 const take = (id: string) => ({ id, songId: "s1", recordedAt: "now", filepath: `/t/${id}.wav`, startPosition: 0 }) as Take;
@@ -9,7 +13,7 @@ const SONG = { id: "s1", title: "Song", kind: "vocal" } as never;
 
 const shared = (extra: Partial<SharedState> = {}): SharedState => ({
   song: SONG, duration: 200, isRecording: false, isMonitoring: false, exerciseMode: false,
-  punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null, activeTake: null,
+  punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null, activeTake: null, takes: [],
   ...extra,
 });
 
@@ -21,7 +25,7 @@ const state = (
   shared: shared(s),
 });
 
-function setup(panelId: "pianoRoll" | "lyrics" = "pianoRoll") {
+function setup(panelId: DetachablePanel = "pianoRoll") {
   let playerState: Record<string, unknown> = {
     seek: () => {}, setPunchIn: () => {}, setPunchOut: () => {}, clearPunch: () => {},
     currentTime: 0,
@@ -37,6 +41,7 @@ function setup(panelId: "pianoRoll" | "lyrics" = "pianoRoll") {
     timeSource = null;
   });
 
+  const onSpectrum = vi.fn();
   const loadSongAnalysis = vi.fn(async () => {});
   const loadTakeAnalysis = vi.fn();
   const clearTakeAnalysis = vi.fn();
@@ -69,13 +74,14 @@ function setup(panelId: "pianoRoll" | "lyrics" = "pianoRoll") {
       timeSource = fn;
       return uninstall;
     },
+    onSpectrum,
     loadSongAnalysis,
     loadTakeAnalysis,
     clearTakeAnalysis,
   };
 
   return {
-    deps, emitted, order, unlisten, uninstall, loadSongAnalysis, loadTakeAnalysis, clearTakeAnalysis,
+    deps, emitted, order, unlisten, uninstall, onSpectrum, loadSongAnalysis, loadTakeAnalysis, clearTakeAnalysis,
     player: () => playerState,
     analysis: () => analysisState,
     timeSource: () => timeSource,
@@ -170,6 +176,64 @@ describe("detached bridge: applying the main window state", () => {
   });
 });
 
+describe("detached bridge: takes", () => {
+  const summary = (id: string) => ({ id, songId: "s1", recordedAt: "now", filepath: `/t/${id}.wav`, startPosition: 0 });
+
+  it("mirrors the list of takes and which one is active", async () => {
+    const t = setup("takes");
+    await startDetachedBridge(t.deps);
+    t.deliver(EVT_STATE, state({}, { takes: [summary("t1"), summary("t2")], activeTake: take("t2") }));
+    expect((t.player().takes as unknown[]).length).toBe(2);
+    expect(t.player().activeTakeId).toBe("t2");
+  });
+
+  it("turns select, delete and rename into commands", async () => {
+    const t = setup("takes");
+    await startDetachedBridge(t.deps);
+    const p = t.player() as {
+      setActiveTake: (id: string) => void;
+      deleteTake: (id: string) => Promise<void>;
+      renameTake: (id: string, name: string) => Promise<void>;
+    };
+    p.setActiveTake("t2");
+    await p.deleteTake("t1");
+    await p.renameTake("t2", "Verse");
+    const commands = t.emitted.filter((e) => e.event === EVT_COMMAND).map((e) => e.payload);
+    expect(commands).toEqual([
+      { type: "setActiveTake", id: "t2" },
+      { type: "deleteTake", id: "t1" },
+      { type: "renameTake", id: "t2", name: "Verse" },
+    ]);
+  });
+
+  it("highlights a selected take at once, without waiting for the round trip", async () => {
+    const t = setup("takes");
+    await startDetachedBridge(t.deps);
+    (t.player() as { setActiveTake: (id: string) => void }).setActiveTake("t2");
+    expect(t.player().activeTakeId).toBe("t2");
+  });
+});
+
+describe("detached bridge: spectrum", () => {
+  it("hands each spectrum message to the spectrum source", async () => {
+    const t = setup("spectrum");
+    await startDetachedBridge(t.deps);
+    const none = { f1: null, f2: null, f3: null };
+    const message: SpectrumMessage = { live: null, formants: { song: none, take: none, live: none } };
+    t.deliver(EVT_SPECTRUM, message);
+    expect(t.onSpectrum).toHaveBeenCalledWith(message);
+  });
+
+  it("ignores a malformed spectrum message, and says so", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const t = setup("spectrum");
+    await startDetachedBridge(t.deps);
+    t.deliver(EVT_SPECTRUM, { live: 3 });
+    expect(t.onSpectrum).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+});
+
 describe("detached bridge: the playhead", () => {
   it("advances currentTime in the store while playing, from the extrapolated clock", async () => {
     const t = setup();
@@ -243,7 +307,7 @@ describe("detached bridge: dispose", () => {
     const t = setup();
     const bridge = await startDetachedBridge(t.deps);
     bridge.dispose();
-    expect(t.unlisten).toHaveBeenCalledTimes(2);
+    expect(t.unlisten).toHaveBeenCalledTimes(3);
     expect(vi.getTimerCount()).toBe(0);
     expect(t.uninstall).toHaveBeenCalledTimes(1);
     expect(t.timeSource()).toBeNull();

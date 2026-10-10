@@ -16,7 +16,7 @@ interface DetachHandleProps {
 function DetachHandle({ panel }: DetachHandleProps) {
   const [dragging, setDragging] = useState(false);
 
-  const detach = async (x: number, y: number) => {
+  const detach = async (x?: number, y?: number) => {
     try {
       await detachPanel(panel, x, y);
       useDetachedStore.getState().markDetached(panel);
@@ -64,7 +64,7 @@ function DetachHandle({ panel }: DetachHandleProps) {
         className="detach-handle__pop"
         title="Open this panel in its own window"
         aria-label="Open this panel in its own window"
-        onClick={() => void detach(window.screenX + 80, window.screenY + 80)}
+        onClick={() => void detach()}
       >
         &#10530;
       </button>

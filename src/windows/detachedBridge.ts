@@ -4,13 +4,17 @@ import {
   EVT_COMMAND,
   EVT_HELLO,
   EVT_LIVE,
+  EVT_SPECTRUM,
   EVT_STATE,
   isLiveMessage,
+  isSpectrumMessage,
   isStateMessage,
   type Command,
   type DetachablePanel,
   type LiveMessage,
+  type SpectrumMessage,
   type StateMessage,
+  type TakeSummary,
   type TransportSnapshot,
 } from "./protocol";
 
@@ -34,10 +38,14 @@ export interface DetachedPlayer {
   punchLoop: boolean;
   selectedOutputDeviceId: string | null;
   activeTakeId: string | null;
+  takes: TakeSummary[];
   seek: (time: number) => void;
   setPunchIn: (time: number) => void;
   setPunchOut: (time: number) => void;
   clearPunch: () => void;
+  setActiveTake: (id: string) => void;
+  deleteTake: (id: string) => Promise<void>;
+  renameTake: (id: string, name: string) => Promise<void>;
 }
 
 export interface DetachedAnalysis {
@@ -52,6 +60,7 @@ export interface DetachedBridgeDeps {
   emit: (event: string, payload: unknown) => void | Promise<void>;
   listen: (event: string, cb: (payload: unknown) => void) => Promise<() => void>;
   now: () => number;
+  onSpectrum: (message: SpectrumMessage) => void;
   installTimeSource: (source: () => number) => () => void;
   loadSongAnalysis: (songId: string) => Promise<void>;
   loadTakeAnalysis: (take: Take) => void;
@@ -106,6 +115,12 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
     setPunchIn: (time) => command({ type: "setPunchIn", time }),
     setPunchOut: (time) => command({ type: "setPunchOut", time }),
     clearPunch: () => command({ type: "clearPunch" }),
+    setActiveTake: (id) => {
+      player.setState({ activeTakeId: id });
+      command({ type: "setActiveTake", id });
+    },
+    deleteTake: async (id) => command({ type: "deleteTake", id }),
+    renameTake: async (id, name) => command({ type: "renameTake", id, name }),
   });
 
   const applyState = (message: StateMessage) => {
@@ -125,6 +140,7 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
       punchLoop: shared.punchLoop,
       selectedOutputDeviceId: shared.selectedOutputDeviceId,
       activeTakeId: shared.activeTake?.id ?? null,
+      takes: shared.takes,
       isPlaying: transport.playing,
       playbackRate: transport.rate,
       currentTime: clock.now(now()),
@@ -167,6 +183,14 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
     applyLive(payload);
   });
 
+  const unlistenSpectrum = await deps.listen(EVT_SPECTRUM, (payload) => {
+    if (!isSpectrumMessage(payload)) {
+      console.warn("[detached] ignoring a malformed spectrum message:", payload);
+      return;
+    }
+    deps.onSpectrum(payload);
+  });
+
   const timer = setInterval(writeTime, TICK_MS);
 
   send(EVT_HELLO, { panelId: deps.panelId });
@@ -176,6 +200,7 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
       clearInterval(timer);
       unlistenState();
       unlistenLive();
+      unlistenSpectrum();
       uninstallTimeSource();
     },
   };

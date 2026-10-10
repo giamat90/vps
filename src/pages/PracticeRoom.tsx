@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Waveform from "../components/player/Waveform";
 import DownloadAllButton from "../components/player/DownloadAllButton";
 import ExportMixButton from "../components/player/ExportMixButton";
@@ -27,7 +27,18 @@ import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
 import { useDetachedStore } from "../stores/detached";
 import { availablePracticePanels, usePracticePanels } from "../stores/panels";
+import type { DetachablePanel } from "../windows/protocol";
 import { useMainBridge } from "../windows/useMainBridge";
+
+/** A panel with the corner handle that moves it into a window of its own. */
+function Detachable({ panel, children }: { panel: DetachablePanel; children: ReactNode }) {
+  return (
+    <div className="detachable">
+      <DetachHandle panel={panel} />
+      {children}
+    </div>
+  );
+}
 
 interface PracticeRoomProps {
   songId: string;
@@ -67,6 +78,9 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const detached = useDetachedStore((s) => s.detached);
 
   useMainBridge();
+
+  // On screen in this window: wanted, and not living in a window of its own.
+  const docked = (id: DetachablePanel) => visible[id] && !detached[id];
 
   // Load song analysis on mount
   useEffect(() => {
@@ -171,40 +185,60 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             <Waveform song={song} />
           </div>
 
-          {!isInstrument && visible.lyrics && !detached.lyrics && (
-            <div className="detachable">
-              <DetachHandle panel="lyrics" />
+          {!isInstrument && docked("lyrics") && (
+            <Detachable panel="lyrics">
               <LyricsPanel songId={songId} />
-            </div>
+            </Detachable>
           )}
 
-          {visible.takes && (
+          {docked("takes") && (
             <div className="practice-room__takes">
-              <TakeList />
+              <Detachable panel="takes">
+                <TakeList />
+              </Detachable>
             </div>
           )}
 
-          {isAnalysisLoaded && ((visible.pianoRoll && !detached.pianoRoll) || visible.spectrum || visible.dynamics) && (
+          {isAnalysisLoaded && (docked("pianoRoll") || docked("spectrum") || docked("dynamics")) && (
             <div className="practice-room__analysis">
               <div className="practice-room__analysis-body">
-                {visible.pianoRoll && !detached.pianoRoll && (
-                  <div className="detachable">
-                    <DetachHandle panel="pianoRoll" />
+                {docked("pianoRoll") && (
+                  <Detachable panel="pianoRoll">
                     <PianoKeyboard />
                     <PianoRoll />
-                  </div>
+                  </Detachable>
                 )}
-                {visible.spectrum && <ShortTermSpectrumComparisonPanel />}
-                {visible.dynamics && <DynamicsCurve />}
+                {docked("spectrum") && (
+                  <Detachable panel="spectrum">
+                    <ShortTermSpectrumComparisonPanel />
+                  </Detachable>
+                )}
+                {docked("dynamics") && (
+                  <Detachable panel="dynamics">
+                    <DynamicsCurve />
+                  </Detachable>
+                )}
               </div>
             </div>
           )}
 
-          {(visible.vibrato || visible.timing || visible.coach) && (
+          {(docked("vibrato") || docked("timing") || docked("coach")) && (
             <div className="practice-room__feedback">
-              {visible.vibrato && <VibratoCard />}
-              {visible.timing && <TimingChart />}
-              {visible.coach && <CoachPanel />}
+              {docked("vibrato") && (
+                <Detachable panel="vibrato">
+                  <VibratoCard />
+                </Detachable>
+              )}
+              {docked("timing") && (
+                <Detachable panel="timing">
+                  <TimingChart />
+                </Detachable>
+              )}
+              {docked("coach") && (
+                <Detachable panel="coach">
+                  <CoachPanel />
+                </Detachable>
+              )}
             </div>
           )}
         </div>

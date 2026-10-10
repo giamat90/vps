@@ -1,13 +1,33 @@
 //! Detached panels: a panel dragged out of the main window gets a window of its
 //! own. The window only ever loads this app's own page; what it shows is decided
 //! from its label by the frontend, so nothing from a caller is put in a URL.
+//!
+//! Where a panel's window last was (and how big) is remembered between uses,
+//! but only applied while it is still on a connected monitor.
 
-use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
+use serde::{Deserialize, Serialize};
+use tauri::{
+    AppHandle, Emitter, LogicalPosition, Manager, PhysicalPosition, PhysicalSize, Position, Size, WebviewUrl,
+    WebviewWindow, WebviewWindowBuilder, WindowEvent,
+};
 
 pub const DETACHED_PREFIX: &str = "detached-";
 const EVT_DOCKED: &str = "mps:docked";
+const MEMORY_FILE: &str = "detached_windows.json";
+
 /// Far beyond any real desktop; a value outside this is a bug or an attack, not a position.
 const MAX_COORDINATE: f64 = 20_000.0;
+const MIN_WIDTH: u32 = 240;
+const MIN_HEIGHT: u32 = 140;
+const MAX_SIZE: u32 = 10_000;
+/// Windows reports a minimised window at about (-32000, -32000); that is not a place.
+const MINIMISED_BELOW: i32 = -30_000;
+/// How much of a remembered window must overlap a monitor for the position to be worth restoring.
+const MIN_VISIBLE_W: i64 = 80;
+const MIN_VISIBLE_H: i64 = 40;
 
 #[derive(Debug, PartialEq)]
 pub struct WindowPlan {
@@ -17,11 +37,17 @@ pub struct WindowPlan {
     pub height: f64,
 }
 
-/// Mirrors `DETACHABLE_PANELS` in src/windows/protocol.ts.
+/// Mirrors `DETACHABLE_PANELS` in src/windows/protocol.ts (a contract test compares them).
 pub fn plan(panel_id: &str) -> Result<WindowPlan, String> {
     let (title, width, height) = match panel_id {
         "pianoRoll" => ("Piano roll", 1000.0, 460.0),
         "lyrics" => ("Lyrics", 560.0, 640.0),
+        "takes" => ("Takes", 420.0, 560.0),
+        "spectrum" => ("Spectrum comparison", 900.0, 420.0),
+        "dynamics" => ("Dynamics", 900.0, 280.0),
+        "vibrato" => ("Vibrato", 380.0, 340.0),
+        "timing" => ("Timing", 620.0, 340.0),
+        "coach" => ("Coach", 520.0, 520.0),
         other => return Err(format!("{other:?} cannot be detached")),
     };
     Ok(WindowPlan {
@@ -44,6 +70,124 @@ pub fn is_detached_label(label: &str) -> bool {
     label.strip_prefix(DETACHED_PREFIX).is_some_and(|rest| plan(rest).is_ok())
 }
 
+/// Outer position and inner size, physical pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Geometry {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+pub fn is_sane(g: &Geometry) -> bool {
+    (MIN_WIDTH..=MAX_SIZE).contains(&g.width)
+        && (MIN_HEIGHT..=MAX_SIZE).contains(&g.height)
+        && g.x > MINIMISED_BELOW
+        && g.y > MINIMISED_BELOW
+        && g.x.abs() <= 100_000
+        && g.y.abs() <= 100_000
+}
+
+/// Is enough of the window on some monitor for the user to find and grab it?
+pub fn is_visible(g: &Geometry, monitors: &[Geometry]) -> bool {
+    monitors.iter().any(|m| {
+        let w = (i64::from(g.x) + i64::from(g.width)).min(i64::from(m.x) + i64::from(m.width)) - i64::from(g.x).max(i64::from(m.x));
+        let h = (i64::from(g.y) + i64::from(g.height)).min(i64::from(m.y) + i64::from(m.height)) - i64::from(g.y).max(i64::from(m.y));
+        w >= MIN_VISIBLE_W && h >= MIN_VISIBLE_H
+    })
+}
+
+/// Reads the remembered windows, dropping anything unusable instead of failing:
+/// a damaged file must never stop a panel from opening.
+pub fn parse_saved(json: &str) -> BTreeMap<String, Geometry> {
+    let mut out = BTreeMap::new();
+    let value: serde_json::Value = match serde_json::from_str(json) {
+        Ok(v) => v,
+        Err(e) => {
+            log::warn!("Ignoring the remembered window positions: {e}");
+            return out;
+        }
+    };
+    let Some(map) = value.as_object() else {
+        log::warn!("Ignoring the remembered window positions: not an object");
+        return out;
+    };
+    for (id, v) in map {
+        if plan(id).is_err() {
+            continue;
+        }
+        match serde_json::from_value::<Geometry>(v.clone()) {
+            Ok(g) if is_sane(&g) => {
+                out.insert(id.clone(), g);
+            }
+            Ok(g) => log::warn!("Ignoring an implausible remembered position for {id}: {g:?}"),
+            Err(e) => log::warn!("Ignoring the remembered position of {id}: {e}"),
+        }
+    }
+    out
+}
+
+pub fn serialize_saved(saved: &BTreeMap<String, Geometry>) -> String {
+    serde_json::to_string_pretty(saved).unwrap_or_else(|_| "{}".to_string())
+}
+
+/// Where each panel window last was. Managed by the app; read at start, written when a window closes.
+pub struct WindowMemory(Mutex<BTreeMap<String, Geometry>>);
+
+impl WindowMemory {
+    pub fn load() -> Self {
+        let path = crate::storage::app_data_dir().join(MEMORY_FILE);
+        let saved = match std::fs::read_to_string(&path) {
+            Ok(text) => parse_saved(&text),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => BTreeMap::new(),
+            Err(e) => {
+                log::warn!("Could not read {}: {e}", path.display());
+                BTreeMap::new()
+            }
+        };
+        Self(Mutex::new(saved))
+    }
+
+    fn get(&self, id: &str) -> Option<Geometry> {
+        self.0.lock().ok()?.get(id).copied()
+    }
+
+    fn set(&self, id: &str, g: Geometry) {
+        if let Ok(mut map) = self.0.lock() {
+            map.insert(id.to_string(), g);
+        }
+    }
+
+    fn update(&self, id: &str, f: impl FnOnce(&mut Geometry)) {
+        if let Ok(mut map) = self.0.lock() {
+            if let Some(g) = map.get_mut(id) {
+                f(g);
+            }
+        }
+    }
+
+    fn persist(&self) {
+        let Ok(map) = self.0.lock() else { return };
+        let path = crate::storage::app_data_dir().join(MEMORY_FILE);
+        if let Err(e) = std::fs::write(&path, serialize_saved(&map)) {
+            log::warn!("Could not remember the window positions in {}: {e}", path.display());
+        }
+    }
+}
+
+fn monitor_rects(app: &AppHandle) -> Vec<Geometry> {
+    match app.available_monitors() {
+        Ok(monitors) => monitors
+            .iter()
+            .map(|m| Geometry { x: m.position().x, y: m.position().y, width: m.size().width, height: m.size().height })
+            .collect(),
+        Err(e) => {
+            log::warn!("Could not list the monitors: {e}");
+            Vec::new()
+        }
+    }
+}
+
 pub fn close_all(app: &AppHandle) {
     for (label, window) in app.webview_windows() {
         if is_detached_label(&label) {
@@ -54,29 +198,76 @@ pub fn close_all(app: &AppHandle) {
     }
 }
 
+/// `x` and `y` are where the user let go (logical, screen coordinates). Without
+/// them the window goes where it was last, if that is still on a monitor.
 #[tauri::command]
-pub async fn detach_panel(app: AppHandle, panel_id: String, x: f64, y: f64) -> Result<(), String> {
+pub async fn detach_panel(
+    app: AppHandle,
+    panel_id: String,
+    x: Option<f64>,
+    y: Option<f64>,
+) -> Result<(), String> {
     let plan = plan(&panel_id)?;
-    let (x, y) = checked_position(x, y)?;
+    let dropped = match (x, y) {
+        (Some(x), Some(y)) => Some(checked_position(x, y)?),
+        _ => None,
+    };
 
     if let Some(existing) = app.get_webview_window(&plan.label) {
         return existing.set_focus().map_err(|e| format!("Focus {}: {e}", plan.label));
     }
 
+    let memory = app.state::<WindowMemory>();
+    let remembered = memory.get(&panel_id).filter(|g| is_visible(g, &monitor_rects(&app)));
+
     let window = WebviewWindowBuilder::new(&app, &plan.label, WebviewUrl::App("index.html".into()))
         .title(plan.title)
         .inner_size(plan.width, plan.height)
-        .position(x, y)
+        .visible(false)
         .build()
         .map_err(|e| format!("Open {}: {e}", plan.label))?;
 
+    if let Some(g) = remembered {
+        window
+            .set_size(Size::Physical(PhysicalSize::new(g.width, g.height)))
+            .map_err(|e| format!("Size {}: {e}", plan.label))?;
+    }
+    if let Some((x, y)) = dropped {
+        window
+            .set_position(Position::Logical(LogicalPosition::new(x, y)))
+            .map_err(|e| format!("Place {}: {e}", plan.label))?;
+    } else if let Some(g) = remembered {
+        window
+            .set_position(Position::Physical(PhysicalPosition::new(g.x, g.y)))
+            .map_err(|e| format!("Place {}: {e}", plan.label))?;
+    }
+    window.show().map_err(|e| format!("Show {}: {e}", plan.label))?;
+
+    if let (Ok(pos), Ok(size)) = (window.outer_position(), window.inner_size()) {
+        memory.set(&panel_id, Geometry { x: pos.x, y: pos.y, width: size.width, height: size.height });
+    }
+
     let handle = app.clone();
-    window.on_window_event(move |event| {
-        if matches!(event, WindowEvent::Destroyed) {
+    window.on_window_event(move |event| match event {
+        WindowEvent::Moved(pos) if pos.x > MINIMISED_BELOW && pos.y > MINIMISED_BELOW => {
+            handle.state::<WindowMemory>().update(&panel_id, |g| {
+                g.x = pos.x;
+                g.y = pos.y;
+            });
+        }
+        WindowEvent::Resized(size) if size.width > 0 && size.height > 0 => {
+            handle.state::<WindowMemory>().update(&panel_id, |g| {
+                g.width = size.width;
+                g.height = size.height;
+            });
+        }
+        WindowEvent::Destroyed => {
+            handle.state::<WindowMemory>().persist();
             if let Err(e) = handle.emit(EVT_DOCKED, &panel_id) {
                 log::warn!("Could not announce that {panel_id} was docked: {e}");
             }
         }
+        _ => {}
     });
     Ok(())
 }
@@ -90,6 +281,16 @@ pub async fn dock_panel(window: WebviewWindow) -> Result<(), String> {
     window.close().map_err(|e| format!("Close {}: {e}", window.label()))
 }
 
+/// Closes one panel's window from the main window (hiding the panel in the menu).
+#[tauri::command]
+pub async fn close_detached_panel(app: AppHandle, panel_id: String) -> Result<(), String> {
+    let plan = plan(&panel_id)?;
+    match app.get_webview_window(&plan.label) {
+        Some(window) => window.destroy().map_err(|e| format!("Close {}: {e}", plan.label)),
+        None => Ok(()),
+    }
+}
+
 #[tauri::command]
 pub async fn close_detached_windows(app: AppHandle) -> Result<(), String> {
     close_all(&app);
@@ -100,26 +301,34 @@ pub async fn close_detached_windows(app: AppHandle) -> Result<(), String> {
 mod tests {
     use super::*;
 
+    const ALL: [&str; 8] = ["pianoRoll", "lyrics", "takes", "spectrum", "dynamics", "vibrato", "timing", "coach"];
+
+    fn g(x: i32, y: i32, width: u32, height: u32) -> Geometry {
+        Geometry { x, y, width, height }
+    }
+
     #[test]
-    fn plans_a_window_for_each_detachable_panel() {
-        let p = plan("pianoRoll").unwrap();
-        assert_eq!(p.label, "detached-pianoRoll");
-        assert!(p.width > 0.0 && p.height > 0.0);
-        assert_eq!(plan("lyrics").unwrap().label, "detached-lyrics");
+    fn plans_a_window_for_each_panel_of_the_practice_room() {
+        for id in ALL {
+            let p = plan(id).unwrap();
+            assert_eq!(p.label, format!("detached-{id}"));
+            assert!(p.width >= f64::from(MIN_WIDTH) && p.height >= f64::from(MIN_HEIGHT), "{id}");
+        }
     }
 
     #[test]
     fn refuses_anything_else_so_a_caller_cannot_choose_a_label() {
-        for bad in ["", "takes", "main", "PianoRoll", "pianoRoll ", "../main", "pianoRoll/../x", "detached-pianoRoll"] {
+        for bad in ["", "waveform", "main", "PianoRoll", "pianoRoll ", "../main", "pianoRoll/../x", "detached-pianoRoll"] {
             assert!(plan(bad).is_err(), "{bad:?} must not be detachable");
         }
     }
 
     #[test]
     fn only_our_own_labels_count_as_detached() {
-        assert!(is_detached_label("detached-pianoRoll"));
-        assert!(is_detached_label("detached-lyrics"));
-        for other in ["main", "detached-", "detached-takes", "xdetached-lyrics", "detached-lyrics-2"] {
+        for id in ALL {
+            assert!(is_detached_label(&format!("detached-{id}")));
+        }
+        for other in ["main", "detached-", "detached-waveform", "xdetached-lyrics", "detached-lyrics-2"] {
             assert!(!is_detached_label(other), "{other:?}");
         }
     }
@@ -136,5 +345,62 @@ mod tests {
         for (x, y) in [(f64::NAN, 0.0), (0.0, f64::INFINITY), (1e9, 0.0), (0.0, -1e9)] {
             assert!(checked_position(x, y).is_err(), "({x}, {y})");
         }
+    }
+
+    #[test]
+    fn a_window_on_a_connected_monitor_is_worth_restoring() {
+        let monitors = [g(0, 0, 1920, 1080), g(1920, 0, 2560, 1440)];
+        assert!(is_visible(&g(100, 100, 900, 400), &monitors));
+        assert!(is_visible(&g(2000, 50, 900, 400), &monitors));
+    }
+
+    #[test]
+    fn a_window_that_straddles_two_monitors_is_visible() {
+        assert!(is_visible(&g(1500, 100, 900, 400), &[g(0, 0, 1920, 1080), g(1920, 0, 2560, 1440)]));
+    }
+
+    #[test]
+    fn a_window_left_on_a_monitor_that_is_gone_is_not_restored() {
+        assert!(!is_visible(&g(2000, 50, 900, 400), &[g(0, 0, 1920, 1080)]));
+        assert!(!is_visible(&g(-1800, 50, 900, 400), &[g(0, 0, 1920, 1080)]));
+    }
+
+    #[test]
+    fn a_window_with_only_a_sliver_on_screen_cannot_be_grabbed() {
+        assert!(!is_visible(&g(1900, 100, 900, 400), &[g(0, 0, 1920, 1080)]));
+        assert!(!is_visible(&g(100, 1060, 900, 400), &[g(0, 0, 1920, 1080)]));
+    }
+
+    #[test]
+    fn nothing_is_visible_when_the_monitors_cannot_be_listed() {
+        assert!(!is_visible(&g(0, 0, 900, 400), &[]));
+    }
+
+    #[test]
+    fn remembered_windows_round_trip() {
+        let mut saved = BTreeMap::new();
+        saved.insert("pianoRoll".to_string(), g(2000, 50, 1000, 460));
+        saved.insert("lyrics".to_string(), g(-1900, 10, 560, 640));
+        assert_eq!(parse_saved(&serialize_saved(&saved)), saved);
+    }
+
+    #[test]
+    fn a_damaged_file_never_stops_a_panel_opening() {
+        for junk in ["", "not json", "[]", "null", "42", "{\"pianoRoll\": 3}"] {
+            assert!(parse_saved(junk).is_empty(), "{junk:?}");
+        }
+    }
+
+    #[test]
+    fn unknown_panels_and_implausible_geometry_are_dropped_but_the_rest_kept() {
+        let json = r#"{
+            "pianoRoll": {"x": 10, "y": 20, "width": 1000, "height": 460},
+            "waveform":  {"x": 10, "y": 20, "width": 1000, "height": 460},
+            "lyrics":    {"x": 10, "y": 20, "width": 5,    "height": 460},
+            "takes":     {"x": -32000, "y": -32000, "width": 420, "height": 560},
+            "coach":     {"x": "left", "y": 0, "width": 520, "height": 520}
+        }"#;
+        let saved = parse_saved(json);
+        assert_eq!(saved.keys().collect::<Vec<_>>(), vec!["pianoRoll"]);
     }
 }

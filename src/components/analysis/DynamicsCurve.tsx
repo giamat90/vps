@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine, usePlayerStore } from "../../stores/player";
+import { usePlayerStore } from "../../stores/player";
+import { getPlaybackTime } from "../../windows/playbackClock";
 
 const WINDOW_S = 10;
 
@@ -44,7 +45,7 @@ export default function DynamicsCurve() {
         return;
       }
 
-      const currentTime = getEngine().getCurrentTime();
+      const currentTime = getPlaybackTime();
       const t0 = currentTime - WINDOW_S / 2;
       const t1 = currentTime + WINDOW_S / 2;
 

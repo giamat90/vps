@@ -1,10 +1,12 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore, type STSpectrum } from "../../stores/analysis";
-import { getEngine, getMicAnalyser, usePlayerStore } from "../../stores/player";
+import { usePlayerStore } from "../../stores/player";
+import { getPlaybackTime } from "../../windows/playbackClock";
+import { getSpectrumSource } from "../../windows/spectrumRegistry";
 import { freqToX, smoothSpectrumLight, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
-import { estimateFormants, type FormantEstimate } from "../../lib/formants";
+import type { FormantEstimate } from "../../lib/formants";
 
 // Deliberately decoupled from SpectrogramPanel's MIN_DB/MAX_DB (-85..-20,
 // tuned for the live waterfall's thermal LUT) — this panel needs the full
@@ -14,35 +16,10 @@ const PANEL_MAX_DB = SPECTRUM_MAX_DB;
 const DB_TICK_STEP = 10;
 const FREQ_DECADES = [100, 1000, 10000];
 
-const FORMANT_WINDOW = 8192;
 // Song/take formants only need re-estimating when the playhead has moved, not
 // every rAF frame, since the underlying audio window is identical while paused.
+// The estimating itself (and its cache) lives in the SpectrumSource.
 const FORMANT_CACHE_STEP_S = 0.02;
-const NO_FORMANTS: FormantEstimate = { f1: null, f2: null, f3: null };
-
-interface FormantTracker {
-  prev: FormantEstimate;
-  key: number;
-  est: FormantEstimate;
-}
-
-function newFormantTracker(): FormantTracker {
-  return { prev: NO_FORMANTS, key: NaN, est: NO_FORMANTS };
-}
-
-/** Same LPC estimator as Free Exercise's panel; `key` (NaN = never cache) skips re-estimating an unchanged window. */
-function trackedFormants(
-  tracker: FormantTracker,
-  key: number,
-  getSamples: () => { samples: Float32Array; sampleRate: number } | null,
-): FormantEstimate {
-  if (!Number.isNaN(key) && tracker.key === key) return tracker.est;
-  const snapshot = getSamples();
-  tracker.est = snapshot ? estimateFormants(snapshot.samples, snapshot.sampleRate, tracker.prev) : NO_FORMANTS;
-  tracker.prev = tracker.est;
-  tracker.key = key;
-  return tracker.est;
-}
 
 /** Dashed vertical line + "F1 520"-style label per formant, in the colour of the curve it belongs to.
  * Song labels stack down from the top and the singer's up from the bottom so the two sets don't collide. */
@@ -170,17 +147,12 @@ export default function ShortTermSpectrumComparisonPanel() {
   const isRecording = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const drawRef = useRef<() => void>(() => {});
-  const liveScratch = useRef<Float32Array<ArrayBuffer> | null>(null);
-  const liveTimeScratch = useRef<Float32Array<ArrayBuffer> | null>(null);
-  const songFormants = useRef<FormantTracker>(newFormantTracker());
-  const singerFormants = useRef<FormantTracker>(newFormantTracker());
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    songFormants.current = newFormantTracker();
-    singerFormants.current = newFormantTracker();
+    getSpectrumSource().reset();
 
     drawRef.current = () => {
       const ctx = canvas.getContext("2d");
@@ -200,7 +172,8 @@ export default function ShortTermSpectrumComparisonPanel() {
       const plotH = H - SPECTRUM_BOTTOM_AXIS_H * dpr;
       const fMax = F_MAX;
       const live = isRecording || isMonitoring;
-      const analyser = live ? getMicAnalyser() : null;
+      const source = getSpectrumSource();
+      const liveSpectrum = live ? source.getLiveSpectrum() : null;
 
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = "#0f0f1e";
@@ -246,7 +219,7 @@ export default function ShortTermSpectrumComparisonPanel() {
         ctx.fillText(formatHz(f), x, plotH + 3 * dpr);
       }
 
-      const hasAnyData = songSTSpectrum || takeSTSpectrum || (live && analyser);
+      const hasAnyData = songSTSpectrum || takeSTSpectrum || liveSpectrum;
       if (!hasAnyData) {
         ctx.fillStyle = "#a0a0b060";
         ctx.font = `${11 * dpr}px sans-serif`;
@@ -256,7 +229,7 @@ export default function ShortTermSpectrumComparisonPanel() {
         return;
       }
 
-      const currentTime = getEngine().getCurrentTime();
+      const currentTime = getPlaybackTime();
 
       if (songSTSpectrum) {
         const frame = nearestFrame(songSTSpectrum, currentTime);
@@ -266,14 +239,9 @@ export default function ShortTermSpectrumComparisonPanel() {
         }
       }
 
-      if (live && analyser) {
+      if (liveSpectrum) {
         // Live singer take priority over a stored take, same as Piano Roll's live > take > song ribbon order.
-        const binCount = analyser.frequencyBinCount;
-        if (!liveScratch.current || liveScratch.current.length !== binCount) {
-          liveScratch.current = new Float32Array(binCount);
-        }
-        analyser.getFloatFrequencyData(liveScratch.current);
-        const points = analyserCurvePoints(liveScratch.current, analyser.context.sampleRate, rollW, F_MIN, fMax, AXIS_W);
+        const points = analyserCurvePoints(liveSpectrum.data, liveSpectrum.sampleRate, rollW, F_MIN, fMax, AXIS_W);
         strokePoints(ctx, points, COLOR_LIVE, plotH, dpr, true);
       } else if (takeSTSpectrum) {
         const frame = nearestFrame(takeSTSpectrum, currentTime);
@@ -290,25 +258,15 @@ export default function ShortTermSpectrumComparisonPanel() {
       }
 
       const timeKey = Math.round(currentTime / FORMANT_CACHE_STEP_S);
-      const engine = getEngine();
 
       if (songSTSpectrum) {
-        const formant = trackedFormants(songFormants.current, timeKey, () => engine.getTrackSamples("vocals", FORMANT_WINDOW));
-        drawFormants(ctx, formant, COLOR_SONG, rollW, fMax, plotH, dpr, "top");
+        drawFormants(ctx, source.getFormants("song", timeKey), COLOR_SONG, rollW, fMax, plotH, dpr, "top");
       }
 
-      if (live && analyser) {
-        const formant = trackedFormants(singerFormants.current, NaN, () => {
-          if (!liveTimeScratch.current || liveTimeScratch.current.length !== analyser.fftSize) {
-            liveTimeScratch.current = new Float32Array(analyser.fftSize);
-          }
-          analyser.getFloatTimeDomainData(liveTimeScratch.current);
-          return { samples: liveTimeScratch.current, sampleRate: analyser.context.sampleRate };
-        });
-        drawFormants(ctx, formant, COLOR_LIVE, rollW, fMax, plotH, dpr, "bottom");
+      if (liveSpectrum) {
+        drawFormants(ctx, source.getFormants("live", NaN), COLOR_LIVE, rollW, fMax, plotH, dpr, "bottom");
       } else if (takeSTSpectrum) {
-        const formant = trackedFormants(singerFormants.current, timeKey, () => engine.getTrackSamples("take", FORMANT_WINDOW));
-        drawFormants(ctx, formant, COLOR_TAKE, rollW, fMax, plotH, dpr, "bottom");
+        drawFormants(ctx, source.getFormants("take", timeKey), COLOR_TAKE, rollW, fMax, plotH, dpr, "bottom");
       }
     };
 

@@ -3373,3 +3373,17 @@ body,
   color: var(--text-secondary);
   font-size: 0.85rem;
 }
+
+/* A panel that rendered nothing (vibrato without a take) leaves only its handle: hide that too. */
+.detachable > .detach-handle:only-child {
+  display: none;
+}
+
+.panel-menu__tag {
+  margin-left: auto;
+  font-size: 0.65rem;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  padding: 0 0.4rem;
+}

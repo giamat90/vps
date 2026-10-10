@@ -202,9 +202,18 @@ export async function importExerciseFile(filePath: string, duration: number): Pr
   return invoke<ExerciseTake>("import_exercise_file", { filePath, duration });
 }
 
-/** Open a panel in a window of its own at a screen position; focuses it when it already exists. */
-export async function detachPanel(panelId: string, x: number, y: number): Promise<void> {
-  return invoke("detach_panel", { panelId, x, y });
+/**
+ * Open a panel in a window of its own. With a screen position (where the user
+ * let go) it opens there; without one it goes where it was last, if that is
+ * still on a monitor. Focuses the window when it already exists.
+ */
+export async function detachPanel(panelId: string, x?: number, y?: number): Promise<void> {
+  return invoke("detach_panel", { panelId, x: x ?? null, y: y ?? null });
+}
+
+/** Close one panel's window from the main window (the panel was hidden in the Panels menu). */
+export async function closeDetachedPanel(panelId: string): Promise<void> {
+  return invoke("close_detached_panel", { panelId });
 }
 
 /** Called from a detached window: close it, which puts its panel back in the main window. */

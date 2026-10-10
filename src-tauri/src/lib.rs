@@ -18,6 +18,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(SidecarState(std::sync::Mutex::new(None)))
+        .manage(windows::WindowMemory::load())
         .invoke_handler(tauri::generate_handler![
             commands::process_song,
             commands::import_youtube,
@@ -52,6 +53,7 @@ pub fn run() {
             commands::delete_exercise_take,
             windows::detach_panel,
             windows::dock_panel,
+            windows::close_detached_panel,
             windows::close_detached_windows,
         ])
         .setup(|app| {
