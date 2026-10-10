@@ -1,9 +1,8 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { getEngine, usePlayerStore } from "../../stores/player";
+import { frequencyToMidi, NOTE_NAMES } from "@giamat90/mps-core/music";
 import {
-  frequencyToMidi,
-  NOTE_NAMES,
   PIANO_WINDOW_SIZE,
   PIANO_WINDOW_DEFAULT_MIN,
   computePianoWindowTarget,

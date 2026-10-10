@@ -1,5 +1,5 @@
 import type { PitchPoint, DynamicsPoint, TimingDeviation } from "../lib/types";
-import { frequencyToMidi } from "../lib/constants";
+import { frequencyToMidi } from "@giamat90/mps-core/music";
 
 /** Find the nearest pitch point at a given time (binary search). */
 export function pitchAtTime(

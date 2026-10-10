@@ -160,7 +160,7 @@ The lower zoom bound is computed on demand from live container width rather than
 
 `onScrollChange(cb)` registers a callback the player store uses to mirror engine-initiated scroll changes (auto-follow, resize reclamp) back into Zustand — the wheel handler updates the store directly since it already has the new values, but auto-follow runs inside the engine with no store access of its own.
 
-The zoom-to-cursor and pan math itself (exponential zoom factor, bounds clamping) is pure and lives in `src/lib/zoomPan.ts` — see [Components: Waveform](components.md#waveform) for the wheel-handler wiring and the exact formulas.
+The zoom-to-cursor and pan math itself (exponential zoom factor, bounds clamping) is pure and lives in `@giamat90/mps-core/zoomPan` — see [Components: Waveform](components.md#waveform) for the wheel-handler wiring and the exact formulas.
 
 ## Output Device Routing
 

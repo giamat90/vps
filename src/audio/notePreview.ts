@@ -1,4 +1,4 @@
-import { midiToFrequency } from "../lib/constants";
+import { midiToFrequency } from "@giamat90/mps-core/music";
 
 const PREVIEW_ATTACK_S = 0.012;
 const PREVIEW_RELEASE_S = 0.12;

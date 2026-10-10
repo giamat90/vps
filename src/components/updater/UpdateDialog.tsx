@@ -1,4 +1,4 @@
-import { useUpdaterStore } from "../../stores/updater";
+import { useUpdaterStore } from "@giamat90/mps-core/updater";
 
 export default function UpdateDialog() {
   const { status, update, progress, dismissed, installAndRestart, dismiss } = useUpdaterStore();

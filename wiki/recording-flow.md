@@ -1,6 +1,6 @@
 # Recording Flow
 
-**Key files:** `src/audio/recorder.ts` · `src/stores/player.ts`
+**Key files:** `@giamat90/mps-core/recorder` · `src/stores/player.ts`
 
 ## Overview
 

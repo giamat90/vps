@@ -1,13 +1,13 @@
 import { create } from "zustand";
 import { AudioEngine } from "../audio/engine";
-import { VocalRecorder } from "../audio/recorder";
+import { VocalRecorder } from "@giamat90/mps-core/recorder";
 import type { Song, Take } from "../lib/types";
 import { saveTake, listTakes, deleteTakeApi, renameTakeApi, setTakeManualOffsetApi, pitchShiftSong, saveExerciseTake, setMetronomeOffsetApi } from "../lib/tauri";
 import type { ExerciseTake } from "../lib/types";
 import { useSettingsStore } from "./settings";
 import { useAnalysisStore } from "./analysis";
-import { metronome } from "../audio/metronome";
-import { countInDurationSeconds } from "../lib/metronomeSync";
+import { metronome } from "@giamat90/mps-core/metronome";
+import { countInDurationSeconds } from "@giamat90/mps-core/metronomeSync";
 import { pickHardwareOutput } from "../audio/outputDevice";
 
 // Singletons outside Zustand
