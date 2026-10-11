@@ -6,6 +6,17 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.70] - 2026-10-11
+
+### Added
+- When two singers sing together on a song's vocal track, the piano roll can now show both. Turn on **Show multiple lines** in the piano roll header (off by default) to see the second voice as a lighter line under the main one.
+- A **Main line** choice next to it decides which voice is the main line where two sing: **Loudest** (default), **Higher** or **Lower**. The tuner, coach tips and keyboard follow the same choice.
+
+### Changed
+- The song's pitch line no longer hops between two singers who hold different notes at the same time: it stays on one voice for the whole stretch.
+- Songs already in the library get their second voice the first time you open them (a few seconds, once); no need to import them again. Because of this, the main line of such a song can look different in places where two sing.
+- Known limits: octave doubling and double-tracked unison are not split, only held notes are detected (not glides), and recorded takes have no second voice.
+
 ## [0.1.69] - 2026-10-11
 
 ### Changed
