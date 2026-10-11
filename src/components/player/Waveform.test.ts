@@ -38,6 +38,7 @@ const h = vi.hoisted(() => ({
     toggleMute: () => {},
     toggleSolo: () => {},
     setTakeManualOffset: () => {},
+    deleteAllTakes: () => {},
   },
 }));
 
@@ -83,6 +84,13 @@ describe("take lanes", () => {
     const html = render();
     expect(html).not.toContain("waveform__takes-bar");
     expect(lanes(html)).toEqual([]);
+  });
+
+  it("puts a delete-all button on the takes bar, with no confirmation until it is pressed", () => {
+    h.state.shownTakeIds = ["a"];
+    const html = render();
+    expect(html).toContain('aria-label="Delete all takes"');
+    expect(html).not.toContain("waveform__takes-confirm");
   });
 
   it("shows one lane per shown take, in the order they were shown, with the name or a number", () => {
