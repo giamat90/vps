@@ -16,7 +16,7 @@ from something found only in one track's plot.
 
 - **Tools built:** `algorithms.py` (SRH/pYIN/HPS/CREPE/Praat production wrappers — all five are
   shipped, user-selectable in the app's Settings panel — + `firstpeak` naive baseline +
-  `srh_variant`/`praat_variant` for parameter sweeps), `visualize.py`, `spectrogram_mpl.py` /
+  `srh_variant`/`srh_legacy`/`praat_variant` for parameter sweeps), `visualize.py`, `spectrogram_mpl.py` /
   `spectrogram_interactive.py`, `waveform_mpl.py` (native-window waveform), `short_term_spectrum_mpl.py`
   (the app's Short-Term Spectrum panel at a slider-chosen time, with per-algorithm F0 + harmonics overlay
   to eyeball octave errors), `sonify.py`, `compare.py`, `preprocess.py` / `preprocess_compare.py`,
@@ -68,6 +68,15 @@ from something found only in one track's plot.
   noise/consonants (~630 / ~456 loud frames where Praat+CREPE say unvoiced) — needs a
   harmonicity/periodicity check, and Them Bones ~67.0 s (true ~138 Hz, SRH 240 Hz) is still wrong.
   Songs already analyzed keep their old `analysis.json` pitch until re-processed.
+- **Ported 2026-10-11:** Viterbi over the top-5 SRH peaks, voicing by harmonic contrast
+  `(H-I)/(H+I) > 0.6` (was score/track-max > 0.22), median-5 inside voiced runs (was median-6 + Gaussian
+  over gap-joined frames). Three Demucs tracks (Black Hole Sun held out): correct <50c 56→68 / 88→93 /
+  84→94%, false-voiced -63–69%; 44 real mic takes: 85.0→94.2% (none worse), false-voiced -54%. The smoothing fix is
+  the biggest single win. Full table in README ("SRH on separated stems"); regression tests in
+  `sidecar/tests/test_pitch.py` (`TestSRHOnSeparatedStems` etc.). `srh_variant()` defaults == production
+  (verified frame by frame), `srh_legacy()` is the pre-port behaviour, `--algo srh-legacy` overlays it.
+  Still open: female/soft voices untested; HPS/CREPE still use the Gaussian `_smooth_voiced`; a sustained
+  wrong octave (not an isolated frame) is not fixed by the Viterbi cost.
 - Everything else above is still lab-only/provisional.
 - Only two real tracks tested so far. Treat the HPSS/denoise verdicts as directional, not universal,
   until validated against more voice types/timbres (the existing rejections were specific to Layne

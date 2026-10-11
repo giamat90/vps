@@ -107,7 +107,7 @@ don't belong in VPS's repo) — only `.gitkeep` is tracked.
    `algorithms.py`'s `srh_variant()` is a full reimplementation of
    `detect_pitch_srh` with every constant (frame length, harmonics count,
    voicing threshold, smoothing) exposed as a keyword argument. Write a
-   throwaway script that calls `srh_variant(audio, sr, voicing_threshold=0.35)`
+   throwaway script that calls `srh_variant(audio, sr, contrast_threshold=0.5)`
    etc. and re-run `visualize.py`-style plotting against it to see the effect
    before committing to a change. `praat_variant()` is the same idea for the
    Praat detector, exposing parselmouth's full Boersma signature — the two
@@ -208,11 +208,65 @@ bands about as well as SRH's does.
 raw one, or vice versa — listen with `sonify.py` first. The tool corrects statistical outliers; it
 can't tell a wrong-but-structured detection from a real one on its own.
 
+## SRH on separated stems: Viterbi, voicing gate, smoothing (2026-10-11)
+
+Three independent changes to SRH, **ported to `processor.py:detect_pitch_srh` on 2026-10-11** (tests in
+`sidecar/tests/test_pitch.py`). `srh_variant()`'s defaults are now the new production behaviour (checked
+frame by frame against `detect_pitch_srh`); `srh_legacy()` is the pre-port behaviour for A/B
+(`short_term_spectrum_mpl.py --algo srh srh-legacy` overlays both). Tables below compare legacy to new.
+
+| Option | Change |
+|---|---|
+| `viterbi=True` | Per-frame F0 = min-cost path over the top-5 SRH score peaks (node `1 - score/frame_best`, transition 0.1 per semitone capped at an octave) instead of the per-frame argmax |
+| `voicing="contrast"` | Voiced iff `(H - I) / (H + I) > 0.6` of the frame's own normalized spectrum at the chosen F0 (H/I = summed 7 harmonic / inter-harmonic bins). Replaces `score / track max > 0.22` |
+| `smoothing="runs"` | Median of 5 inside each run of consecutive voiced frames. Production medians+Gaussians over the voiced frames *concatenated across gaps*, in Hz |
+
+Scored end-to-end against the Praat/pYIN/CREPE consensus (≥2 agree within 60 cents) on three Demucs
+vocals, `Soundgarden – Black Hole Sun` held out (not used while choosing parameters). "correct" = voiced and
+within 50 cents, as a share of consensus-voiced frames; "false-voiced" = frames where Praat, pYIN and
+CREPE all say unvoiced but SRH reports pitch (loud frames only).
+
+| Track | | voiced% (loud) | ref-recall | correct <50c | wrong ≥100c | false-voiced |
+|---|---|---|---|---|---|---|
+| Them Bones | legacy | 95.6% | 95.5% | 56.3% | 34.0% | 202 / 229 |
+| | new | 81.3% | 94.0% | 68.1% | 24.7% | 66 / 229 |
+| Like a Stone | legacy | 96.3% | 99.1% | 88.0% | 7.2% | 161 / 260 |
+| | new | 95.0% | 99.8% | 93.3% | 5.2% | 50 / 260 |
+| Black Hole Sun | legacy | 92.3% | 97.2% | 83.6% | 8.5% | 401 / 573 |
+| | new | 89.6% | 99.0% | 93.9% | 2.7% | 148 / 573 |
+
+What each change buys (correct <50c / false-voiced, Them Bones → Like a Stone → Black Hole Sun):
+
+- **Run-wise median smoothing is the biggest single win** (+8.7 / +4.1 / +7.4 points): production
+  smoothing moves frames *away* from the right note. The Gaussian averages in Hz across note steps, gaps
+  and octave-error neighbours (frames ≥100 cents sharp of the consensus on Black Hole Sun: 1.3% before
+  smoothing, 6.2% after). Frame-to-frame jitter inside runs also drops (Them Bones 21 → 8 cents).
+- **Viterbi** adds a smaller, consistent gain: +3.0 / +0.4 / +1.2 points alone, +2.0 / +0.6 / +1.4 on top
+  of run smoothing. Largest on the raspy track. It picks ~139 Hz at the Them Bones 67 s frame where
+  production says 240 Hz (true ~138 Hz).
+- **Contrast gate** cuts false-voiced frames by 63–69% at 0.6 (strict set) at equal or better recall except
+  on Them Bones (−1.5 points). Production's `score / track max` barely separates noise from voice (AUC
+  0.73 / 0.92 / 0.87 against 0.93 / 0.99 / 0.99 for contrast, same frames). 0.5 keeps 98–100% recall
+  everywhere and cuts false voicing 31–34%.
+- Autocorrelation (`acf` at the F0 lag) is as discriminative as contrast on the clean tracks but loses
+  recall on the raspy one; a combined `mean(acf, contrast)` was not kept for that reason.
+
+Also checked on real mic takes (44 takes from the app's library and Free Exercise, first 60 s of each, 39k frames where Praat
+and pYIN agree): correct within 50 cents 85.0% → 94.2%, false-voiced frames −54%, recall of the consensus's
+voiced frames 99.8% → 99.2%, no take got worse. SRH time roughly doubles (still ~200× real time).
+
+Limits: the reference is other detectors, not ground truth; Praat's silence gate and CREPE's confidence
+reject quiet voiced tails that pYIN keeps, so "false-voiced" is partly ambiguous (the strict set requires all
+three to agree). Male rock vocals plus the author's own mic takes only: female and soft voices are untested.
+`confidence` is unchanged (best SRH score / track max) because PianoRoll, key and vibrato detection
+threshold it; only `voiced` and the F0 smoothing changed. Songs imported before the port keep their old
+pitch data until re-imported.
+
 ## Files
 
 | File | Purpose |
 |---|---|
-| `algorithms.py` | Imports the real `detect_pitch_srh`/`detect_pitch`/`detect_pitch_hps`/`detect_pitch_crepe`/`detect_pitch_praat` from `processor.py`, plus `srh_variant()`/`praat_variant()` for parameter experiments and the `firstpeak` naive baseline |
+| `algorithms.py` | Imports the real `detect_pitch_srh`/`detect_pitch`/`detect_pitch_hps`/`detect_pitch_crepe`/`detect_pitch_praat` from `processor.py`, plus `srh_variant()`/`praat_variant()` for parameter experiments (`srh_variant`'s defaults are production's current SRH and expose the Viterbi / contrast-gate / run-smoothing options; `srh_legacy()` is SRH as shipped until 2026-10-11) and the `firstpeak` naive baseline |
 | `preprocess.py` | Composable pre-detection cleaning steps (`trim`, `highpass`, `hpss`, `denoise`, `normalize`) aimed at Demucs bleed artifacts |
 | `preprocess_compare.py` | A/B: runs an algorithm before/after the cleaning pipeline, writes the cleaned wav + a comparison plot |
 | `postprocess.py` | Detector-agnostic pitch-curve cleanup: Hampel-filter outlier rejection + short-gap interpolation in cents space |
