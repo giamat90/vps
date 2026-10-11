@@ -473,27 +473,29 @@ function Waveform({ song }: WaveformProps) {
                 >
                   {label}
                 </button>
-                <TakeSyncControls take={take} isActive={isActive} />
-                {takePlayback === "all" && (
+                <div className="waveform__track-controls">
+                  <TakeSyncControls take={take} isActive={isActive} />
+                  {takePlayback === "all" && (
+                    <button
+                      type="button"
+                      className={`waveform__mute${isMuted ? " waveform__mute--on" : ""}`}
+                      onClick={() => toggleTakeMute(take.id)}
+                      aria-pressed={isMuted}
+                      title={isMuted ? `Unmute ${label}` : `Mute ${label}`}
+                    >
+                      M
+                    </button>
+                  )}
                   <button
                     type="button"
-                    className={`waveform__mute${isMuted ? " waveform__mute--on" : ""}`}
-                    onClick={() => toggleTakeMute(take.id)}
-                    aria-pressed={isMuted}
-                    title={isMuted ? `Unmute ${label}` : `Mute ${label}`}
+                    className="waveform__take-hide"
+                    onClick={() => hideTake(take.id)}
+                    title="Hide this take (it stays in the list)"
+                    aria-label={`Hide ${label}`}
                   >
-                    M
+                    &times;
                   </button>
-                )}
-                <button
-                  type="button"
-                  className="waveform__take-hide"
-                  onClick={() => hideTake(take.id)}
-                  title="Hide this take (it stays in the list)"
-                  aria-label={`Hide ${label}`}
-                >
-                  &times;
-                </button>
+                </div>
               </div>
               <div className="waveform__track-body">
                 <div className="waveform__take-rail">

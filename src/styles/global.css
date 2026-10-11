@@ -1055,7 +1055,12 @@ button.waveform__take-name {
   align-items: center;
   flex-wrap: wrap;
   gap: 0.5rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0 0.1rem;
+}
+
+/* The take channel's mute / solo / volume sit at the far right, like every other track's */
+.waveform__takes-bar > .waveform__track-controls {
+  margin-left: auto;
 }
 
 .waveform__takes-toggle {
@@ -1079,7 +1084,6 @@ button.waveform__take-name {
 }
 
 .waveform__take-hide {
-  margin-left: auto;
   background: transparent;
   border: 1px solid var(--bg-surface);
   border-radius: 4px;
