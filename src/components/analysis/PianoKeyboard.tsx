@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { usePlayerStore } from "../../stores/player";
+import { useVoiceViewStore } from "../../stores/voiceView";
 import { getPlaybackTime } from "../../windows/playbackClock";
 import DualTuner from "./DualTuner";
 import { frequencyToMidi, NOTE_NAMES } from "@giamat90/mps-core/music";
@@ -144,6 +145,7 @@ function drawKeyboard(
   takeMidi: number | null,
   liveMidi: number | null,
   previewMidi: number | null,
+  altMidi: number | null = null,
 ): void {
   const blackH = H * 0.62;
   const fontSize = Math.max(8, H * 0.18);
@@ -154,7 +156,8 @@ function drawKeyboard(
     const isSong = midi === songMidi;
     const isTake = midi === takeMidi;
     const isLive = midi === liveMidi;
-    ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
+    const isAlt  = midi === altMidi;
+    ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : isAlt ? COLOR_SONG_ALT : "#c8c8c8";
     ctx.fillRect(key.x + 0.5, 0, key.w - 1, H);
     if (midi === previewMidi) {
       ctx.fillStyle = COLOR_PREVIEW;
@@ -166,7 +169,7 @@ function drawKeyboard(
     const pc    = ((midi % 12) + 12) % 12;
     const octave = Math.floor(midi / 12) - 1;
     const label = `${NOTE_NAMES[pc]}${octave}`;
-    ctx.fillStyle = isSong || isTake || isLive ? "#fff" : "#666";
+    ctx.fillStyle = isSong || isTake || isLive ? "#fff" : isAlt ? "#123" : "#666";
     ctx.font = `${fontSize}px sans-serif`;
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
@@ -179,7 +182,8 @@ function drawKeyboard(
     const isSong = midi === songMidi;
     const isTake = midi === takeMidi;
     const isLive = midi === liveMidi;
-    ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1a1a2e";
+    const isAlt  = midi === altMidi;
+    ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : isAlt ? COLOR_SONG_ALT : "#1a1a2e";
     ctx.fillRect(key.x, 0, key.w, blackH);
     if (midi === previewMidi) {
       ctx.fillStyle = COLOR_PREVIEW;
@@ -191,6 +195,8 @@ function drawKeyboard(
 export default function PianoKeyboard() {
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const songPitch   = useAnalysisStore((s) => s.songPitch);
+  const songPitchAlt = useAnalysisStore((s) => s.songPitchAlt);
+  const showMultipleLines = useVoiceViewStore((s) => s.showMultipleLines);
   const takePitch   = useAnalysisStore((s) => s.takePitch);
   const livePitch   = useAnalysisStore((s) => s.livePitch);
   const isLoaded    = useAnalysisStore((s) => s.isLoaded);
@@ -224,6 +230,7 @@ export default function PianoKeyboard() {
       const songMidi = getCurrentMidi(songPitch, t);
       const takeMidi = getCurrentMidi(takePitch, t);
       const liveMidi = getCurrentMidi(livePitch, t);
+      const altMidi  = showMultipleLines && songPitchAlt.length > 0 ? getCurrentMidi(songPitchAlt, t) : null;
 
       // Slide the visible window to follow whichever pitch is active
       // (live > take > song), same behavior as PianoRoll.
@@ -233,12 +240,12 @@ export default function PianoKeyboard() {
 
       const layout = buildLayout(W, Math.round(windowMinRef.current));
       layoutRef.current = layout;
-      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi, getPreviewState().midi);
+      drawKeyboard(ctx, H, layout, songMidi, takeMidi, liveMidi, getPreviewState().midi, altMidi);
       drawPitchReadout(ctx, W, songPitch, takePitch, livePitch, t);
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, livePitch, isLoaded]);
+  }, [songPitch, songPitchAlt, showMultipleLines, takePitch, livePitch, isLoaded]);
 
   useEffect(() => {
     // Same gate as PianoRoll: in Free Exercise, isLoaded (song-analysis flag)
