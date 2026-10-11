@@ -21,7 +21,7 @@ The main window stays the only owner of audio, the microphone, recording and the
 | `mps:state` | main → detached | transport snapshot + shared state (song, duration, punch, monitoring flags, active take) | on change, seek, or 1 s heartbeat while playing |
 | `mps:live` | main → detached | live pitch points appended since the last message, plus the tuner reading | ≤ 30 Hz, only when something changed |
 | `mps:spectrum` | main → detached (spectrum window only) | the live dB spectrum, one byte per bin, and the song / take / live formants | ≤ 30 Hz while listening; otherwise only when the formants move |
-| `mps:command` | detached → main | `seek`, `setPunchIn`, `setPunchOut`, `clearPunch`, `setActiveTake`, `deleteTake`, `renameTake` | on user action |
+| `mps:command` | detached → main | `seek`, `setPunchIn`, `setPunchOut`, `clearPunch`, `toggleTake`, `deleteTake`, `renameTake` | on user action |
 | `mps:docked` | Rust → main | panel id, when its window is destroyed | once |
 
 Time is **not** sent 30 times a second. The transport snapshot carries `{ time, playing, rate, sentAt }` and the detached window extrapolates (`RemoteClock`); the main window only resends when the playhead leaves that prediction (a seek, a loop jump) or on the heartbeat. Both windows share the machine clock, so `sentAt` is directly comparable.
