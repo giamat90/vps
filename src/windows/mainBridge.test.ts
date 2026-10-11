@@ -43,7 +43,7 @@ function setup() {
     song: SONG, isPlaying: false, currentTime: 0, duration: 200, playbackRate: 1,
     isRecording: false, isMonitoring: false, exerciseMode: false,
     punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null,
-    activeTakeId: null, shownTakeIds: [], takes: [],
+    activeTakeId: null, shownTakeIds: [], takePlayback: "all", mutedTakeIds: [], muteTakesWhileRecording: true, takes: [],
     seek, setPunchIn, setPunchOut, clearPunch, toggleTake, deleteTake, renameTake,
   });
   const analysis = fakeStore<AnalysisPort>({ livePitch: [], liveCents: null });

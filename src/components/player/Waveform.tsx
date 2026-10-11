@@ -4,6 +4,7 @@ import { useAnalysisStore } from "../../stores/analysis";
 import TimeRuler from "./TimeRuler";
 import type { Song, Take } from "../../lib/types";
 import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "@giamat90/mps-core/zoomPan";
+import { audibleTakes } from "@giamat90/mps-core/takes";
 
 // Live-preview analysis updates during a take drag are throttled to the same
 // ~30fps notification rate the audio engine's rAF tick already uses, since
@@ -258,6 +259,13 @@ function Waveform({ song }: WaveformProps) {
   const setTakeVolume         = usePlayerStore((s) => s.setTakeVolume);
   const setActiveTake         = usePlayerStore((s) => s.setActiveTake);
   const hideTake              = usePlayerStore((s) => s.hideTake);
+  const takePlayback          = usePlayerStore((s) => s.takePlayback);
+  const mutedTakeIds          = usePlayerStore((s) => s.mutedTakeIds);
+  const isRecording           = usePlayerStore((s) => s.isRecording);
+  const muteTakesWhileRecording = usePlayerStore((s) => s.muteTakesWhileRecording);
+  const setTakePlayback       = usePlayerStore((s) => s.setTakePlayback);
+  const toggleTakeMute        = usePlayerStore((s) => s.toggleTakeMute);
+  const setMuteTakesWhileRecording = usePlayerStore((s) => s.setMuteTakesWhileRecording);
   const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
   const isLoading        = useRef(false);
   // Lane containers by take id, and the takes currently loaded into the engine
@@ -268,6 +276,14 @@ function Waveform({ song }: WaveformProps) {
   const shownTakes = shownTakeIds
     .map((id) => takes.find((t) => t.id === id))
     .filter((t): t is Take => t !== undefined);
+  const audibleIds = audibleTakes({
+    shown: shownTakeIds,
+    active: activeTakeId,
+    playback: takePlayback,
+    muted: mutedTakeIds,
+    recording: isRecording,
+    muteWhileRecording: muteTakesWhileRecording,
+  });
 
   useEffect(() => {
     if (!vocalsRef.current || !instrumentalRef.current || isLoading.current) return;
@@ -399,26 +415,76 @@ function Waveform({ song }: WaveformProps) {
           </div>
         </div>
 
+        {shownTakes.length > 0 && (
+          <div className="waveform__takes-bar">
+            <span className="waveform__label waveform__label--take">Takes</span>
+            <button
+              type="button"
+              className="waveform__takes-toggle"
+              aria-pressed={takePlayback === "all"}
+              onClick={() => setTakePlayback(takePlayback === "all" ? "selected" : "all")}
+              title={
+                takePlayback === "all"
+                  ? "All shown takes play together; use M on a lane to silence one. Click to hear only the selected take."
+                  : "Only the selected take plays; click another take to switch. Click to play all shown takes together."
+              }
+            >
+              {takePlayback === "all" ? "Hear: all shown" : "Hear: selected only"}
+            </button>
+            <button
+              type="button"
+              className="waveform__takes-toggle"
+              aria-pressed={muteTakesWhileRecording}
+              onClick={() => setMuteTakesWhileRecording(!muteTakesWhileRecording)}
+              title={
+                muteTakesWhileRecording
+                  ? "Takes are silent while you record. Click to keep hearing them."
+                  : "Takes keep playing while you record. Click to silence them while recording."
+              }
+            >
+              {muteTakesWhileRecording ? "Silent while recording" : "Playing while recording"}
+            </button>
+            <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
+          </div>
+        )}
         {shownTakes.map((take) => {
           const isActive = take.id === activeTakeId;
+          const isAudible = audibleIds.includes(take.id);
+          const isMuted = mutedTakeIds.includes(take.id);
           const label = take.name || `Take ${takes.indexOf(take) + 1}`;
           return (
             <div
               key={take.id}
-              className={`waveform__track waveform__track--take${isActive ? " waveform__track--active" : " waveform__track--silent"}`}
+              className={`waveform__track waveform__track--take${isActive ? " waveform__track--active" : ""}${isAudible ? "" : " waveform__track--silent"}`}
             >
               <div className="waveform__track-header">
                 <button
                   type="button"
                   className="waveform__label waveform__label--take waveform__take-name"
                   onClick={() => setActiveTake(take.id)}
-                  title={isActive ? "This take is playing" : "Play this take instead"}
+                  title={
+                    takePlayback === "selected" && !isActive
+                      ? "Play this take instead"
+                      : isActive
+                        ? "This is the selected take"
+                        : "Select this take"
+                  }
                   aria-pressed={isActive}
                 >
                   {label}
                 </button>
                 <TakeSyncControls take={take} isActive={isActive} />
-                {isActive && <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />}
+                {takePlayback === "all" && (
+                  <button
+                    type="button"
+                    className={`waveform__mute${isMuted ? " waveform__mute--on" : ""}`}
+                    onClick={() => toggleTakeMute(take.id)}
+                    aria-pressed={isMuted}
+                    title={isMuted ? `Unmute ${label}` : `Mute ${label}`}
+                  >
+                    M
+                  </button>
+                )}
                 <button
                   type="button"
                   className="waveform__take-hide"

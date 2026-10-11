@@ -1050,6 +1050,34 @@ button.waveform__take-name {
   opacity: 0.45;
 }
 
+.waveform__takes-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.waveform__takes-toggle {
+  background: transparent;
+  border: 1px solid var(--bg-surface);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  cursor: pointer;
+}
+
+.waveform__takes-toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.waveform__track--take.waveform__track--active .waveform__label--take {
+  text-decoration: underline;
+}
+
 .waveform__take-hide {
   margin-left: auto;
   background: transparent;

@@ -6,7 +6,15 @@ import { saveTake, listTakes, deleteTakeApi, renameTakeApi, setTakeManualOffsetA
 import type { ExerciseTake } from "../lib/types";
 import { useAnalysisStore } from "./analysis";
 import { metronome } from "@giamat90/mps-core/metronome";
-import { hideTake, reconcileTakes, showTake, toggleTake, type TakeSelection } from "@giamat90/mps-core/takes";
+import {
+  audibleTakes,
+  hideTake,
+  reconcileTakes,
+  showTake,
+  toggleTake,
+  type TakePlayback,
+  type TakeSelection,
+} from "@giamat90/mps-core/takes";
 import { countInDurationSeconds } from "@giamat90/mps-core/metronomeSync";
 import { pickHardwareOutput } from "../audio/outputDevice";
 
@@ -158,9 +166,19 @@ export function buildMixSources(state: PlayerState): {
   }
 
   const takeGain = effectiveVolume("take", takeVolume, mutedTracks, soloedTrack);
-  if (takeGain > 0 && state.activeTakeId) {
-    const take = state.takes.find((t) => t.id === state.activeTakeId);
-    if (take) {
+  if (takeGain > 0) {
+    // What is heard is what is mixed: every take that is audible right now.
+    const audible = audibleTakes({
+      shown: state.shownTakeIds,
+      active: state.activeTakeId,
+      playback: state.takePlayback,
+      muted: state.mutedTakeIds,
+      recording: false,
+      muteWhileRecording: false,
+    });
+    for (const id of audible) {
+      const take = state.takes.find((t) => t.id === id);
+      if (!take) continue;
       sources.push({
         path: take.filepath,
         gain: takeGain,
@@ -201,6 +219,38 @@ const selectionOf = (s: { shownTakeIds: string[]; activeTakeId: string | null })
   active: s.activeTakeId,
 });
 
+// The two choices about takes that outlive a session: how shown takes are heard,
+// and whether they are muted while a new one is recorded.
+const TAKE_PREFS_KEY = "vps_take_prefs";
+const DEFAULT_TAKE_PREFS: { takePlayback: TakePlayback; muteTakesWhileRecording: boolean } = {
+  takePlayback: "all",
+  muteTakesWhileRecording: true,
+};
+
+function _loadTakePrefs(): typeof DEFAULT_TAKE_PREFS {
+  try {
+    const raw = localStorage.getItem(TAKE_PREFS_KEY);
+    if (raw === null) return DEFAULT_TAKE_PREFS;
+    const v = JSON.parse(raw) as { takePlayback?: unknown; muteTakesWhileRecording?: unknown } | null;
+    return {
+      takePlayback: v?.takePlayback === "selected" ? "selected" : "all",
+      muteTakesWhileRecording:
+        typeof v?.muteTakesWhileRecording === "boolean" ? v.muteTakesWhileRecording : DEFAULT_TAKE_PREFS.muteTakesWhileRecording,
+    };
+  } catch (e) {
+    console.warn("[player] could not read the take preferences:", e);
+    return DEFAULT_TAKE_PREFS;
+  }
+}
+
+function _persistTakePrefs(prefs: typeof DEFAULT_TAKE_PREFS): void {
+  try {
+    localStorage.setItem(TAKE_PREFS_KEY, JSON.stringify(prefs));
+  } catch (e) {
+    console.warn("[player] could not save the take preferences:", e);
+  }
+}
+
 interface PlayerState {
   song: Song | null;
   isPlaying: boolean;
@@ -230,6 +280,12 @@ interface PlayerState {
   // Takes with a lane on screen (in the order they were shown), and the one that is heard.
   shownTakeIds: string[];
   activeTakeId: string | null;
+  // Which of the shown takes are heard: all together, or only the selected one
+  takePlayback: TakePlayback;
+  // Takes the user silenced on their own lane
+  mutedTakeIds: string[];
+  // Keep the takes quiet while a new one is recorded
+  muteTakesWhileRecording: boolean;
   takeVolume: number;
   // Punch-in / punch-out region (null = not set)
   punchIn: number | null;
@@ -302,6 +358,9 @@ interface PlayerActions {
   // A click in the takes list: show it, switch to it, or hide it when it is the active one
   toggleTake: (takeId: string) => void;
   hideTake: (takeId: string) => void;
+  setTakePlayback: (mode: TakePlayback) => void;
+  toggleTakeMute: (takeId: string) => void;
+  setMuteTakesWhileRecording: (mute: boolean) => void;
   setTakeVolume: (v: number) => void;
   // Punch region actions
   setPunchIn: (t: number) => void;
@@ -361,8 +420,6 @@ function _persistOffsets(offsets: Record<string, CalibrationEntry>): void {
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => {
   const applySelection = (next: TakeSelection) => {
     set({ shownTakeIds: [...next.shown], activeTakeId: next.active });
-    getEngine().setActiveTakeTrack(next.active);
-    applyEffectiveVolumes(get());
   };
 
   return {
@@ -390,6 +447,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   takes: [],
   shownTakeIds: [],
   activeTakeId: null,
+  mutedTakeIds: [],
+  ..._loadTakePrefs(),
   takeVolume: 1.0,
   punchIn: null,
   punchOut: null,
@@ -459,6 +518,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isRecording: false,
       shownTakeIds: [],
       activeTakeId: null,
+      mutedTakeIds: [],
       // instrument-kind songs write identical audio to vocals.wav and
       // instrumental.wav; mute the instrumental track so only the
       // relabeled "Melody" track is audible (avoids doubled playback).
@@ -593,6 +653,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       takes: [],
       shownTakeIds: [],
       activeTakeId: null,
+      mutedTakeIds: [],
     });
   },
 
@@ -787,15 +848,13 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const { song } = get();
     if (!song) return;
 
-    // Silence the active take before recording a new one. Every take stays
-    // saved (takes.json is never touched) and shown, but none is heard and the
-    // analysis overlay drops it, so the singer records against the backing
-    // track alone — not their last attempt. Nulling activeTakeId drives
-    // PracticeRoom's clearTakeAnalysis(); the engine is told directly to close
-    // the gap before React flushes that effect.
-    if (get().activeTakeId) {
+    // With "mute takes while recording" on (the default), drop the selected take
+    // before recording a new one: every take stays saved (takes.json is never
+    // touched) and shown, but none is heard and the analysis overlay drops it, so
+    // the singer records against the backing track alone — not their last
+    // attempt. With it off the takes keep playing and the selection is left alone.
+    if (get().muteTakesWhileRecording && get().activeTakeId) {
       set({ activeTakeId: null });
-      getEngine().setActiveTakeTrack(null);
     }
 
     // Stop monitoring before opening the recorder's mic stream
@@ -894,9 +953,17 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     }
 
     eng.setInteract(false);
-    eng.seekTo(recordingStartPos);
-    eng.play();
-    rec.start();
+    // isRecording only flips below; silence the takes first so none is heard in between.
+    if (get().muteTakesWhileRecording) eng.setAudibleTakeTracks([]);
+    try {
+      eng.seekTo(recordingStartPos);
+      eng.play();
+      rec.start();
+    } catch (e) {
+      // The takes were silenced above for a recording that did not start.
+      pushTakeAudio(get());
+      throw e;
+    }
 
     _recordingOutputId = outputId;
 
@@ -993,7 +1060,6 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
         shownTakeIds: [...next.shown],
         activeTakeId: next.active,
       }));
-      eng.setActiveTakeTrack(next.active);
     } catch (e) {
       _destroyMicAnalyser();
       rec.releaseStream();
@@ -1007,9 +1073,14 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const { song } = get();
     if (!song) return;
     const takes = await listTakes(song.id);
-    const next = reconcileTakes(selectionOf(get()), takes.map((t) => t.id));
-    set({ takes, shownTakeIds: [...next.shown], activeTakeId: next.active });
-    getEngine().setActiveTakeTrack(next.active);
+    const ids = takes.map((t) => t.id);
+    const next = reconcileTakes(selectionOf(get()), ids);
+    set((state) => ({
+      takes,
+      shownTakeIds: [...next.shown],
+      activeTakeId: next.active,
+      mutedTakeIds: state.mutedTakeIds.filter((id) => ids.includes(id)),
+    }));
   },
 
   deleteTake: async (takeId) => {
@@ -1021,8 +1092,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       takes: state.takes.filter((t) => t.id !== takeId),
       shownTakeIds: [...next.shown],
       activeTakeId: next.active,
+      mutedTakeIds: state.mutedTakeIds.filter((id) => id !== takeId),
     }));
-    getEngine().setActiveTakeTrack(next.active);
   },
 
   renameTake: async (takeId, name) => {
@@ -1063,6 +1134,24 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
 
   hideTake: (takeId) => {
     applySelection(hideTake(selectionOf(get()), takeId));
+  },
+
+  setTakePlayback: (mode) => {
+    set({ takePlayback: mode });
+    _persistTakePrefs({ takePlayback: mode, muteTakesWhileRecording: get().muteTakesWhileRecording });
+  },
+
+  toggleTakeMute: (takeId) => {
+    set((state) => ({
+      mutedTakeIds: state.mutedTakeIds.includes(takeId)
+        ? state.mutedTakeIds.filter((id) => id !== takeId)
+        : [...state.mutedTakeIds, takeId],
+    }));
+  },
+
+  setMuteTakesWhileRecording: (mute) => {
+    set({ muteTakesWhileRecording: mute });
+    _persistTakePrefs({ takePlayback: get().takePlayback, muteTakesWhileRecording: mute });
   },
 
   setTakeVolume: (v) => {
@@ -1217,4 +1306,36 @@ usePlayerStore.subscribe((state, prevState) => {
   if (prevState.isPlaying && !state.isPlaying && state.isMonitoring) {
     useAnalysisStore.getState().clearLivePitch();
   }
+});
+
+function pushTakeAudio(state: PlayerState): void {
+  const eng = getEngine();
+  eng.setActiveTakeTrack(state.activeTakeId);
+  eng.setAudibleTakeTracks(
+    audibleTakes({
+      shown: state.shownTakeIds,
+      active: state.activeTakeId,
+      playback: state.takePlayback,
+      muted: state.mutedTakeIds,
+      recording: state.isRecording,
+      muteWhileRecording: state.muteTakesWhileRecording,
+    }),
+  );
+}
+
+// What is heard follows from the takes shown, the selection, the playback mode,
+// the lane mutes and whether a recording is under way. Derived here, once, so no
+// action has to remember to tell the engine.
+usePlayerStore.subscribe((state, prev) => {
+  if (
+    state.shownTakeIds === prev.shownTakeIds &&
+    state.activeTakeId === prev.activeTakeId &&
+    state.takePlayback === prev.takePlayback &&
+    state.mutedTakeIds === prev.mutedTakeIds &&
+    state.isRecording === prev.isRecording &&
+    state.muteTakesWhileRecording === prev.muteTakesWhileRecording
+  ) {
+    return;
+  }
+  pushTakeAudio(state);
 });

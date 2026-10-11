@@ -89,3 +89,4 @@ The grip in the detached window's bar is carried over the main window and releas
 - macOS is untested.
 - A real pointer test of the dock grip: the gesture decisions are covered (`createDockGesture` in mps-core, `contains` in Rust), the wiring is not.
 - The component and gesture wiring (pointer capture, window creation) has no automated test: the repository has no DOM environment. The logic around it (protocol, clock, drop decision, both bridges, the feed controller, the Rust planner) is covered.
+- The Takes list in a detached window shows what is heard (▶ playing, ▷ silent, ○ hidden) from the mirrored `shownTakeIds`, `takePlayback`, `mutedTakeIds`, `muteTakesWhileRecording` and recording state; the lane mutes and the two toggles live in the main window's take bar.

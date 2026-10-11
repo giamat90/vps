@@ -123,6 +123,9 @@ describe("message guards", () => {
     selectedOutputDeviceId: null,
     activeTake: null,
     shownTakeIds: [],
+    takePlayback: "all",
+    mutedTakeIds: [],
+    muteTakesWhileRecording: true,
     takes: [],
   };
 

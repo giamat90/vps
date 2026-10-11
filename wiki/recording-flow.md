@@ -68,7 +68,7 @@ After a successful open, `stream.getAudioTracks()[0].getSettings()` is logged to
 ## startRecording Sequence
 
 ```
-0a. if (activeTakeId) set activeTakeId=null + eng.setActiveTakeTrack(null)   silence the previous take (its lane stays)
+0a. if (muteTakesWhileRecording && activeTakeId) set activeTakeId=null   drop the selection (lanes stay; the store silences the takes)
 0b. if (isMonitoring) stopMonitoring()   stop monitor stream first
 1. recordingStartPos = punchIn ?? currentTime  use punch-in if set
 2. eng.pause()                          pause playback
@@ -339,4 +339,4 @@ Practice Room recording is only reachable after a song has been loaded, processe
 
 Note that even a sidecar spawn failure doesn't block the take from saving — `analyze_and_persist_exercise_take` (`commands.rs`) swallows sidecar errors and still persists the raw recording (just without pitch/dynamics/vibrato data). Bug (1) above is what actually made a failed save look like a vanished recording; bug (2) is what made a *successful* save's tail window race a same-take double-click.
 
-> **Several takes (2026-10-11):** after saving, the new take is *added* to the shown takes and made active (`showTake`); takes already on screen keep their lanes. Starting a recording only silences them (`setActiveTakeTrack(null)`); it no longer unloads them. See `audio-engine.md`.
+> **Several takes (2026-10-11):** after saving, the new take is *added* to the shown takes and selected (`showTake`); takes already on screen keep their lanes. Starting a recording no longer unloads them: with "Silent while recording" on (default) they are silenced (and the selection dropped, as before), with it off they keep playing. Just before `eng.play()` the engine is told to silence them directly, because `isRecording` only flips a few lines later. See `audio-engine.md`.

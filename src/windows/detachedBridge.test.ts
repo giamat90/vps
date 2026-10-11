@@ -13,7 +13,7 @@ const SONG = { id: "s1", title: "Song", kind: "vocal" } as never;
 
 const shared = (extra: Partial<SharedState> = {}): SharedState => ({
   song: SONG, duration: 200, isRecording: false, isMonitoring: false, exerciseMode: false,
-  punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null, activeTake: null, shownTakeIds: [], takes: [],
+  punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null, activeTake: null, shownTakeIds: [], takePlayback: "all", mutedTakeIds: [], muteTakesWhileRecording: true, takes: [],
   ...extra,
 });
 
