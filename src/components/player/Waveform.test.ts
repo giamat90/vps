@@ -150,17 +150,24 @@ describe("take lanes", () => {
     expect(sync).toBeLessThan(controls);
   });
 
-  it("shows both toggles with their state", () => {
+  it("shows the two options with one fixed label each, whatever their state", () => {
     h.state.shownTakeIds = ["a"];
     h.state.activeTakeId = "a";
-    let html = render();
-    expect(html).toContain("Hear: all shown");
-    expect(html).toContain("Silent while recording");
+    const labels = () => [...render().matchAll(/<label class="waveform__takes-option"[^>]*>(?:<input[^>]*\/>)([^<]*)</g)].map((m) => m[1]);
+    expect(labels()).toEqual(["Selected take only", "Mute takes while recording"]);
     h.state.takePlayback = "selected";
     h.state.muteTakesWhileRecording = false;
-    html = render();
-    expect(html).toContain("Hear: selected only");
-    expect(html).toContain("Playing while recording");
+    expect(labels()).toEqual(["Selected take only", "Mute takes while recording"]);
+  });
+
+  it("ticks an option when it is on", () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    const checked = () => [...render().matchAll(/<input type="checkbox"([^>]*)\/>/g)].map((m) => m[1].includes("checked"));
+    expect(checked()).toEqual([false, true]);
+    h.state.takePlayback = "selected";
+    h.state.muteTakesWhileRecording = false;
+    expect(checked()).toEqual([true, false]);
   });
 
   it("dims every lane while recording when takes are silent then", () => {

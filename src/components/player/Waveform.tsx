@@ -442,32 +442,22 @@ function Waveform({ song }: WaveformProps) {
         {shownTakes.length > 0 && (
           <div className="waveform__takes-bar">
             <span className="waveform__label waveform__label--take">Takes</span>
-            <button
-              type="button"
-              className="waveform__takes-toggle"
-              aria-pressed={takePlayback === "all"}
-              onClick={() => setTakePlayback(takePlayback === "all" ? "selected" : "all")}
-              title={
-                takePlayback === "all"
-                  ? "All shown takes play together; use M on a lane to silence one. Click to hear only the selected take."
-                  : "Only the selected take plays; click another take to switch. Click to play all shown takes together."
-              }
-            >
-              {takePlayback === "all" ? "Hear: all shown" : "Hear: selected only"}
-            </button>
-            <button
-              type="button"
-              className="waveform__takes-toggle"
-              aria-pressed={muteTakesWhileRecording}
-              onClick={() => setMuteTakesWhileRecording(!muteTakesWhileRecording)}
-              title={
-                muteTakesWhileRecording
-                  ? "Takes are silent while you record. Click to keep hearing them."
-                  : "Takes keep playing while you record. Click to silence them while recording."
-              }
-            >
-              {muteTakesWhileRecording ? "Silent while recording" : "Playing while recording"}
-            </button>
+            <label className="waveform__takes-option" title="When on, only the selected take plays and clicking another take switches to it. When off, every shown take plays together; use M on a lane to silence one.">
+              <input
+                type="checkbox"
+                checked={takePlayback === "selected"}
+                onChange={(e) => setTakePlayback(e.target.checked ? "selected" : "all")}
+              />
+              Selected take only
+            </label>
+            <label className="waveform__takes-option" title="When on, the takes are silent while you record a new one. When off, they keep playing.">
+              <input
+                type="checkbox"
+                checked={muteTakesWhileRecording}
+                onChange={(e) => setMuteTakesWhileRecording(e.target.checked)}
+              />
+              Mute takes while recording
+            </label>
             <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
           </div>
         )}
