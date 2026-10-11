@@ -175,6 +175,7 @@ function drawPianoStrip(
   takeMidi: number | null,
   liveMidi: number | null,
   previewMidi: number | null,
+  altMidi: number | null = null,
 ): void {
   const nh = noteH(H);
   const midiMax = midiMin + N_NOTES - 1;
@@ -189,16 +190,17 @@ function drawPianoStrip(
     const isSong = m === songMidi;
     const isTake = m === takeMidi;
     const isLive = m === liveMidi;
+    const isAlt  = m === altMidi;
 
     if (blk) {
-      ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#1c1c1c";
+      ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : isAlt ? COLOR_SONG_ALT : "#1c1c1c";
       ctx.fillRect(1, top + 0.5, PIANO_W * 0.60, nh - 1);
       if (m === previewMidi) {
         ctx.fillStyle = COLOR_PREVIEW;
         ctx.fillRect(1, top + 0.5, PIANO_W * 0.60, nh - 1);
       }
     } else {
-      ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : "#c8c8c8";
+      ctx.fillStyle = isLive ? COLOR_LIVE : isTake ? COLOR_TAKE : isSong ? COLOR_SONG : isAlt ? COLOR_SONG_ALT : "#c8c8c8";
       ctx.fillRect(1, top + 0.5, PIANO_W - 3, nh - 1);
       if (m === previewMidi) {
         ctx.fillStyle = COLOR_PREVIEW;
@@ -208,7 +210,7 @@ function drawPianoStrip(
       if ((m % 12) === 0) {
         const octave = Math.floor(m / 12) - 1;
         const fs = Math.max(7, Math.min(10, nh * 0.78));
-        ctx.fillStyle    = isSong || isTake || isLive ? "#fff" : "#444";
+        ctx.fillStyle    = isSong || isTake || isLive ? "#fff" : isAlt ? "#123" : "#444";
         ctx.font         = `${fs}px sans-serif`;
         ctx.textAlign    = "right";
         ctx.textBaseline = "middle";
@@ -474,6 +476,9 @@ export default function PianoRoll() {
       const songMidi = getCurrentMidi(songPitch, currentTime);
       const takeMidi = getCurrentMidi(takePitch, currentTime);
       const liveMidi = getCurrentMidi(livePitch, currentTime);
+      const altMidi  = showMultipleLines && songPitchAlt.length > 0
+        ? getCurrentMidi(songPitchAlt, currentTime)
+        : null;
 
       // Slide the visible window to follow whichever pitch is active
       // (live > take > song), staying put when nothing is currently sounding.
@@ -503,7 +508,7 @@ export default function PianoRoll() {
       }
       drawPlayhead(ctx, W, H);
       drawNoteLabel(ctx, W, songPitch, takePitch, livePitch, currentTime);
-      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi, preview.midi);
+      drawPianoStrip(ctx, H, midiMin, songMidi, takeMidi, liveMidi, preview.midi, altMidi);
     };
 
     drawRef.current();
