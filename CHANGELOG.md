@@ -6,7 +6,7 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
-## [Unreleased]
+## [0.1.66] - 2026-10-11
 
 ### Added
 - Any panel of the practice room (Takes, Lyrics, Piano roll, Spectrum comparison, Dynamics, Vibrato, Timing, Coach) can be dragged out of the window into a window of its own, for a second monitor, or popped out with its button. The detached window follows playback, recording and the selected take; clicking or dragging in it (seek, punch region, select / rename / delete a take) acts on the main window. Dock it with its button or by closing it.
