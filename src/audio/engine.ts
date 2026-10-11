@@ -10,10 +10,26 @@ export type TimeUpdateCallback= (currentTime: number) => void;
 export type FinishCallback = () => void;
 export type ScrollChangeCallback = (minPxPerSec: number, scrollTime: number) => void;
 
+// One recorded take on the timeline. Several can be loaded at once; only the
+// active one is audible (the others keep playing silently so switching is
+// instant and they stay in sync).
+interface TakeTrack {
+  id: string;
+  ws: WaveSurfer;
+  // Where the take starts in the song, the audio-file skip, and the user's drag nudge
+  offset: number;
+  duration: number;
+  audioOffset: number;
+  manualOffset: number;
+  // Whether this WaveSurfer is currently playing (managed by window sync)
+  isPlaying: boolean;
+  // Rail container, retained so zoom/pan can re-resize it later
+  container: HTMLElement;
+}
+
 export class AudioEngine {
   vocals: WaveSurfer | null = null;
   instrumental: WaveSurfer | null = null;
-  take: WaveSurfer | null = null;
   private _duration = 0;
   private _isPlaying = false;
   private _loopStart: number | null = null;
@@ -27,16 +43,16 @@ export class AudioEngine {
   private _vocalsOffset = 0;
   // Duration of the vocals/take file (may differ from _duration for partial takes)
   private _vocalsDuration = 0;
-  // Take track offset, duration, and audio-file skip offset
-  private _takeOffset = 0;
-  private _takeDuration = 0;
-  private _takeAudioOffset = 0;
-  // User drag nudge on top of _takeOffset, for manual sync correction after recording
-  private _takeManualOffset = 0;
-  // Whether the take WaveSurfer is currently playing (managed by window sync)
-  private _takeIsPlaying = false;
-  // Take rail container, retained so zoom/pan can re-resize it later
-  private _takeContainer: HTMLElement | null = null;
+  // Every take currently on the timeline, and the one that is heard
+  private _takes = new Map<string, TakeTrack>();
+  // The selected take (what getTrackSamples reads) and the takes that are heard.
+  // They are independent: several takes can be heard together.
+  private _activeTakeId: string | null = null;
+  private _audibleTakeIds = new Set<string>();
+  // Effective volume of the audible takes (mute/solo already applied by the store),
+  // and each take's own gain on top of it (1 when none was set)
+  private _takeVolume = 1;
+  private _takeGains = new Map<string, number>();
   // Timeline zoom/pan
   private _minPxPerSec = 1;
   private _scrollTime = 0;
@@ -182,13 +198,11 @@ export class AudioEngine {
     if (!this.vocals || !this.instrumental) return;
     this.vocals.play();
     this.instrumental.play();
-    if (this.take && this._takeDuration > 0) {
-      const time = this.getCurrentTime();
-      const takeStart = this._takeOffset + this._takeManualOffset;
-      const takeEnd = takeStart + this._takeDuration - this._takeAudioOffset;
-      if (time >= takeStart && time < takeEnd) {
-        this.take.play();
-        this._takeIsPlaying = true;
+    const time = this.getCurrentTime();
+    for (const t of this._takes.values()) {
+      if (t.duration > 0 && this._inWindow(t, time)) {
+        t.ws.play();
+        t.isPlaying = true;
       }
     }
     this._isPlaying = true;
@@ -199,8 +213,10 @@ export class AudioEngine {
     if (!this.vocals || !this.instrumental) return;
     this.vocals.pause();
     this.instrumental.pause();
-    this.take?.pause();
-    this._takeIsPlaying = false;
+    for (const t of this._takes.values()) {
+      t.ws.pause();
+      t.isPlaying = false;
+    }
     this._isPlaying = false;
     this._stopTimeUpdate();
   }
@@ -244,17 +260,26 @@ export class AudioEngine {
   }
 
   private _seekTake(instrTime: number): void {
-    if (!this.take) return;
-    const dur = this._takeDuration > 0 ? this._takeDuration : this._duration;
-    const takeTime = this._takeAudioOffset + Math.max(0, instrTime - (this._takeOffset + this._takeManualOffset));
-    this.take.seekTo(Math.min(1, takeTime / dur));
+    for (const t of this._takes.values()) this._seekTakeTrack(t, instrTime);
+  }
+
+  private _seekTakeTrack(t: TakeTrack, instrTime: number): void {
+    const dur = t.duration > 0 ? t.duration : this._duration;
+    const takeTime = t.audioOffset + Math.max(0, instrTime - (t.offset + t.manualOffset));
+    t.ws.seekTo(Math.min(1, takeTime / dur));
+  }
+
+  private _inWindow(t: TakeTrack, time: number): boolean {
+    const start = t.offset + t.manualOffset;
+    const end = start + t.duration - t.audioOffset;
+    return time >= start && time < end;
   }
 
   setPlaybackRate(rate: number): void {
     this._lastPlaybackRate = rate;
     this.vocals?.setPlaybackRate(rate);
     this.instrumental?.setPlaybackRate(rate);
-    this.take?.setPlaybackRate(rate);
+    for (const t of this._takes.values()) t.ws.setPlaybackRate(rate);
   }
 
   async setOutputDevice(deviceId: string): Promise<void> {
@@ -262,7 +287,7 @@ export class AudioEngine {
     await Promise.all([
       this.vocals?.setSinkId(deviceId),
       this.instrumental?.setSinkId(deviceId),
-      this.take?.setSinkId(deviceId),
+      ...[...this._takes.values()].map((t) => t.ws.setSinkId(deviceId)),
       this.exerciseTrack?.setSinkId(deviceId),
     ]);
   }
@@ -312,14 +337,25 @@ export class AudioEngine {
     }
   }
 
-  async loadTakeTrack(filePath: string, container: HTMLElement, startOffset = 0, audioOffset = 0, manualOffset = 0): Promise<void> {
-    this.take?.destroy();
-    this.take = null;
+  /** The take that is heard, or null. Kept for readers that only care about that one. */
+  get take(): WaveSurfer | null {
+    return this._activeTakeId ? (this._takes.get(this._activeTakeId)?.ws ?? null) : null;
+  }
+
+  async loadTakeTrack(
+    id: string,
+    filePath: string,
+    container: HTMLElement,
+    startOffset = 0,
+    audioOffset = 0,
+    manualOffset = 0,
+  ): Promise<void> {
+    this.removeTakeTrack(id);
 
     const wasPlaying = this._isPlaying;
     const url = convertFileSrc(filePath.replace(/\\/g, "/"));
 
-    this.take = WaveSurfer.create({
+    const ws = WaveSurfer.create({
       height: 80,
       waveColor: "#ff8c1e",
       progressColor: "#ff8c1e",
@@ -336,85 +372,131 @@ export class AudioEngine {
       container,
       url,
     });
+    const track: TakeTrack = {
+      id, ws, offset: startOffset, duration: 0, audioOffset, manualOffset, isPlaying: false, container,
+    };
+    this._takes.set(id, track);
 
-    await new Promise<void>((resolve, reject) => {
-      const unsubReady = this.take!.on("ready", () => { unsubReady(); unsubError(); resolve(); });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const unsubError = this.take!.on("error", (err: any) => {
-        unsubReady(); unsubError();
-        console.error("[engine] WaveSurfer take load failed — url:", url, "raw err:", err);
-        reject(new Error(err?.message || err?.toString?.() || "WaveSurfer load error"));
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const unsubReady = ws.on("ready", () => { unsubReady(); unsubError(); resolve(); });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const unsubError = ws.on("error", (err: any) => {
+          unsubReady(); unsubError();
+          console.error("[engine] WaveSurfer take load failed — url:", url, "raw err:", err);
+          reject(new Error(err?.message || err?.toString?.() || "WaveSurfer load error"));
+        });
       });
-    });
+    } catch (e) {
+      if (this._takes.get(id) === track) this._takes.delete(id);
+      ws.destroy();
+      throw e;
+    }
+
+    // The take may have been removed (hidden, deleted, song closed) while it decoded.
+    if (this._takes.get(id) !== track) {
+      ws.destroy();
+      return;
+    }
 
     if (this._lastOutputDeviceId) {
-      await this.take.setSinkId(this._lastOutputDeviceId).catch((e) =>
+      await ws.setSinkId(this._lastOutputDeviceId).catch((e) =>
         console.warn("[engine] setSinkId on take failed:", e)
       );
+      if (this._takes.get(id) !== track) return;
     }
-    this.take.setPlaybackRate(this._lastPlaybackRate);
+    ws.setPlaybackRate(this._lastPlaybackRate);
+    ws.setVolume(this._takeLevel(id));
 
-    this._takeOffset       = startOffset;
-    this._takeDuration     = this.take.getDuration();
-    this._takeAudioOffset  = audioOffset;
-    this._takeManualOffset = manualOffset;
-    this._takeContainer    = container;
+    track.duration = ws.getDuration();
 
     // Constrain the container to the correct time window so the waveform
     // lines up visually with the other tracks (vocals, instrumental),
     // in absolute pixels derived from the current zoom/scroll — not a
     // fraction of the container, which only worked while zoom was fixed
     // at "whole song fills the container".
-    this._resizeTakeTrack();
+    this._resizeTakeTrack(track);
 
-    this.take.on("interaction", (newTime) => {
-      const instrTime = newTime - this._takeAudioOffset + this._takeOffset + this._takeManualOffset;
+    ws.on("interaction", (newTime) => {
+      const instrTime = newTime - track.audioOffset + track.offset + track.manualOffset;
       const instrProgress = Math.max(0, Math.min(1, instrTime / this._duration));
       this.instrumental?.seekTo(instrProgress);
       this._seekVocals(instrTime);
+      this._seekTake(instrTime);
       this._notifySeek(instrTime);
     });
 
-    this._takeIsPlaying = false;
     if (this.instrumental) {
       const instrTime = this.instrumental.getCurrentTime();
-      this._seekTake(instrTime);
-      const takeStart = this._takeOffset + this._takeManualOffset;
-      const takeEnd = takeStart + this._takeDuration - this._takeAudioOffset;
-      if (wasPlaying && instrTime >= takeStart && instrTime < takeEnd) {
-        this.take.play();
-        this._takeIsPlaying = true;
+      this._seekTakeTrack(track, instrTime);
+      if (wasPlaying && this._inWindow(track, instrTime)) {
+        ws.play();
+        track.isPlaying = true;
       }
     }
   }
 
   // Live drag preview and commit: repositions the take track visually and
   // keeps playback/seek aligned, without touching the Zustand store.
-  setTakeManualOffset(offset: number): void {
-    this._takeManualOffset = offset;
-    this._resizeTakeTrack();
-    this._seekTake(this.getCurrentTime());
+  setTakeManualOffset(id: string, offset: number): void {
+    const t = this._takes.get(id);
+    if (!t) return;
+    t.manualOffset = offset;
+    this._resizeTakeTrack(t);
+    this._seekTakeTrack(t, this.getCurrentTime());
   }
 
+  /** The selected take: what the spectrum reads. It does not change what is heard. */
+  setActiveTakeTrack(id: string | null): void {
+    this._activeTakeId = id;
+  }
+
+  /** Which loaded takes are heard; the others stay loaded and in sync, silently. */
+  setAudibleTakeTracks(ids: readonly string[]): void {
+    this._audibleTakeIds = new Set(ids);
+    this._applyTakeVolumes();
+  }
+
+  /** The effective volume of the takes that are heard (mute / solo already applied). */
   setTakeVolume(volume: number): void {
-    this.take?.setVolume(volume);
+    this._takeVolume = volume;
+    this._applyTakeVolumes();
+  }
+
+  /** Each take's own volume, multiplied with the take channel's. */
+  setTakeGains(gains: Readonly<Record<string, number>>): void {
+    this._takeGains = new Map(Object.entries(gains));
+    this._applyTakeVolumes();
+  }
+
+  private _takeLevel(id: string): number {
+    return this._audibleTakeIds.has(id) ? this._takeVolume * (this._takeGains.get(id) ?? 1) : 0;
+  }
+
+  private _applyTakeVolumes(): void {
+    for (const t of this._takes.values()) t.ws.setVolume(this._takeLevel(t.id));
+  }
+
+  removeTakeTrack(id: string): void {
+    const t = this._takes.get(id);
+    if (!t) return;
+    t.ws.destroy();
+    this._takes.delete(id);
   }
 
   clearTakeTrack(): void {
-    this.take?.destroy();
-    this.take = null;
-    this._takeOffset = 0;
-    this._takeDuration = 0;
-    this._takeAudioOffset = 0;
-    this._takeManualOffset = 0;
-    this._takeIsPlaying = false;
-    this._takeContainer = null;
+    for (const t of this._takes.values()) t.ws.destroy();
+    this._takes.clear();
+    this._activeTakeId = null;
+    this._audibleTakeIds = new Set();
+    this._takeGains = new Map();
   }
 
   // ─── Timeline zoom/pan ──────────────────────────────────────────────────
 
   private _allInstances(): WaveSurfer[] {
-    return [this.vocals, this.instrumental, this.take].filter((ws): ws is WaveSurfer => ws !== null);
+    const base = [this.vocals, this.instrumental].filter((ws): ws is WaveSurfer => ws !== null);
+    return [...base, ...[...this._takes.values()].map((t) => t.ws)];
   }
 
   // Dynamic lower zoom bound: the minPxPerSec at which the whole song
@@ -434,13 +516,13 @@ export class AudioEngine {
       ws.zoom(minPxPerSec);
       ws.setScrollTime(scrollTime);
     }
-    this._resizeTakeTrack();
+    for (const t of this._takes.values()) this._resizeTakeTrack(t);
   }
 
   setScrollAll(scrollTime: number): void {
     this._scrollTime = scrollTime;
     for (const ws of this._allInstances()) ws.setScrollTime(scrollTime);
-    this._resizeTakeTrack();
+    for (const t of this._takes.values()) this._resizeTakeTrack(t);
   }
 
   // Marks the moment of a user-driven wheel zoom/pan, so the auto-follow
@@ -454,14 +536,14 @@ export class AudioEngine {
     this._scrollUpdateCb = cb;
   }
 
-  private _resizeTakeTrack(): void {
-    if (!this.take || !this._takeContainer || this._duration <= 0 || this._takeDuration <= 0) return;
-    const playableDur = this._takeDuration - this._takeAudioOffset;
+  private _resizeTakeTrack(t: TakeTrack): void {
+    if (this._duration <= 0 || t.duration <= 0) return;
+    const playableDur = t.duration - t.audioOffset;
     const widthPx  = Math.round(playableDur * this._minPxPerSec);
-    const marginPx = Math.round((this._takeOffset + this._takeManualOffset - this._scrollTime) * this._minPxPerSec);
-    this._takeContainer.style.marginLeft = `${marginPx}px`;
-    this._takeContainer.style.width      = `${widthPx}px`;
-    this.take.setOptions({ width: widthPx });
+    const marginPx = Math.round((t.offset + t.manualOffset - this._scrollTime) * this._minPxPerSec);
+    t.container.style.marginLeft = `${marginPx}px`;
+    t.container.style.width      = `${widthPx}px`;
+    t.ws.setOptions({ width: widthPx });
   }
 
   // ─── Free Exercise: loaded-track playback (independent of vocals/instrumental/take) ───
@@ -585,7 +667,8 @@ export class AudioEngine {
   // works while paused or scrubbed. Null when nothing is audible there (no
   // buffer yet, or the playhead is before the take starts).
   getTrackSamples(track: "vocals" | "take", windowSize: number): { samples: Float32Array; sampleRate: number } | null {
-    const ws = track === "vocals" ? this.vocals : this.take;
+    const activeTake = this._activeTakeId ? (this._takes.get(this._activeTakeId) ?? null) : null;
+    const ws = track === "vocals" ? this.vocals : (activeTake?.ws ?? null);
     const buffer = ws?.getDecodedData();
     if (!buffer) return null;
     const songTime = this.getCurrentTime();
@@ -593,9 +676,10 @@ export class AudioEngine {
     if (track === "vocals") {
       fileTime = songTime - this._vocalsOffset;
     } else {
-      const takeStart = this._takeOffset + this._takeManualOffset;
+      if (!activeTake) return null;
+      const takeStart = activeTake.offset + activeTake.manualOffset;
       if (songTime < takeStart) return null;
-      fileTime = this._takeAudioOffset + (songTime - takeStart);
+      fileTime = activeTake.audioOffset + (songTime - takeStart);
     }
     if (fileTime < 0) return null;
     const channels: Float32Array[] = [];
@@ -704,23 +788,17 @@ export class AudioEngine {
     this._stopTimeUpdate();
     this.vocals?.destroy();
     this.instrumental?.destroy();
-    this.take?.destroy();
+    this.clearTakeTrack();
     this.exerciseTrack?.destroy();
     this.vocals = null;
     this.instrumental = null;
-    this.take = null;
     this.exerciseTrack = null;
     this._isPlaying = false;
     this._duration = 0;
     this._vocalsOffset = 0;
     this._vocalsDuration = 0;
-    this._takeOffset = 0;
-    this._takeDuration = 0;
-    this._takeAudioOffset = 0;
-    this._takeIsPlaying = false;
     this._exerciseMode = false;
     this._exerciseOffset = 0;
-    this._takeContainer = null;
     this._minPxPerSec = 1;
     this._scrollTime = 0;
   }
@@ -742,16 +820,15 @@ export class AudioEngine {
       }
 
       // Take window sync: start/stop the take as the playhead enters/exits its time window
-      if (this.take && this._takeDuration > 0) {
-        const takeStart = this._takeOffset + this._takeManualOffset;
-        const takeEnd = takeStart + this._takeDuration - this._takeAudioOffset;
-        const inWindow = time >= takeStart && time < takeEnd;
-        if (inWindow && !this._takeIsPlaying) {
-          this.take.play();
-          this._takeIsPlaying = true;
-        } else if (!inWindow && this._takeIsPlaying) {
-          this.take.pause();
-          this._takeIsPlaying = false;
+      for (const t of this._takes.values()) {
+        if (t.duration <= 0) continue;
+        const inWindow = this._inWindow(t, time);
+        if (inWindow && !t.isPlaying) {
+          t.ws.play();
+          t.isPlaying = true;
+        } else if (!inWindow && t.isPlaying) {
+          t.ws.pause();
+          t.isPlaying = false;
         }
       }
 
@@ -820,10 +897,11 @@ export class AudioEngine {
       }
     }
 
-    if (this.take && this._takeIsPlaying) {
-      const expectedTake = this._takeAudioOffset + Math.max(0, refTime - (this._takeOffset + this._takeManualOffset));
-      if (Math.abs(this.take.getCurrentTime() - expectedTake) > DRIFT_TOLERANCE_S) {
-        this.take.setTime(expectedTake);
+    for (const t of this._takes.values()) {
+      if (!t.isPlaying) continue;
+      const expectedTake = t.audioOffset + Math.max(0, refTime - (t.offset + t.manualOffset));
+      if (Math.abs(t.ws.getCurrentTime() - expectedTake) > DRIFT_TOLERANCE_S) {
+        t.ws.setTime(expectedTake);
       }
     }
   }

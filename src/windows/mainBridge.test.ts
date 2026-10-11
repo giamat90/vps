@@ -31,20 +31,22 @@ const take = (id: string, extra: Partial<Take> = {}) =>
 
 const SONG = { id: "s1", title: "Song", kind: "vocal" } as never;
 
+const silenced = { value: false };
+
 function setup() {
   const seek = vi.fn();
   const setPunchIn = vi.fn();
   const setPunchOut = vi.fn();
   const clearPunch = vi.fn();
-  const setActiveTake = vi.fn();
+  const toggleTake = vi.fn();
   const deleteTake = vi.fn(async () => {});
   const renameTake = vi.fn(async () => {});
   const player = fakeStore<PlayerPort>({
     song: SONG, isPlaying: false, currentTime: 0, duration: 200, playbackRate: 1,
     isRecording: false, isMonitoring: false, exerciseMode: false,
     punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null,
-    activeTakeId: null, takes: [],
-    seek, setPunchIn, setPunchOut, clearPunch, setActiveTake, deleteTake, renameTake,
+    activeTakeId: null, shownTakeIds: [], takePlayback: "all", mutedTakeIds: [], soloedTakeId: null, muteTakesWhileRecording: true, takes: [],
+    seek, setPunchIn, setPunchOut, clearPunch, toggleTake, deleteTake, renameTake,
   });
   const analysis = fakeStore<AnalysisPort>({ livePitch: [], liveCents: null });
 
@@ -68,11 +70,12 @@ function setup() {
       return unlisten;
     },
     now: () => nowMs,
+    takesSilenced: () => silenced.value,
   };
 
   return {
     deps, player, analysis, emitted, unlisten,
-    spies: { seek, setPunchIn, setPunchOut, clearPunch, setActiveTake, deleteTake, renameTake },
+    spies: { seek, setPunchIn, setPunchOut, clearPunch, toggleTake, deleteTake, renameTake },
     spectrumRead,
     spectrumReset,
     deliver: (event: string, payload: unknown) => handlers.get(event)?.(payload),
@@ -87,6 +90,7 @@ function setup() {
 }
 
 beforeEach(() => {
+  silenced.value = false;
   vi.useFakeTimers();
 });
 
@@ -190,10 +194,10 @@ describe("main bridge: takes", () => {
     t.player.set({ takes: [big("t1"), big("t2")] });
     await startMainBridge(t.deps);
     t.deliver(EVT_HELLO, { panelId: "takes" });
-    t.deliver(EVT_COMMAND, { type: "setActiveTake", id: "t2" });
+    t.deliver(EVT_COMMAND, { type: "toggleTake", id: "t2" });
     t.deliver(EVT_COMMAND, { type: "deleteTake", id: "t1" });
     t.deliver(EVT_COMMAND, { type: "renameTake", id: "t2", name: "Verse" });
-    expect(t.spies.setActiveTake).toHaveBeenCalledWith("t2");
+    expect(t.spies.toggleTake).toHaveBeenCalledWith("t2");
     expect(t.spies.deleteTake).toHaveBeenCalledWith("t1");
     expect(t.spies.renameTake).toHaveBeenCalledWith("t2", "Verse");
   });
@@ -204,10 +208,10 @@ describe("main bridge: takes", () => {
     t.player.set({ takes: [big("t1")] });
     await startMainBridge(t.deps);
     t.deliver(EVT_HELLO, { panelId: "takes" });
-    t.deliver(EVT_COMMAND, { type: "setActiveTake", id: "ghost" });
+    t.deliver(EVT_COMMAND, { type: "toggleTake", id: "ghost" });
     t.deliver(EVT_COMMAND, { type: "deleteTake", id: "ghost" });
     t.deliver(EVT_COMMAND, { type: "renameTake", id: "ghost", name: "x" });
-    expect(t.spies.setActiveTake).not.toHaveBeenCalled();
+    expect(t.spies.toggleTake).not.toHaveBeenCalled();
     expect(t.spies.deleteTake).not.toHaveBeenCalled();
     expect(t.spies.renameTake).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledTimes(3);

@@ -13,7 +13,7 @@ const SONG = { id: "s1", title: "Song", kind: "vocal" } as never;
 
 const shared = (extra: Partial<SharedState> = {}): SharedState => ({
   song: SONG, duration: 200, isRecording: false, isMonitoring: false, exerciseMode: false,
-  punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null, activeTake: null, takes: [],
+  punchIn: null, punchOut: null, punchLoop: false, selectedOutputDeviceId: null, activeTake: null, shownTakeIds: [], takePlayback: "all", mutedTakeIds: [], soloedTakeId: null, takesSilenced: false, muteTakesWhileRecording: true, takes: [],
   ...extra,
 });
 
@@ -28,7 +28,7 @@ const state = (
 function setup(panelId: DetachablePanel = "pianoRoll") {
   let playerState: Record<string, unknown> = {
     seek: () => {}, setPunchIn: () => {}, setPunchOut: () => {}, clearPunch: () => {},
-    currentTime: 0,
+    currentTime: 0, shownTakeIds: [], activeTakeId: null,
   };
   let analysisState: Record<string, unknown> = { livePitch: [], liveCents: null };
   const order: string[] = [];
@@ -191,16 +191,16 @@ describe("detached bridge: takes", () => {
     const t = setup("takes");
     await startDetachedBridge(t.deps);
     const p = t.player() as {
-      setActiveTake: (id: string) => void;
+      toggleTake: (id: string) => void;
       deleteTake: (id: string) => Promise<void>;
       renameTake: (id: string, name: string) => Promise<void>;
     };
-    p.setActiveTake("t2");
+    p.toggleTake("t2");
     await p.deleteTake("t1");
     await p.renameTake("t2", "Verse");
     const commands = t.emitted.filter((e) => e.event === EVT_COMMAND).map((e) => e.payload);
     expect(commands).toEqual([
-      { type: "setActiveTake", id: "t2" },
+      { type: "toggleTake", id: "t2" },
       { type: "deleteTake", id: "t1" },
       { type: "renameTake", id: "t2", name: "Verse" },
     ]);
@@ -209,8 +209,28 @@ describe("detached bridge: takes", () => {
   it("highlights a selected take at once, without waiting for the round trip", async () => {
     const t = setup("takes");
     await startDetachedBridge(t.deps);
-    (t.player() as { setActiveTake: (id: string) => void }).setActiveTake("t2");
+    (t.player() as { toggleTake: (id: string) => void }).toggleTake("t2");
     expect(t.player().activeTakeId).toBe("t2");
+    expect(t.player().shownTakeIds).toEqual(["t2"]);
+  });
+
+  it("shows several takes and hides the playing one on a second click, all locally first", async () => {
+    const t = setup("takes");
+    await startDetachedBridge(t.deps);
+    const p = t.player() as { toggleTake: (id: string) => void };
+    p.toggleTake("t1");
+    p.toggleTake("t2");
+    expect(t.player().shownTakeIds).toEqual(["t1", "t2"]);
+    p.toggleTake("t2");
+    expect(t.player().shownTakeIds).toEqual(["t1"]);
+    expect(t.player().activeTakeId).toBe("t1");
+  });
+
+  it("mirrors which takes the main window shows", async () => {
+    const t = setup("takes");
+    await startDetachedBridge(t.deps);
+    t.deliver(EVT_STATE, state({}, { takes: [summary("t1"), summary("t2")], activeTake: take("t2"), shownTakeIds: ["t1", "t2"] }));
+    expect(t.player().shownTakeIds).toEqual(["t1", "t2"]);
   });
 });
 

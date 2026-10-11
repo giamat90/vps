@@ -81,7 +81,7 @@ describe("parseCommand", () => {
   });
 
   it("accepts the take commands", () => {
-    expect(parseCommand({ type: "setActiveTake", id: "t1" })).toEqual({ type: "setActiveTake", id: "t1" });
+    expect(parseCommand({ type: "toggleTake", id: "t1" })).toEqual({ type: "toggleTake", id: "t1" });
     expect(parseCommand({ type: "deleteTake", id: "t1" })).toEqual({ type: "deleteTake", id: "t1" });
     expect(parseCommand({ type: "renameTake", id: "t1", name: "Verse 2" })).toEqual({
       type: "renameTake", id: "t1", name: "Verse 2",
@@ -93,9 +93,9 @@ describe("parseCommand", () => {
   });
 
   it.each([
-    { type: "setActiveTake" },
-    { type: "setActiveTake", id: "" },
-    { type: "setActiveTake", id: 7 },
+    { type: "toggleTake" },
+    { type: "toggleTake", id: "" },
+    { type: "toggleTake", id: 7 },
     { type: "deleteTake", id: "x".repeat(200) },
     { type: "renameTake", id: "t1" },
     { type: "renameTake", id: "t1", name: 5 },
@@ -122,6 +122,12 @@ describe("message guards", () => {
     punchLoop: false,
     selectedOutputDeviceId: null,
     activeTake: null,
+    shownTakeIds: [],
+    takePlayback: "all",
+    mutedTakeIds: [],
+    soloedTakeId: null,
+    takesSilenced: false,
+    muteTakesWhileRecording: true,
     takes: [],
   };
 
@@ -147,6 +153,13 @@ describe("message guards", () => {
   it("accepts a state message that lists takes", () => {
     const takes = [{ id: "t1", songId: "s1", recordedAt: "now", filepath: "/t/1.wav", startPosition: 0 }];
     expect(isStateMessage({ transport, shared: { ...shared, takes } })).toBe(true);
+  });
+
+  it("lists which takes are shown, and rejects anything that is not a list of ids", () => {
+    expect(isStateMessage({ transport, shared: { ...shared, shownTakeIds: ["t1", "t2"] } })).toBe(true);
+    for (const bad of [undefined, "t1", [1], [""], [null], {}]) {
+      expect(isStateMessage({ transport, shared: { ...shared, shownTakeIds: bad } }), JSON.stringify(bad)).toBe(false);
+    }
   });
 
   it("accepts and rejects spectrum messages", () => {

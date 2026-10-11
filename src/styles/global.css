@@ -1037,6 +1037,96 @@ body,
   color: #ff8c1e;
 }
 
+button.waveform__take-name {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.waveform__track--silent .waveform__take-rail {
+  opacity: 0.45;
+}
+
+/* The recorded takes are set apart from the vocal and instrumental tracks by a divider only:
+   they are part of the same widget and scroll with it, not in a scroll area of their own. */
+.waveform__takes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 0.15rem solid var(--bg-surface);
+}
+
+/* A lane's waveform area has overflow hidden, so a lane must never be squeezed. */
+.waveform__takes > * {
+  flex-shrink: 0;
+}
+
+.waveform__takes-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.25rem 0.1rem;
+}
+
+/* The take channel's mute / solo / volume sit at the far right, like every other track's */
+.waveform__takes-bar > .waveform__track-controls {
+  margin-left: auto;
+}
+
+.waveform__takes-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.waveform__takes-option input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.waveform__track--take.waveform__track--active .waveform__label--take {
+  text-decoration: underline;
+}
+
+/* The selected take's header is tinted with an accent edge, heard or not. */
+.waveform__track--take.waveform__track--active > .waveform__track-header {
+  background: rgba(233, 69, 96, 0.14);
+  box-shadow: inset 0.2rem 0 0 var(--accent);
+  border-radius: 4px;
+  padding-left: 0.4rem;
+}
+
+.waveform__take-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.waveform__take-hide {
+  background: transparent;
+  border: 1px solid var(--bg-surface);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.1rem 0.4rem;
+  cursor: pointer;
+}
+
+.waveform__take-hide:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 .waveform__track-controls {
   display: flex;
   align-items: center;
@@ -1808,6 +1898,22 @@ body,
 
 .take-item--active {
   border-color: var(--accent);
+}
+
+.take-item--shown {
+  border-color: var(--bg-surface);
+  opacity: 0.85;
+}
+
+.take-item__state {
+  flex-shrink: 0;
+  width: 1rem;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.take-item--active .take-item__state {
+  color: var(--accent);
 }
 
 .take-item__info {

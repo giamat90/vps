@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { usePlayerStore } from "../../stores/player";
+import { audibleTakes } from "@giamat90/mps-core/takes";
+import { usePlayerStore, takesSilenced } from "../../stores/player";
 import { exportTake } from "../../lib/tauri";
 import type { Take } from "../../lib/types";
 
@@ -17,13 +18,31 @@ function TakeList() {
   const song = usePlayerStore((s) => s.song);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
-  const setActiveTake = usePlayerStore((s) => s.setActiveTake);
+  const shownTakeIds = usePlayerStore((s) => s.shownTakeIds);
+  const toggleTake = usePlayerStore((s) => s.toggleTake);
+  const takePlayback = usePlayerStore((s) => s.takePlayback);
+  const mutedTakeIds = usePlayerStore((s) => s.mutedTakeIds);
+  const isRecording = usePlayerStore((s) => s.isRecording);
+  const muteTakesWhileRecording = usePlayerStore((s) => s.muteTakesWhileRecording);
+  const soloedTakeId = usePlayerStore((s) => s.soloedTakeId);
+  const takeChannelSilent = usePlayerStore((s) => takesSilenced(s));
   const deleteTake = usePlayerStore((s) => s.deleteTake);
   const renameTake = usePlayerStore((s) => s.renameTake);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [exportingId, setExportingId] = useState<string | null>(null);
+
+  const audibleIds = audibleTakes({
+    shown: shownTakeIds,
+    active: activeTakeId,
+    playback: takePlayback,
+    muted: mutedTakeIds,
+    recording: isRecording,
+    muteWhileRecording: muteTakesWhileRecording,
+    soloed: soloedTakeId,
+    silenced: takeChannelSilent,
+  });
 
   const displayName = (take: Take, i: number) => take.name || `Take ${i + 1}`;
 
@@ -63,12 +82,31 @@ function TakeList() {
   return (
     <div className="take-list">
       <h3 className="take-list__title">Takes</h3>
-      {takes.map((take, i) => (
+      {takes.map((take, i) => {
+        const isActive = activeTakeId === take.id;
+        const isShown = shownTakeIds.includes(take.id);
+        const isAudible = audibleIds.includes(take.id);
+        const hint = !isShown
+          ? "Click to show this take"
+          : isActive
+            ? "Selected. Click to hide this take"
+            : takePlayback === "selected"
+              ? "Shown. Click to play this one"
+              : "Shown. Click to select it";
+        return (
         <div
           key={take.id}
-          className={`take-item ${activeTakeId === take.id ? "take-item--active" : ""}`}
-          onClick={() => setActiveTake(take.id)}
+          className={`take-item${isActive ? " take-item--active" : isShown ? " take-item--shown" : ""}`}
+          onClick={() => toggleTake(take.id)}
+          title={hint}
+          aria-pressed={isShown}
         >
+          <span
+            className="take-item__state"
+            aria-label={isAudible ? "playing" : isShown ? "silent" : "hidden"}
+          >
+            {isAudible ? "▶" : isShown ? "▷" : "○"}
+          </span>
           <div className="take-item__info">
             {editingId === take.id ? (
               <input
@@ -122,7 +160,8 @@ function TakeList() {
             </button>
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

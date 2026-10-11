@@ -32,12 +32,17 @@ export interface PlayerPort {
   punchLoop: boolean;
   selectedOutputDeviceId: string | null;
   activeTakeId: string | null;
+  shownTakeIds: string[];
+  takePlayback: "all" | "selected";
+  mutedTakeIds: string[];
+  soloedTakeId: string | null;
+  muteTakesWhileRecording: boolean;
   takes: Take[];
   seek(time: number): void;
   setPunchIn(time: number): void;
   setPunchOut(time: number): void;
   clearPunch(): void;
-  setActiveTake(id: string): void;
+  toggleTake(id: string): void;
   deleteTake(id: string): Promise<void>;
   renameTake(id: string, name: string): Promise<void>;
 }
@@ -53,6 +58,8 @@ export interface MainBridgeDeps {
   emit: (event: string, payload: unknown) => void | Promise<void>;
   listen: (event: string, cb: (payload: unknown) => void) => Promise<() => void>;
   now: () => number;
+  /** The main take mute is on, or another track is soloed: no take is heard. */
+  takesSilenced: () => boolean;
   /** The part of the spectrum comparison that needs the engine or the microphone. */
   spectrum?: { read(): SpectrumMessage | null; reset?(): void };
 }
@@ -82,14 +89,14 @@ function applyCommand(p: PlayerPort, command: Command): void {
     case "clearPunch":
       p.clearPunch();
       break;
-    case "setActiveTake":
+    case "toggleTake":
     case "deleteTake":
     case "renameTake": {
       if (!p.takes.some((t) => t.id === command.id)) {
         console.warn(`[detached] ${command.type} names a take that does not exist:`, command.id);
         break;
       }
-      if (command.type === "setActiveTake") p.setActiveTake(command.id);
+      if (command.type === "toggleTake") p.toggleTake(command.id);
       else if (command.type === "deleteTake") {
         p.deleteTake(command.id).catch((e: unknown) => console.error("[detached] could not delete the take:", e));
       } else {
@@ -178,6 +185,12 @@ export function startMainBridge(deps: MainBridgeDeps): Promise<{ dispose(): void
         punchLoop: p.punchLoop,
         selectedOutputDeviceId: p.selectedOutputDeviceId,
         activeTake: p.takes.find((t) => t.id === p.activeTakeId) ?? null,
+        shownTakeIds: p.shownTakeIds,
+        takePlayback: p.takePlayback,
+        mutedTakeIds: p.mutedTakeIds,
+        soloedTakeId: p.soloedTakeId,
+        takesSilenced: deps.takesSilenced(),
+        muteTakesWhileRecording: p.muteTakesWhileRecording,
         takes: lastSummaries,
       };
     },
