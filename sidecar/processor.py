@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import soundfile as sf
 import librosa
-from scipy.signal import butter, sosfilt, resample_poly
+from scipy.signal import butter, sosfilt, resample_poly, find_peaks
 from scipy.signal.windows import blackman, chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
 
@@ -67,6 +67,116 @@ def _smooth_voiced(f0_clean: np.ndarray, voiced: np.ndarray) -> np.ndarray:
         )
 
     return f0_smooth
+
+
+def _smooth_voiced_runs(f0_clean: np.ndarray, voiced: np.ndarray, size: int = 5) -> np.ndarray:
+    """
+    Median smoothing inside each run of consecutive voiced frames only.
+
+    Unlike _smooth_voiced, runs are never joined across unvoiced gaps and there is no Gaussian
+    averaging in Hz: both dragged the first and last frames of every note toward the neighbouring
+    note and blended octave errors into their correct neighbours (pitch_lab, 2026-10-11).
+    """
+    out = f0_clean.copy()
+    idx = np.where(voiced & (f0_clean > 0))[0]
+    if len(idx) == 0:
+        return out
+
+    for run in np.split(idx, np.where(np.diff(idx) > 1)[0] + 1):
+        if len(run) >= 3:
+            out[run] = median_filter(f0_clean[run], size=min(size, len(run)), mode="nearest")
+
+    return out
+
+
+def _srh_candidates(srh_scores: np.ndarray, f0_candidates: np.ndarray, n_candidates: int, min_gap: int):
+    """
+    Top local maxima of one frame's SRH score curve as (freqs_hz, scores), best first, with the
+    sub-grid offset from a parabola through each peak and its neighbours.
+
+    An argmax on the very edge of the grid is not a local maximum, so it is added back unless a peak
+    already sits within `min_gap` cells. Only positive scores are candidates.
+    """
+    best_idx = int(np.argmax(srh_scores))
+    peaks, _ = find_peaks(srh_scores, distance=min_gap)
+    if not np.any(np.abs(peaks - best_idx) < min_gap):
+        peaks = np.append(peaks, best_idx)
+    peaks = peaks[srh_scores[peaks] > 0]
+    top = peaks[np.argsort(srh_scores[peaks])[::-1][:n_candidates]]
+
+    below = srh_scores[np.maximum(top - 1, 0)]
+    centre = srh_scores[top]
+    above = srh_scores[np.minimum(top + 1, len(srh_scores) - 1)]
+    denom = below - 2 * centre + above
+    interior = (top > 0) & (top < len(srh_scores) - 1) & (denom != 0)
+    p = np.where(interior, 0.5 * (below - above) / np.where(denom != 0, denom, 1.0), 0.0)
+    p = np.clip(p, -1.0, 1.0)
+
+    step = f0_candidates[1] - f0_candidates[0]
+    return f0_candidates[top] + p * step, centre
+
+
+def _viterbi_pick(cand_f: np.ndarray, cand_s: np.ndarray, beta: float, cap_semitones: float = 12.0) -> np.ndarray:
+    """
+    Choose one candidate per frame as a minimum-cost path through time.
+
+    cand_f / cand_s are (n_frames, k): candidate frequencies and their scores, best first, NaN
+    padded. Node cost is 1 - score / frame_best; moving between candidates costs `beta` per semitone,
+    capped at an octave so a genuine leap is not forbidden. Runs of frames that have candidates are
+    solved independently, so a frame with none (below the loudness gate) resets the path.
+
+    Returns the chosen column per frame, -1 where a frame has no candidate.
+    """
+    n, k = cand_f.shape
+    chosen = np.full(n, -1, dtype=int)
+    if n == 0:
+        return chosen
+
+    has = ~np.isnan(cand_f[:, 0])
+    rel = np.where(np.isnan(cand_f), 0.0, cand_s / (cand_s[:, :1] + 1e-12))
+    node = np.where(np.isnan(cand_f), np.inf, 1.0 - rel)
+    semitones = 12.0 * np.log2(np.where(np.isnan(cand_f), 1.0, cand_f))
+    cols = np.arange(k)
+
+    i = 0
+    while i < n:
+        if not has[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and has[j + 1]:
+            j += 1
+
+        back = np.zeros((j - i + 1, k), dtype=int)
+        cost = node[i].copy()
+        for m in range(1, j - i + 1):
+            step = np.abs(semitones[i + m][:, None] - semitones[i + m - 1][None, :])
+            total = cost[None, :] + beta * np.minimum(step, cap_semitones)
+            back[m] = np.argmin(total, axis=1)
+            cost = total[cols, back[m]] + node[i + m]
+
+        c = int(np.argmin(cost))
+        for m in range(j - i, -1, -1):
+            chosen[i + m] = c
+            c = back[m, c]
+        i = j + 1
+
+    return chosen
+
+
+def _harmonic_contrast(spectrum: np.ndarray, freqs_hz: np.ndarray, bin_width: float, n_harmonics: int) -> np.ndarray:
+    """
+    (H - I) / (H + I) per candidate F0: H sums the spectrum at its harmonics, I halfway between them.
+    Near 1 for a clean harmonic series, near 0 for noise. Scale-free, so it needs no track-level
+    normalisation, which is what lets it tell voice from noise where score / track-max cannot.
+    """
+    n = np.arange(1, n_harmonics + 1)
+    last = len(spectrum) - 1
+    hb = np.clip(np.round(freqs_hz[:, None] * n / bin_width).astype(int), 0, last)
+    ib = np.clip(np.round(freqs_hz[:, None] * (n + 0.5) / bin_width).astype(int), 0, last)
+    h = spectrum[hb].sum(axis=1)
+    i = spectrum[ib].sum(axis=1)
+    return (h - i) / (h + i + 1e-9)
 
 
 def _correct_octave_errors_spectral(
@@ -158,6 +268,15 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     - Addition is robust to weak/missing harmonics (HPS multiplication is not)
     - Inter-harmonic subtraction actively suppresses non-fundamental candidates
     - Sub-bin precision via parabolic interpolation on the SRH score curve
+
+    On top of the per-frame score, three things matter for Demucs-separated stems
+    (pitch_lab/README.md, "SRH on separated stems", 2026-10-11):
+    - the F0 is a Viterbi path through each frame's top SRH peaks, not the per-frame argmax
+    - voicing is the harmonic contrast of the chosen F0, not the score relative to the track maximum
+    - smoothing is a median inside each voiced run, never across unvoiced gaps
+
+    `confidence` is still the best SRH score normalised by the track maximum: PianoRoll, key and
+    vibrato detection threshold it, and its distribution is what those thresholds were set against.
     """
 
     # Resample to 22050 Hz for consistent bin resolution
@@ -177,10 +296,19 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     n_harmonics = 7
     fmin = 65.0    # C2 — lowest practical singing fundamental
     fmax = 1400.0  # above F#6 — matches VoceVista upper limit; no singer exceeds this
-    # Lowered from 0.25 (VoceVista "minimumClarity") because the 7-harmonic score distribution is
-    # lower; 0.22 keeps the voiced-frame count about equal to the old 5-harmonic/0.25 setting.
-    voicing_threshold = 0.22
     amplitude_threshold = 10 ** (-50 / 20)  # −50 dBFS; silent frames skipped before SRH
+    # Voiced iff the chosen F0's harmonic contrast clears this. Replaced "score / track max > 0.22",
+    # which called 62-88% of the loud frames that Praat, pYIN and CREPE all call unvoiced voiced
+    # (AUC 0.73-0.92 vs 0.93-0.99 on three Demucs vocals). 0.6 matches or beats the old recall on
+    # every track but the raspiest (-1.5 points); 0.5 is the safer value if voiced coverage on raspy
+    # voices ever matters more than rejecting noise.
+    contrast_threshold = 0.6
+    n_candidates = 5      # SRH peaks per frame handed to the Viterbi path
+    min_peak_gap = 10     # candidate-grid cells (5 Hz): keeps one ripple from filling every slot
+    # 0.1 per semitone, capped at an octave: a one-frame octave flip costs ~2.4 so it needs a clearly
+    # stronger score to survive, a sustained move to the new octave costs 1.2 once.
+    viterbi_beta = 0.1
+    runs_median_size = 5  # ~115 ms at 43 fps
 
     # Pad audio
     audio = np.pad(audio, frame_length // 2, mode='reflect')
@@ -217,13 +345,16 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
     inter_bins = np.clip(inter_bins, 0, max_bin)
 
     window = chebwin(frame_length, at=100)
-    f0 = np.zeros(n_frames)
     confidence = np.zeros(n_frames)
+    # Per-frame candidates, best first; NaN where the frame has none (silent or no positive score)
+    cand_f = np.full((n_frames, n_candidates), np.nan)
+    cand_s = np.zeros((n_frames, n_candidates))
+    cand_c = np.zeros((n_frames, n_candidates))
 
     for i in range(n_frames):
         raw_frame = frames[:, i]
         if np.sqrt(np.mean(raw_frame ** 2)) < amplitude_threshold:
-            continue  # silent frame — f0[i] and confidence[i] stay 0
+            continue  # silent frame — no candidates, confidence stays 0
 
         frame = raw_frame * window
         spectrum = np.abs(np.fft.rfft(frame, n=fft_size))
@@ -237,36 +368,32 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         inter_energy = spectrum[inter_bins].sum(axis=1)
         srh_scores = harmonic_energy - inter_energy
 
-        # Find best candidate
         best_idx = np.argmax(srh_scores)
         best_score = srh_scores[best_idx]
-
-        # Parabolic interpolation on SRH score curve for sub-Hz precision
-        if 0 < best_idx < len(srh_scores) - 1:
-            alpha = srh_scores[best_idx - 1]
-            beta  = srh_scores[best_idx]
-            gamma = srh_scores[best_idx + 1]
-            denom = (alpha - 2 * beta + gamma)
-            if denom != 0:
-                p = 0.5 * (alpha - gamma) / denom
-                p = np.clip(p, -1.0, 1.0)
-            else:
-                p = 0.0
-        else:
-            p = 0.0
-
-        # Final F0: candidate frequency + sub-bin offset (0.5 Hz steps)
-        f0[i] = f0_candidates[best_idx] + p * 0.5
         confidence[i] = best_score
+        if best_score <= 0:
+            continue  # no harmonic structure at all
+
+        freq, score = _srh_candidates(srh_scores, f0_candidates, n_candidates, min_peak_gap)
+        cand_f[i, :len(freq)] = freq
+        cand_s[i, :len(freq)] = score
+        cand_c[i, :len(freq)] = _harmonic_contrast(spectrum, freq, bin_width, n_harmonics)
 
     # Normalize confidence to 0-1
     if confidence.max() > 0:
         confidence = confidence / confidence.max()
 
+    chosen = _viterbi_pick(cand_f, cand_s, viterbi_beta)
+    picked = chosen >= 0
+    col = np.maximum(chosen, 0)
+    rows = np.arange(n_frames)
+    f0 = np.where(picked, cand_f[rows, col], 0.0)
+    contrast = np.where(picked, cand_c[rows, col], 0.0)
+
     # Voicing detection
-    voiced = confidence > voicing_threshold
+    voiced = picked & (contrast > contrast_threshold)
     f0_clean = np.where(voiced, f0, 0.0)
-    f0_clean = _smooth_voiced(f0_clean, voiced)
+    f0_clean = _smooth_voiced_runs(f0_clean, voiced, runs_median_size)
 
     # Time axis
     times = librosa.frames_to_time(

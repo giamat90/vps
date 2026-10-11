@@ -20,7 +20,10 @@ import librosa
 from scipy.signal import find_peaks
 from scipy.signal.windows import chebwin
 from scipy.ndimage import median_filter, gaussian_filter1d
-from processor import detect_pitch_srh, detect_pitch, detect_pitch_hps, detect_pitch_crepe, detect_pitch_praat
+from processor import (
+    detect_pitch_srh, detect_pitch, detect_pitch_hps, detect_pitch_crepe, detect_pitch_praat,
+    _srh_candidates, _viterbi_pick, _harmonic_contrast, _smooth_voiced_runs,
+)
 
 
 def srh_production(audio: np.ndarray, sr: int) -> dict:
@@ -102,12 +105,38 @@ def srh_variant(
     n_harmonics: int = 7,
     fmin: float = 65.0,
     fmax: float = 1400.0,
-    voicing_threshold: float = 0.22,
     amplitude_threshold_db: float = -50.0,
+    n_candidates: int = 5,
+    min_peak_gap: int = 10,
+    viterbi: bool = True,
+    viterbi_beta: float = 0.1,
+    voicing: str = "contrast",
+    contrast_threshold: float = 0.6,
+    voicing_threshold: float = 0.22,
+    smoothing: str = "runs",
+    runs_median_size: int = 5,
     median_size: int = 6,
     gaussian_sigma: float = 1.5,
 ) -> dict:
-    """Parametrized reimplementation of detect_pitch_srh (processor.py:126-268)."""
+    """
+    Parametrized reimplementation of detect_pitch_srh (processor.py) with every constant exposed.
+    The defaults reproduce production exactly (checked frame by frame on real tracks); the candidate
+    extraction, Viterbi path, contrast and run-wise smoothing are production's own helpers.
+
+    The old (until 2026-10-11) production behaviour is `viterbi=False, voicing="track_max",
+    smoothing="production"`, kept as `srh_legacy()` so new ideas can still be compared against it:
+      viterbi / viterbi_beta   F0 as a min-cost path over the top `n_candidates` SRH peaks, vs argmax.
+      voicing="contrast"       voiced iff harmonic contrast of the chosen F0 > `contrast_threshold`;
+                               "track_max" is `confidence > voicing_threshold`.
+      smoothing="runs"         median of `runs_median_size` inside each voiced run; "production" is the
+                               median(`median_size`) + Gaussian(`gaussian_sigma`) over the voiced
+                               frames concatenated across gaps.
+    `confidence` is always the best SRH score normalised by the track maximum, as in production.
+    """
+    if voicing not in ("track_max", "contrast"):
+        raise ValueError(f"voicing must be 'track_max' or 'contrast', got {voicing!r}")
+    if smoothing not in ("production", "runs"):
+        raise ValueError(f"smoothing must be 'production' or 'runs', got {smoothing!r}")
     target_sr = 22050
     if sr != target_sr:
         audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
@@ -136,8 +165,10 @@ def srh_variant(
     inter_bins = np.clip(inter_bins, 0, max_bin)
 
     window = chebwin(frame_length, at=100)
-    f0 = np.zeros(n_frames)
     confidence = np.zeros(n_frames)
+    cand_f = np.full((n_frames, n_candidates), np.nan)
+    cand_s = np.zeros((n_frames, n_candidates))
+    cand_c = np.zeros((n_frames, n_candidates))
 
     for i in range(n_frames):
         raw_frame = frames[:, i]
@@ -146,32 +177,42 @@ def srh_variant(
         frame = raw_frame * window
         spectrum = np.abs(np.fft.rfft(frame, n=fft_size))
         spectrum = spectrum / (spectrum.max() + 1e-8)
-        harmonic_energy = spectrum[harmonic_bins].sum(axis=1)
-        inter_energy = spectrum[inter_bins].sum(axis=1)
-        srh_scores = harmonic_energy - inter_energy
-        best_idx = np.argmax(srh_scores)
-        best_score = srh_scores[best_idx]
-        if 0 < best_idx < len(srh_scores) - 1:
-            alpha, beta, gamma = srh_scores[best_idx - 1], srh_scores[best_idx], srh_scores[best_idx + 1]
-            denom = alpha - 2 * beta + gamma
-            p = np.clip(0.5 * (alpha - gamma) / denom, -1.0, 1.0) if denom != 0 else 0.0
-        else:
-            p = 0.0
-        f0[i] = f0_candidates[best_idx] + p * 0.5
+        srh_scores = spectrum[harmonic_bins].sum(axis=1) - spectrum[inter_bins].sum(axis=1)
+        best_score = srh_scores.max()
         confidence[i] = best_score
+        if best_score <= 0:
+            continue
+        freq, score = _srh_candidates(srh_scores, f0_candidates, n_candidates, min_peak_gap)
+        cand_f[i, :len(freq)] = freq
+        cand_s[i, :len(freq)] = score
+        cand_c[i, :len(freq)] = _harmonic_contrast(spectrum, freq, bin_width, n_harmonics)
 
     if confidence.max() > 0:
         confidence = confidence / confidence.max()
 
-    voiced = confidence > voicing_threshold
+    has = ~np.isnan(cand_f[:, 0])
+    chosen = _viterbi_pick(cand_f, cand_s, viterbi_beta) if viterbi else np.where(has, 0, -1)
+    picked = chosen >= 0
+    col = np.maximum(chosen, 0)
+    rows = np.arange(n_frames)
+    f0 = np.where(picked, cand_f[rows, col], 0.0)
+    contrast = np.where(picked, cand_c[rows, col], 0.0)
+
+    if voicing == "contrast":
+        voiced = picked & (contrast > contrast_threshold)
+    else:
+        voiced = picked & (confidence > voicing_threshold)
     f0_clean = np.where(voiced, f0, 0.0)
 
-    f0_smooth = f0_clean.copy()
-    voiced_indices = np.where(voiced)[0]
-    if len(voiced_indices) > 3:
-        f0_smooth[voiced_indices] = median_filter(f0_clean[voiced_indices], size=median_size)
-        f0_smooth[voiced_indices] = gaussian_filter1d(f0_smooth[voiced_indices], sigma=gaussian_sigma)
-    f0_clean = f0_smooth
+    if smoothing == "runs":
+        f0_clean = _smooth_voiced_runs(f0_clean, voiced, runs_median_size)
+    else:
+        f0_smooth = f0_clean.copy()
+        voiced_indices = np.where(voiced)[0]
+        if len(voiced_indices) > 3:
+            f0_smooth[voiced_indices] = median_filter(f0_clean[voiced_indices], size=median_size)
+            f0_smooth[voiced_indices] = gaussian_filter1d(f0_smooth[voiced_indices], sigma=gaussian_sigma)
+        f0_clean = f0_smooth
 
     times = librosa.frames_to_time(np.arange(n_frames), sr=sr, hop_length=hop_length)
     return {
@@ -180,6 +221,11 @@ def srh_variant(
         "voiced": voiced.tolist(),
         "confidence": confidence.tolist(),
     }
+
+
+def srh_legacy(audio: np.ndarray, sr: int) -> dict:
+    """SRH as shipped until 2026-10-11: per-frame argmax, score/track-max > 0.22, Gaussian smoothing."""
+    return srh_variant(audio, sr, viterbi=False, voicing="track_max", smoothing="production")
 
 
 def first_peak_production(audio: np.ndarray, sr: int) -> dict:

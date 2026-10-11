@@ -39,7 +39,7 @@ from matplotlib.patches import Polygon
 from matplotlib.widgets import Slider
 
 from algorithms import (
-    srh_production, pyin_production, first_peak_production,
+    srh_production, srh_legacy, pyin_production, first_peak_production,
     hps_production, crepe_production, praat_production,
 )
 
@@ -60,7 +60,10 @@ ALGORITHMS = {
     "hps": ("HPS", hps_production, "#7cff6b"),
     "crepe": ("CREPE", crepe_production, "#ff5252"),
     "praat": ("Praat", praat_production, "#6ec1ff"),
+    "srh-legacy": ("SRH-legacy", srh_legacy, "#ffd23f"),
 }
+# Comparison-only entries: selectable with --algo, not part of `all`
+SHIPPED_ALGOS = [k for k in ALGORITHMS if k != "srh-legacy"]
 FORMANT_COLORS = ["#ffcf5c", "#5cffe0", "#ff5ca8"]
 WINDOW = np.blackman(FFT_SIZE)
 
@@ -321,7 +324,7 @@ def main() -> None:
     t0 = args.time if args.time is not None else loudest_time(audio, sr)
     t0 = float(np.clip(t0, 0.0, len(audio) / sr))
 
-    algos = [] if "none" in args.algo else (list(ALGORITHMS) if "all" in args.algo else list(dict.fromkeys(args.algo)))
+    algos = [] if "none" in args.algo else (SHIPPED_ALGOS if "all" in args.algo else list(dict.fromkeys(args.algo)))
     pitch_tracks = detect_tracks(audio, sr, algos)
 
     if args.save:

@@ -238,7 +238,9 @@ CREPE and pYIN were tried first and both failed on singers with strong upper har
 | `fmin` | 65.0 Hz | C2 — lowest practical singing fundamental |
 | `fmax` | 1400.0 Hz | Above F#6 — VoceVista upper limit; no singer exceeds this; cuts candidate grid ~34% |
 | `n_harmonics` | 7 | Raised from 5 on 2026-10-08. With 5, a strong upper harmonic (often the 3rd) sometimes outscored the true F0. A `pitch_lab` sweep scored candidate selection against the Praat/pYIN/CREPE consensus on a fixed frame set: "Them Bones" 49.0% → 58.6% within 50 cents (too-high errors 29.2% → 20.4%), "Like a Stone" 88.6% → 89.1%. 8+ harmonics trades too-high errors for too-low ones. Reference is other detectors, not ground truth; only two male rock tracks tested |
-| `voicing_threshold` | 0.22 | Was 0.25 (VoceVista `minimumClarity`). Lowered because the 7-harmonic normalized score is lower; 0.22 keeps the voiced-frame count about equal to the old setting. Does not reduce false voicing on noise/consonants (still ~630 / ~456 loud frames on the two tracks where Praat and CREPE both say unvoiced) |
+| `contrast_threshold` | 0.6 | Voicing gate, replacing `score / track max > 0.22` (2026-10-11). Voiced iff `(H − I) / (H + I)` of the chosen F0 — harmonic over inter-harmonic bins of the frame's own normalized spectrum — exceeds it. The old gate called 62–88% of the loud frames where Praat, pYIN and CREPE all say unvoiced voiced (AUC 0.73 / 0.92 / 0.87 on three separated vocals vs 0.93 / 0.99 / 0.99 for contrast). 0.5 is the conservative alternative (98–100% recall, −31–34% false voicing); 0.6 loses ≤1.5 recall points on the raspiest track |
+| `n_candidates`, `viterbi_beta` | 5, 0.1 | The F0 is a Viterbi path through each frame's top 5 SRH peaks (node cost `1 − score/frame_best`, transition 0.1 per semitone capped at an octave) instead of the per-frame argmax; a frame below the loudness gate resets the path (2026-10-11) |
+| `runs_median_size` | 5 | Smoothing is a median inside each run of consecutive voiced frames only (2026-10-11); see below |
 | `amplitude_threshold` | −50 dBFS | VoceVista `minimumIntensity`; silent frames skipped before SRH |
 | Window function | Dolph-Chebyshev (`chebwin`, at=100 dB) | Lower inter-harmonic leakage than Hanning; VoceVista uses same |
 
@@ -247,7 +249,9 @@ Additional details:
 - Candidate F0 grid: 0.5 Hz steps from 65 → 1400 Hz — ~2670 candidates per frame
 - Per-frame RMS amplitude gate (−50 dBFS) applied before windowing — silent frames leave `f0[i]=0, confidence[i]=0`
 - LP residual extraction was tested and reverted: Demucs-separated vocals are already clean and Demucs distorts the spectral envelope, making LPC vocal tract modeling unreliable. The SRH noise-robustness advantage of LP residual (Drugman & Alwan 2011) only applies to raw noisy speech.
-- Post-processing on voiced frames only: median filter `size=6`, Gaussian `sigma=1.5`
+- Post-processing: median `size=5` inside each run of consecutive voiced frames — never joined across unvoiced gaps, no Gaussian (HPS and CREPE still use `_smooth_voiced`). The previous median(6)+Gaussian(1.5) over the voiced frames *concatenated across gaps* dragged the first and last frames of every note toward the neighbouring note, blended octave errors into correct frames, and kept only ~30–40% of a 5.5 Hz vibrato's depth.
+- `confidence` is still the best SRH score normalised by the track maximum (PianoRoll's 0.3, `analysisUtils`' 0.5, key and vibrato detection threshold it). Voicing no longer derives from it, so a frame can have `confidence` 0.9 and be unvoiced.
+- Measured 2026-10-11 against the Praat/pYIN/CREPE consensus (pitch_lab README, "SRH on separated stems"): on three Demucs vocals correct-within-50-cents went 56 → 68 / 88 → 93 / 84 → 94% and false-voiced frames fell 63–69%; on 44 real mic takes (first 60 s each, 39k consensus frames; none got worse) 85.0 → 94.2% correct, false-voiced −54%, recall of consensus-voiced 99.8 → 99.2%. Cost: ~2× the SRH time (still ~200× real time). Existing songs keep the pitch in `analysis.json` until re-imported.
 - Fully deterministic — no neural network, no randomness
 - Runs synchronously on the main thread (no threading)
 
@@ -324,7 +328,7 @@ transitions. Confidence is pYIN's `voiced_probs`. No new dependency (librosa's p
 algorithm — only the song's own track is analyzed as "piano".
 
 `_smooth_voiced()` (median filter `size=6` + Gaussian `sigma=1.5` on voiced frames only) is shared by
-SRH, HPS, and CREPE. pYIN and Praat deliberately skip it: pYIN's HMM and Praat's Viterbi path finding
+HPS and CREPE (SRH moved to run-wise `_smooth_voiced_runs` on 2026-10-11). pYIN and Praat deliberately skip it: pYIN's HMM and Praat's Viterbi path finding
 are already temporal-smoothing passes of their own. (This section previously claimed all algorithms
 shared `_smooth_voiced` — that was never true for pYIN; fixed 2026-07-11.)
 
