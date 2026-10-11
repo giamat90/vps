@@ -367,6 +367,7 @@ interface PlayerActions {
   stopMonitoring: () => Promise<void>;
   fetchTakes: () => Promise<void>;
   deleteTake: (takeId: string) => Promise<void>;
+  deleteAllTakes: () => Promise<void>;
   renameTake: (takeId: string, name: string) => Promise<void>;
   setTakeManualOffset: (takeId: string, offset: number) => void;
   setActiveTake: (takeId: string) => void;
@@ -1135,6 +1136,33 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       takeGains: Object.fromEntries(Object.entries(state.takeGains).filter(([id]) => id !== takeId)),
       ...(state.soloedTakeId === takeId ? { soloedTakeId: null } : {}),
     }));
+  },
+
+  deleteAllTakes: async () => {
+    const { song, takes } = get();
+    if (!song || takes.length === 0) return;
+    const deleted = new Set<string>();
+    let failure: unknown = null;
+    for (const t of takes) {
+      try {
+        await deleteTakeApi(song.id, t.id);
+        deleted.add(t.id);
+      } catch (e) {
+        failure = e;
+        break;
+      }
+    }
+    const remaining = takes.filter((t) => !deleted.has(t.id)).map((t) => t.id);
+    const next = reconcileTakes(selectionOf(get()), remaining);
+    set((state) => ({
+      takes: state.takes.filter((t) => !deleted.has(t.id)),
+      shownTakeIds: [...next.shown],
+      activeTakeId: next.active,
+      mutedTakeIds: state.mutedTakeIds.filter((id) => !deleted.has(id)),
+      takeGains: Object.fromEntries(Object.entries(state.takeGains).filter(([id]) => !deleted.has(id))),
+      ...(state.soloedTakeId !== null && deleted.has(state.soloedTakeId) ? { soloedTakeId: null } : {}),
+    }));
+    if (failure) throw failure;
   },
 
   renameTake: async (takeId, name) => {

@@ -289,12 +289,26 @@ function Waveform({ song }: WaveformProps) {
   const takeChannelSilent     = usePlayerStore((s) => takesSilenced(s));
   const setMuteTakesWhileRecording = usePlayerStore((s) => s.setMuteTakesWhileRecording);
   const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
+  const deleteAllTakes        = usePlayerStore((s) => s.deleteAllTakes);
+  const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
+  const [deletingAll, setDeletingAll] = useState(false);
   const isLoading        = useRef(false);
   // Lane containers by take id, and the takes currently loaded into the engine
   const takeRails        = useRef(new Map<string, HTMLDivElement>());
   const loadedTakes      = useRef(new Map<string, HTMLElement>());
   const [loadError, setLoadError] = useState<string | null>(null);
   const isInstrument = song.kind === "instrument";
+  const handleDeleteAll = async () => {
+    setDeletingAll(true);
+    try {
+      await deleteAllTakes();
+    } catch (e) {
+      console.error("[Waveform] could not delete all the takes:", e);
+    } finally {
+      setDeletingAll(false);
+      setConfirmingDeleteAll(false);
+    }
+  };
   const shownTakes = shownTakeIds
     .map((id) => takes.find((t) => t.id === id))
     .filter((t): t is Take => t !== undefined);
@@ -463,7 +477,41 @@ function Waveform({ song }: WaveformProps) {
               Mute takes while recording
             </label>
             <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
+            <button
+              type="button"
+              className="waveform__takes-delete"
+              onClick={() => setConfirmingDeleteAll(true)}
+              disabled={takes.length === 0 || deletingAll}
+              title="Delete all the recorded takes"
+              aria-label="Delete all takes"
+            >
+              &times;
+            </button>
           </div>
+          {confirmingDeleteAll && (
+            <div className="waveform__takes-confirm" role="alertdialog" aria-label="Delete all takes">
+              <span>
+                Delete {takes.length === 1 ? "the only take" : `all ${takes.length} takes`}? This cannot be undone.
+              </span>
+              <button
+                type="button"
+                className="waveform__takes-confirm-yes"
+                onClick={handleDeleteAll}
+                disabled={deletingAll}
+                autoFocus
+              >
+                {deletingAll ? "Deleting…" : "Delete"}
+              </button>
+              <button
+                type="button"
+                className="waveform__takes-confirm-no"
+                onClick={() => setConfirmingDeleteAll(false)}
+                disabled={deletingAll}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
         {shownTakes.map((take) => {
           const isActive = take.id === activeTakeId;
           const isAudible = audibleIds.includes(take.id);
