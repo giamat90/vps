@@ -125,6 +125,7 @@ describe("message guards", () => {
     shownTakeIds: [],
     takePlayback: "all",
     mutedTakeIds: [],
+    soloedTakeId: null,
     muteTakesWhileRecording: true,
     takes: [],
   };

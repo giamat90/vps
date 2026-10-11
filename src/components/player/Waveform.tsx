@@ -265,6 +265,10 @@ function Waveform({ song }: WaveformProps) {
   const muteTakesWhileRecording = usePlayerStore((s) => s.muteTakesWhileRecording);
   const setTakePlayback       = usePlayerStore((s) => s.setTakePlayback);
   const toggleTakeMute        = usePlayerStore((s) => s.toggleTakeMute);
+  const toggleTakeSolo        = usePlayerStore((s) => s.toggleTakeSolo);
+  const setTakeGain           = usePlayerStore((s) => s.setTakeGain);
+  const takeGains             = usePlayerStore((s) => s.takeGains);
+  const soloedTakeId          = usePlayerStore((s) => (s.soloedTrack === "take" ? s.soloedTakeId : null));
   const setMuteTakesWhileRecording = usePlayerStore((s) => s.setMuteTakesWhileRecording);
   const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
   const isLoading        = useRef(false);
@@ -283,6 +287,7 @@ function Waveform({ song }: WaveformProps) {
     muted: mutedTakeIds,
     recording: isRecording,
     muteWhileRecording: muteTakesWhileRecording,
+    soloed: soloedTakeId,
   });
 
   useEffect(() => {
@@ -451,6 +456,7 @@ function Waveform({ song }: WaveformProps) {
           const isActive = take.id === activeTakeId;
           const isAudible = audibleIds.includes(take.id);
           const isMuted = mutedTakeIds.includes(take.id);
+          const isSoloed = soloedTakeId === take.id;
           const label = take.name || `Take ${takes.indexOf(take) + 1}`;
           return (
             <div
@@ -458,34 +464,22 @@ function Waveform({ song }: WaveformProps) {
               className={`waveform__track waveform__track--take${isActive ? " waveform__track--active" : ""}${isAudible ? "" : " waveform__track--silent"}`}
             >
               <div className="waveform__track-header">
-                <button
-                  type="button"
-                  className="waveform__label waveform__label--take waveform__take-name"
-                  onClick={() => setActiveTake(take.id)}
-                  title={
-                    takePlayback === "selected" && !isActive
-                      ? "Play this take instead"
-                      : isActive
-                        ? "This is the selected take"
-                        : "Select this take"
-                  }
-                  aria-pressed={isActive}
-                >
-                  {label}
-                </button>
-                <div className="waveform__track-controls">
-                  <TakeSyncControls take={take} isActive={isActive} />
-                  {takePlayback === "all" && (
-                    <button
-                      type="button"
-                      className={`waveform__mute${isMuted ? " waveform__mute--on" : ""}`}
-                      onClick={() => toggleTakeMute(take.id)}
-                      aria-pressed={isMuted}
-                      title={isMuted ? `Unmute ${label}` : `Mute ${label}`}
-                    >
-                      M
-                    </button>
-                  )}
+                <div className="waveform__take-heading">
+                  <button
+                    type="button"
+                    className="waveform__label waveform__label--take waveform__take-name"
+                    onClick={() => setActiveTake(take.id)}
+                    title={
+                      takePlayback === "selected" && !isActive
+                        ? "Play this take instead"
+                        : isActive
+                          ? "This is the selected take"
+                          : "Select this take"
+                    }
+                    aria-pressed={isActive}
+                  >
+                    {label}
+                  </button>
                   <button
                     type="button"
                     className="waveform__take-hide"
@@ -495,6 +489,38 @@ function Waveform({ song }: WaveformProps) {
                   >
                     &times;
                   </button>
+                </div>
+                <TakeSyncControls take={take} isActive={isActive} />
+                <div className="waveform__track-controls">
+                  <button
+                    type="button"
+                    className={`waveform__mute${isMuted ? " waveform__mute--on" : ""}`}
+                    onClick={() => toggleTakeMute(take.id)}
+                    aria-pressed={isMuted}
+                    title={isMuted ? `Unmute ${label}` : `Mute ${label}`}
+                  >
+                    M
+                  </button>
+                  <button
+                    type="button"
+                    className={`waveform__solo${isSoloed ? " waveform__solo--on" : ""}`}
+                    onClick={() => toggleTakeSolo(take.id)}
+                    aria-pressed={isSoloed}
+                    title={isSoloed ? `Unsolo ${label}` : `Solo ${label}`}
+                  >
+                    S
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={takeGains[take.id] ?? 1}
+                    onChange={(e) => setTakeGain(take.id, Number(e.target.value))}
+                    className="waveform__volume"
+                    title={`${label} volume`}
+                    aria-label={`${label} volume`}
+                  />
                 </div>
               </div>
               <div className="waveform__track-body">

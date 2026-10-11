@@ -18,6 +18,8 @@ const h = vi.hoisted(() => ({
     takeVolume: 1,
     mutedTracks: { vocals: false, instrumental: false, take: false },
     soloedTrack: null as string | null,
+    soloedTakeId: null as string | null,
+    takeGains: {} as Record<string, number>,
     punchIn: null,
     punchOut: null,
     duration: 100,
@@ -30,6 +32,8 @@ const h = vi.hoisted(() => ({
     hideTake: () => {},
     setTakePlayback: () => {},
     toggleTakeMute: () => {},
+    toggleTakeSolo: () => {},
+    setTakeGain: () => {},
     setMuteTakesWhileRecording: () => {},
     toggleMute: () => {},
     toggleSolo: () => {},
@@ -64,6 +68,9 @@ beforeEach(() => {
   h.state.activeTakeId = null;
   h.state.takePlayback = "all";
   h.state.mutedTakeIds = [];
+  h.state.soloedTakeId = null;
+  h.state.soloedTrack = null;
+  h.state.takeGains = {};
   h.state.isRecording = false;
   h.state.muteTakesWhileRecording = true;
 });
@@ -100,13 +107,44 @@ describe("take lanes", () => {
     expect(lanes(html)).toEqual(["waveform__track--silent", "waveform__track--active"]);
   });
 
-  it("has no per-lane mute in selected-only mode, and only the selected lane is lit", () => {
+  it("keeps mute, solo and volume on every lane in selected-only mode too, and only the selected lane is lit", () => {
     h.state.shownTakeIds = ["a", "b"];
     h.state.activeTakeId = "b";
     h.state.takePlayback = "selected";
     const html = render();
-    expect(html).not.toContain('title="Mute ');
+    expect(html.match(/title="Mute (Take 1|Verse)"/g)).toHaveLength(2);
+    expect(html.match(/title="Solo (Take 1|Verse)"/g)).toHaveLength(2);
     expect(lanes(html)).toEqual(["waveform__track--silent", "waveform__track--active"]);
+  });
+
+  it("gives every lane its own volume", () => {
+    h.state.shownTakeIds = ["a", "b"];
+    h.state.activeTakeId = "b";
+    h.state.takeGains = { a: 0.35 };
+    const html = render();
+    expect(html.match(/aria-label="(Take 1|Verse) volume"/g)).toHaveLength(2);
+    expect(html).toContain('value="0.35"');
+  });
+
+  it("marks the soloed lane and dims the others", () => {
+    h.state.shownTakeIds = ["a", "b"];
+    h.state.activeTakeId = "b";
+    h.state.soloedTrack = "take";
+    h.state.soloedTakeId = "a";
+    const html = render();
+    expect(html).toContain('title="Unsolo Take 1"');
+    expect(lanes(html)).toEqual(["", "waveform__track--active waveform__track--silent"]);
+  });
+
+  it("keeps the take offset between the name and the controls", () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    const html = render();
+    const name = html.indexOf("waveform__take-name");
+    const sync = html.indexOf("waveform__take-sync");
+    const controls = html.indexOf('title="Mute Take 1"');
+    expect(name).toBeLessThan(sync);
+    expect(sync).toBeLessThan(controls);
   });
 
   it("shows both toggles with their state", () => {

@@ -1083,6 +1083,12 @@ button.waveform__take-name {
   text-decoration: underline;
 }
 
+.waveform__take-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .waveform__take-hide {
   background: transparent;
   border: 1px solid var(--bg-surface);

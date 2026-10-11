@@ -175,13 +175,14 @@ export function buildMixSources(state: PlayerState): {
       muted: state.mutedTakeIds,
       recording: false,
       muteWhileRecording: false,
+      soloed: soloedTakeOf(state),
     });
     for (const id of audible) {
       const take = state.takes.find((t) => t.id === id);
       if (!take) continue;
       sources.push({
         path: take.filepath,
-        gain: takeGain,
+        gain: takeGain * (state.takeGains[id] ?? 1),
         isTake: true,
         startPosition: take.startPosition,
         audioOffset: take.audioOffset ?? 0,
@@ -213,6 +214,10 @@ function applyEffectiveVolumes(state: {
 }
 
 export type TrackKey = "vocals" | "instrumental" | "take";
+
+// A take soloed on its own lane: the take channel is soloed and names the take.
+const soloedTakeOf = (s: { soloedTrack: string | null; soloedTakeId: string | null }): string | null =>
+  s.soloedTrack === "take" ? s.soloedTakeId : null;
 
 const selectionOf = (s: { shownTakeIds: string[]; activeTakeId: string | null }): TakeSelection => ({
   shown: s.shownTakeIds,
@@ -284,6 +289,10 @@ interface PlayerState {
   takePlayback: TakePlayback;
   // Takes the user silenced on their own lane
   mutedTakeIds: string[];
+  // The take soloed on its lane (only meaningful while the take channel is soloed)
+  soloedTakeId: string | null;
+  // Each take's own volume (1 when absent), on top of the take channel's
+  takeGains: Record<string, number>;
   // Keep the takes quiet while a new one is recorded
   muteTakesWhileRecording: boolean;
   takeVolume: number;
@@ -360,6 +369,8 @@ interface PlayerActions {
   hideTake: (takeId: string) => void;
   setTakePlayback: (mode: TakePlayback) => void;
   toggleTakeMute: (takeId: string) => void;
+  toggleTakeSolo: (takeId: string) => void;
+  setTakeGain: (takeId: string, gain: number) => void;
   setMuteTakesWhileRecording: (mute: boolean) => void;
   setTakeVolume: (v: number) => void;
   // Punch region actions
@@ -419,7 +430,16 @@ function _persistOffsets(offsets: Record<string, CalibrationEntry>): void {
 
 export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => {
   const applySelection = (next: TakeSelection) => {
-    set({ shownTakeIds: [...next.shown], activeTakeId: next.active });
+    const s = get();
+    const stillSoloed = s.soloedTakeId !== null && next.shown.includes(s.soloedTakeId);
+    set({
+      shownTakeIds: [...next.shown],
+      activeTakeId: next.active,
+      ...(s.soloedTakeId !== null && !stillSoloed
+        ? { soloedTakeId: null, soloedTrack: s.soloedTrack === "take" ? null : s.soloedTrack }
+        : {}),
+    });
+    if (s.soloedTakeId !== null && !stillSoloed) applyEffectiveVolumes(get());
   };
 
   return {
@@ -448,6 +468,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   shownTakeIds: [],
   activeTakeId: null,
   mutedTakeIds: [],
+  soloedTakeId: null,
+  takeGains: {},
   ..._loadTakePrefs(),
   takeVolume: 1.0,
   punchIn: null,
@@ -519,6 +541,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       shownTakeIds: [],
       activeTakeId: null,
       mutedTakeIds: [],
+      soloedTakeId: null,
+      takeGains: {},
       // instrument-kind songs write identical audio to vocals.wav and
       // instrumental.wav; mute the instrumental track so only the
       // relabeled "Melody" track is audible (avoids doubled playback).
@@ -604,8 +628,20 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   toggleSolo: (track) => {
-    set((s) => ({ soloedTrack: s.soloedTrack === track ? null : track }));
+    set((s) => ({ soloedTrack: s.soloedTrack === track ? null : track, soloedTakeId: null }));
     applyEffectiveVolumes(get());
+  },
+
+  toggleTakeSolo: (takeId) => {
+    set((s) => {
+      const on = s.soloedTrack === "take" && s.soloedTakeId === takeId;
+      return { soloedTrack: on ? null : "take", soloedTakeId: on ? null : takeId };
+    });
+    applyEffectiveVolumes(get());
+  },
+
+  setTakeGain: (takeId, gain) => {
+    set((s) => ({ takeGains: { ...s.takeGains, [takeId]: Math.max(0, Math.min(1, gain)) } }));
   },
 
   syncTrackVolumes: () => {
@@ -654,6 +690,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       shownTakeIds: [],
       activeTakeId: null,
       mutedTakeIds: [],
+      soloedTakeId: null,
+      takeGains: {},
     });
   },
 
@@ -1080,6 +1118,10 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       shownTakeIds: [...next.shown],
       activeTakeId: next.active,
       mutedTakeIds: state.mutedTakeIds.filter((id) => ids.includes(id)),
+      takeGains: Object.fromEntries(Object.entries(state.takeGains).filter(([id]) => ids.includes(id))),
+      ...(state.soloedTakeId !== null && !ids.includes(state.soloedTakeId)
+        ? { soloedTakeId: null, soloedTrack: state.soloedTrack === "take" ? null : state.soloedTrack }
+        : {}),
     }));
   },
 
@@ -1093,6 +1135,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       shownTakeIds: [...next.shown],
       activeTakeId: next.active,
       mutedTakeIds: state.mutedTakeIds.filter((id) => id !== takeId),
+      takeGains: Object.fromEntries(Object.entries(state.takeGains).filter(([id]) => id !== takeId)),
+      ...(state.soloedTakeId === takeId ? { soloedTakeId: null, soloedTrack: state.soloedTrack === "take" ? null : state.soloedTrack } : {}),
     }));
   },
 
@@ -1311,6 +1355,7 @@ usePlayerStore.subscribe((state, prevState) => {
 function pushTakeAudio(state: PlayerState): void {
   const eng = getEngine();
   eng.setActiveTakeTrack(state.activeTakeId);
+  eng.setTakeGains(state.takeGains);
   eng.setAudibleTakeTracks(
     audibleTakes({
       shown: state.shownTakeIds,
@@ -1319,6 +1364,7 @@ function pushTakeAudio(state: PlayerState): void {
       muted: state.mutedTakeIds,
       recording: state.isRecording,
       muteWhileRecording: state.muteTakesWhileRecording,
+      soloed: soloedTakeOf(state),
     }),
   );
 }
@@ -1332,6 +1378,9 @@ usePlayerStore.subscribe((state, prev) => {
     state.activeTakeId === prev.activeTakeId &&
     state.takePlayback === prev.takePlayback &&
     state.mutedTakeIds === prev.mutedTakeIds &&
+    state.soloedTakeId === prev.soloedTakeId &&
+    state.soloedTrack === prev.soloedTrack &&
+    state.takeGains === prev.takeGains &&
     state.isRecording === prev.isRecording &&
     state.muteTakesWhileRecording === prev.muteTakesWhileRecording
   ) {

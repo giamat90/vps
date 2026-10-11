@@ -49,8 +49,10 @@ export class AudioEngine {
   // They are independent: several takes can be heard together.
   private _activeTakeId: string | null = null;
   private _audibleTakeIds = new Set<string>();
-  // Effective volume of the audible takes (mute/solo already applied by the store)
+  // Effective volume of the audible takes (mute/solo already applied by the store),
+  // and each take's own gain on top of it (1 when none was set)
   private _takeVolume = 1;
+  private _takeGains = new Map<string, number>();
   // Timeline zoom/pan
   private _minPxPerSec = 1;
   private _scrollTime = 0;
@@ -404,7 +406,7 @@ export class AudioEngine {
       if (this._takes.get(id) !== track) return;
     }
     ws.setPlaybackRate(this._lastPlaybackRate);
-    ws.setVolume(this._audibleTakeIds.has(id) ? this._takeVolume : 0);
+    ws.setVolume(this._takeLevel(id));
 
     track.duration = ws.getDuration();
 
@@ -461,8 +463,18 @@ export class AudioEngine {
     this._applyTakeVolumes();
   }
 
+  /** Each take's own volume, multiplied with the take channel's. */
+  setTakeGains(gains: Readonly<Record<string, number>>): void {
+    this._takeGains = new Map(Object.entries(gains));
+    this._applyTakeVolumes();
+  }
+
+  private _takeLevel(id: string): number {
+    return this._audibleTakeIds.has(id) ? this._takeVolume * (this._takeGains.get(id) ?? 1) : 0;
+  }
+
   private _applyTakeVolumes(): void {
-    for (const t of this._takes.values()) t.ws.setVolume(this._audibleTakeIds.has(t.id) ? this._takeVolume : 0);
+    for (const t of this._takes.values()) t.ws.setVolume(this._takeLevel(t.id));
   }
 
   removeTakeTrack(id: string): void {
@@ -477,6 +489,7 @@ export class AudioEngine {
     this._takes.clear();
     this._activeTakeId = null;
     this._audibleTakeIds = new Set();
+    this._takeGains = new Map();
   }
 
   // ─── Timeline zoom/pan ──────────────────────────────────────────────────
