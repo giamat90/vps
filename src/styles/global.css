@@ -1063,6 +1063,12 @@ button.waveform__take-name {
   overflow-y: auto;
 }
 
+/* Never let the lanes shrink to fit the cap: their waveform area has overflow hidden, so a
+   shrunk lane would hide the waveform. The section scrolls instead. */
+.waveform__takes > * {
+  flex-shrink: 0;
+}
+
 .waveform__takes-bar {
   display: flex;
   align-items: center;
