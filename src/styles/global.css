@@ -3338,6 +3338,47 @@ body,
 .detached-host__title {
   font-size: 0.9rem;
   font-weight: 600;
+  margin-right: auto;
+}
+
+.dock-handle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dock-handle__grip {
+  background: var(--bg-secondary);
+  border: 1px solid var(--bg-surface);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.75rem;
+  line-height: 1;
+  padding: 0.3rem 0.45rem;
+  cursor: grab;
+  touch-action: none;
+}
+
+.dock-handle__grip:hover,
+.dock-handle--dragging .dock-handle__grip {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.dock-handle--dragging .dock-handle__grip {
+  cursor: grabbing;
+}
+
+.dock-handle__hint {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.dock-handle--over .dock-handle__hint {
+  color: var(--accent);
+  font-weight: 700;
 }
 
 .detached-host__dock {

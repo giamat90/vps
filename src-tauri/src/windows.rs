@@ -97,6 +97,14 @@ pub fn is_visible(g: &Geometry, monitors: &[Geometry]) -> bool {
     })
 }
 
+/// Is the point inside the rectangle? The right and bottom edges are outside, as for any pixel grid.
+pub fn contains(rect: &Geometry, x: f64, y: f64) -> bool {
+    x >= f64::from(rect.x)
+        && y >= f64::from(rect.y)
+        && x < f64::from(rect.x) + f64::from(rect.width)
+        && y < f64::from(rect.y) + f64::from(rect.height)
+}
+
 /// Reads the remembered windows, dropping anything unusable instead of failing:
 /// a damaged file must never stop a panel from opening.
 pub fn parse_saved(json: &str) -> BTreeMap<String, Geometry> {
@@ -291,6 +299,21 @@ pub async fn close_detached_panel(app: AppHandle, panel_id: String) -> Result<()
     }
 }
 
+/// Is the mouse pointer over the main window right now? Asked of the OS in
+/// physical screen pixels, so a drag that ends over the main window docks the
+/// panel without any DPI conversion of coordinates the webview reports.
+#[tauri::command]
+pub async fn cursor_over_main(app: AppHandle) -> Result<bool, String> {
+    let main = app.get_webview_window("main").ok_or_else(|| "The main window is not open".to_string())?;
+    if main.is_minimized().map_err(|e| format!("Main window state: {e}"))? {
+        return Ok(false);
+    }
+    let cursor = app.cursor_position().map_err(|e| format!("Pointer position: {e}"))?;
+    let pos = main.outer_position().map_err(|e| format!("Main window position: {e}"))?;
+    let size = main.outer_size().map_err(|e| format!("Main window size: {e}"))?;
+    Ok(contains(&Geometry { x: pos.x, y: pos.y, width: size.width, height: size.height }, cursor.x, cursor.y))
+}
+
 #[tauri::command]
 pub async fn close_detached_windows(app: AppHandle) -> Result<(), String> {
     close_all(&app);
@@ -374,6 +397,35 @@ mod tests {
     #[test]
     fn nothing_is_visible_when_the_monitors_cannot_be_listed() {
         assert!(!is_visible(&g(0, 0, 900, 400), &[]));
+    }
+
+    #[test]
+    fn a_point_inside_the_window_is_over_it() {
+        assert!(contains(&g(100, 50, 800, 600), 400.0, 300.0));
+        assert!(contains(&g(100, 50, 800, 600), 100.0, 50.0));
+    }
+
+    #[test]
+    fn the_far_edges_and_everything_beyond_are_outside() {
+        let w = g(100, 50, 800, 600);
+        assert!(!contains(&w, 900.0, 300.0));
+        assert!(!contains(&w, 400.0, 650.0));
+        assert!(!contains(&w, 99.0, 300.0));
+        assert!(!contains(&w, 400.0, 49.0));
+    }
+
+    #[test]
+    fn a_main_window_on_a_monitor_left_of_the_primary_still_works() {
+        let w = g(-1920, 0, 1920, 1040);
+        assert!(contains(&w, -500.0, 500.0));
+        assert!(!contains(&w, 10.0, 500.0));
+    }
+
+    #[test]
+    fn a_pointer_position_that_is_not_a_number_is_never_over_the_window() {
+        let w = g(0, 0, 800, 600);
+        assert!(!contains(&w, f64::NAN, 10.0));
+        assert!(!contains(&w, 10.0, f64::NAN));
     }
 
     #[test]

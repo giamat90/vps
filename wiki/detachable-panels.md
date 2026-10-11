@@ -37,22 +37,29 @@ Until a window says hello the main window publishes nothing and runs no timer.
 | File | Role |
 |---|---|
 | `src/windows/protocol.ts` | event names, message types, `parseCommand` and the guards (everything crossing windows is validated) |
-| `src/windows/clock.ts` | `RemoteClock` (extrapolating playhead), `TransportPublisher` (when to resend) |
 | `src/windows/liveFeed.ts` | `LivePublisher`: append-only trace → minimal messages |
-| `src/windows/mainBridge.ts` | main side: publishes, applies commands, tracks which panels are detached |
-| `src/windows/detachedBridge.ts` | detached side: mirrors state into the stores, replaces the engine-touching actions with commands |
+| `src/windows/mainBridge.ts` | main side: the shared state, the live and spectrum streams and the commands, on top of `startMainBridge` from `mps-core/windows` (which owns hello / docked / timer / transport publishing) |
+| `src/windows/detachedBridge.ts` | detached side: mirrors state into the stores, replaces the engine-touching actions with commands, on top of `createDetachedBridge` |
 | `src/windows/playbackClock.ts` | `getPlaybackTime()`: the audio engine in main, the remote clock in a detached window |
 | `src/audio/spectrumSource.ts` | `SpectrumSource`: what the spectrum panel needs from the engine and the microphone. Local (this window) and remote (the stream) implementations |
 | `src/windows/spectrumRegistry.ts` | which source the panel reads: the local one, or the one a detached window installed |
 | `src/windows/spectrumFeed.ts`, `spectrumCodec.ts` | main side: reads the local source for a detached spectrum window and says it only when it changed; one-byte-per-bin codec |
 | `src/windows/panelsToClose.ts` | a detached panel hidden in the Panels menu has its window closed |
-| `src/windows/dropGesture.ts` | `decideDrop`: released outside the window → detach at that screen position |
 | `src/windows/useMainBridge.ts`, `DetachedHost.tsx` | the React ends of the two bridges; `main.tsx` picks `DetachedHost` from the window label |
-| `src/components/panels/DetachHandle.tsx` | grip (drag out) and pop-out button in a panel corner |
+| `src/components/panels/DetachHandle.tsx` | grip (drag out, uses `decideDrop`) and pop-out button in a panel corner |
+| `src/components/panels/DockHandle.tsx` | in the detached window: grip carried over the main window to dock (uses `createDockGesture`) |
 | `src/audio/livePitchFeed.ts`, `components/analysis/LivePitchFeed.tsx` | the microphone → live pitch detector, extracted from `DualTuner` |
 | `src/stores/detached.ts` | which panels are currently in their own window (never persisted) |
-| `src-tauri/src/windows.rs` | `detach_panel`, `dock_panel`, `close_detached_panel`, `close_detached_windows`; the panel allowlist; remembered window geometry; closes detached windows with the main one |
+| `src-tauri/src/windows.rs` | `detach_panel`, `dock_panel`, `close_detached_panel`, `cursor_over_main`, `close_detached_windows`; the panel allowlist; remembered window geometry; closes detached windows with the main one |
 | `src-tauri/capabilities/detached.json` | events and core only: no dialog or updater access |
+
+## What is in mps-core
+
+Since `mps-core` v0.3.0 the app-independent half is shared with SPS: `definePanelWindows`, `RemoteClock`, `TransportPublisher`, `startMainBridge`, `createDetachedBridge`, `decideDrop`, `createDockGesture`, `createDetachedStore`, `panelsToClose` and the guards. Their tests moved with them. What stays here: the panel list, `SharedState`, the commands and `parseCommand`, the live / spectrum streams, the playback-time accessor and the components.
+
+## Docking by drag
+
+The grip in the detached window's bar is carried over the main window and released there. While it is held the detached window asks Rust `cursor_over_main` (the OS pointer position against the main window's outer rectangle, both physical pixels, so no DPI conversion) about every 100 ms to show "Release to dock", and asks again on release before docking. Moving the window with its title bar never docks, so a panel can still sit on top of the main window. A minimised main window is never a target.
 
 ## Things that were not obvious
 
@@ -70,16 +77,15 @@ Until a window says hello the main window publishes nothing and runs no timer.
 2. Drag the ⋮⋮ grip in the corner of any panel out past the edge of the window (or press ⤢ to pop it out where it was last).
 3. Play, seek on the main waveform, set a punch region, monitor or record: the detached window should follow.
 4. Click or drag on the detached piano roll; click a lyric line: the main playhead should move.
-5. Dock with the button in the detached window, or close it; close the main window and check nothing is left.
+5. Dock with the button in the detached window, or close it, or drag the ⋮⋮ grip in its bar onto the main window and release (the hint should change to "Release to dock"); close the main window and check nothing is left.
 6. Move and resize a detached window, close it, pop it out again with ⤢: it should return to the same place and size.
 7. Detach a panel, then untick it in the Panels menu: its window should close. The menu marks panels that are in their own window.
 8. With Takes detached: click a take, rename it (✎ or double-click), delete one, download one. With Spectrum detached: monitor or record and watch the live curve and the formant markers.
 
 ## Not done
 
-- Docking by dragging a detached window back over the main one (there is a Dock button, and closing the window docks it).
 - Mixed-DPI multi-monitor placement is untested: a dropped window's position comes from the pointer's screen coordinates, a remembered one is stored in physical pixels.
 - Several windows of the same panel (one window per panel id).
 - macOS is untested.
-- SPS: nothing; the protocol and the bridges are app-independent and would move into `mps-core`.
+- A real pointer test of the dock grip: the gesture decisions are covered (`createDockGesture` in mps-core, `contains` in Rust), the wiring is not.
 - The component and gesture wiring (pointer capture, window creation) has no automated test: the repository has no DOM environment. The logic around it (protocol, clock, drop decision, both bridges, the feed controller, the Rust planner) is covered.

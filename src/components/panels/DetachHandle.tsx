@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { detachPanel } from "../../lib/tauri";
 import { useDetachedStore } from "../../stores/detached";
-import { decideDrop } from "../../windows/dropGesture";
+import { decideDrop } from "@giamat90/mps-core/windows";
 import type { DetachablePanel } from "../../windows/protocol";
 
 interface DetachHandleProps {

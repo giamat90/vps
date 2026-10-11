@@ -1,11 +1,26 @@
+import {
+  EVT_COMMAND,
+  EVT_DOCKED,
+  EVT_HELLO,
+  EVT_STATE,
+  definePanelWindows,
+  isId,
+  isNumber,
+  isNumberOrNull,
+  isObject,
+  isObjectOrNull,
+  isStateMessage as isCoreStateMessage,
+  isStringOrNull,
+  type StateMessage as CoreStateMessage,
+  type TransportSnapshot,
+} from "@giamat90/mps-core/windows";
 import type { PitchPoint, Song, Take } from "../lib/types";
 
-export const EVT_STATE = "mps:state";
+export { EVT_COMMAND, EVT_DOCKED, EVT_HELLO, EVT_STATE };
+export type { TransportSnapshot };
+
 export const EVT_LIVE = "mps:live";
 export const EVT_SPECTRUM = "mps:spectrum";
-export const EVT_COMMAND = "mps:command";
-export const EVT_HELLO = "mps:hello";
-export const EVT_DOCKED = "mps:docked";
 
 /** Every optional panel of the practice room. Must match `plan` in src-tauri/src/windows.rs. */
 export const DETACHABLE_PANELS = [
@@ -20,28 +35,12 @@ export const DETACHABLE_PANELS = [
 ] as const;
 export type DetachablePanel = (typeof DETACHABLE_PANELS)[number];
 
-export function isDetachablePanel(value: unknown): value is DetachablePanel {
-  return typeof value === "string" && (DETACHABLE_PANELS as readonly string[]).includes(value);
-}
+const windows = definePanelWindows<DetachablePanel>(DETACHABLE_PANELS);
 
-export function detachedLabel(panel: DetachablePanel): string {
-  return `detached-${panel}`;
-}
-
+export const isDetachablePanel = windows.isPanel;
+export const detachedLabel = windows.label;
 /** The window knows what it shows from its own label, not from anything in a URL. */
-export function panelFromLabel(label: string): DetachablePanel | null {
-  const match = /^detached-([A-Za-z]+)$/.exec(label);
-  return match && isDetachablePanel(match[1]) ? match[1] : null;
-}
-
-export interface TransportSnapshot {
-  /** Song time at `sentAt`. */
-  time: number;
-  playing: boolean;
-  rate: number;
-  /** Date.now() in the sending window; both windows share the machine clock. */
-  sentAt: number;
-}
+export const panelFromLabel = windows.fromLabel;
 
 /**
  * What the takes list needs. A full Take carries pitch and spectrum arrays that
@@ -63,10 +62,7 @@ export interface SharedState {
   takes: TakeSummary[];
 }
 
-export interface StateMessage {
-  transport: TransportSnapshot;
-  shared: SharedState;
-}
+export type StateMessage = CoreStateMessage<SharedState>;
 
 export interface LiveMessage {
   /** The detached copy of the live trace starts over before `points` are applied. */
@@ -97,16 +93,8 @@ export type Command =
   | { type: "deleteTake"; id: string }
   | { type: "renameTake"; id: string; name: string };
 
-const ID_MAX = 128;
 const NAME_MAX = 200;
 
-const isObject = (v: unknown): v is Record<string, unknown> =>
-  typeof v === "object" && v !== null && !Array.isArray(v);
-const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
-const isNumberOrNull = (v: unknown): boolean => v === null || isNumber(v);
-const isStringOrNull = (v: unknown): boolean => v === null || typeof v === "string";
-const isObjectOrNull = (v: unknown): boolean => v === null || isObject(v);
-const isId = (v: unknown): v is string => typeof v === "string" && v.length > 0 && v.length <= ID_MAX;
 const isFormants = (v: unknown): boolean =>
   isObject(v) && isNumberOrNull(v.f1) && isNumberOrNull(v.f2) && isNumberOrNull(v.f3);
 
@@ -132,12 +120,10 @@ export function parseCommand(value: unknown): Command | null {
   }
 }
 
-export function isStateMessage(value: unknown): value is StateMessage {
-  if (!isObject(value) || !isObject(value.transport) || !isObject(value.shared)) return false;
-  const t = value.transport;
-  const s = value.shared;
+export function isSharedState(value: unknown): value is SharedState {
+  if (!isObject(value)) return false;
+  const s = value;
   return (
-    isNumber(t.time) && typeof t.playing === "boolean" && isNumber(t.rate) && isNumber(t.sentAt) &&
     isObjectOrNull(s.song) && isNumber(s.duration) &&
     typeof s.isRecording === "boolean" && typeof s.isMonitoring === "boolean" &&
     typeof s.exerciseMode === "boolean" && typeof s.punchLoop === "boolean" &&
@@ -145,6 +131,10 @@ export function isStateMessage(value: unknown): value is StateMessage {
     isStringOrNull(s.selectedOutputDeviceId) && isObjectOrNull(s.activeTake) &&
     Array.isArray(s.takes) && s.takes.every((t) => isObject(t) && isId(t.id))
   );
+}
+
+export function isStateMessage(value: unknown): value is StateMessage {
+  return isCoreStateMessage(value, isSharedState);
 }
 
 export function isSpectrumMessage(value: unknown): value is SpectrumMessage {

@@ -1,21 +1,17 @@
+import { createDetachedBridge } from "@giamat90/mps-core/windows";
 import type { PitchPoint, Take } from "../lib/types";
-import { RemoteClock } from "./clock";
 import {
-  EVT_COMMAND,
-  EVT_HELLO,
   EVT_LIVE,
   EVT_SPECTRUM,
-  EVT_STATE,
   isLiveMessage,
+  isSharedState,
   isSpectrumMessage,
-  isStateMessage,
   type Command,
   type DetachablePanel,
   type LiveMessage,
+  type SharedState,
   type SpectrumMessage,
-  type StateMessage,
   type TakeSummary,
-  type TransportSnapshot,
 } from "./protocol";
 
 interface MutableStore<T> {
@@ -25,7 +21,7 @@ interface MutableStore<T> {
 
 /** What a panel in the detached window reads from the player store. */
 export interface DetachedPlayer {
-  song: StateMessage["shared"]["song"];
+  song: SharedState["song"];
   duration: number;
   currentTime: number;
   isPlaying: boolean;
@@ -67,141 +63,99 @@ export interface DetachedBridgeDeps {
   clearTakeAnalysis: () => void;
 }
 
-const TICK_MS = 33;
-
 /** A take is reloaded only when something that moves it on the timeline changed. */
 const takeKey = (t: Take) => `${t.id}|${t.startPosition}|${t.audioOffset ?? 0}|${t.manualOffset ?? 0}`;
 
 /**
- * Runs in a detached window. Everything the panels need is mirrored into this
- * window own stores, so the panels themselves are the very same components as
- * in the main window; only the actions that would touch the audio engine are
- * replaced by commands to the main window.
+ * Runs in a detached practice-room panel: mirrors the shared state into this
+ * window's own stores, so the panels are the very same components as in the main
+ * window, and replaces the actions that would touch the audio engine by
+ * commands to the main window.
  */
 export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ dispose(): void }> {
-  const { player, analysis, now } = deps;
-  const clock = new RemoteClock();
-  let transport: TransportSnapshot | null = null;
+  const { player, analysis } = deps;
   let loadedSongId: string | null = null;
   let loadedTakeKey: string | null = null;
-  let lastWritten = Number.NaN;
 
-  const send = (event: string, payload: unknown) => {
-    Promise.resolve(deps.emit(event, payload)).catch((e: unknown) =>
-      console.warn(`[detached] could not send ${event}:`, e),
-    );
-  };
-  const command = (c: Command) => send(EVT_COMMAND, c);
+  const bridge = createDetachedBridge<DetachablePanel, SharedState, Command>({
+    panelId: deps.panelId,
+    isShared: isSharedState,
+    emit: deps.emit,
+    listen: deps.listen,
+    now: deps.now,
+    installTimeSource: deps.installTimeSource,
+    writeTime: (time) => player.setState({ currentTime: time }),
 
-  const writeTime = () => {
-    const t = clock.now(now());
-    if (t === lastWritten && !transport?.playing) return;
-    lastWritten = t;
-    player.setState({ currentTime: t });
-  };
+    applyShared(shared, transport, currentTime) {
+      player.setState({
+        song: shared.song,
+        duration: shared.duration,
+        isRecording: shared.isRecording,
+        isMonitoring: shared.isMonitoring,
+        exerciseMode: shared.exerciseMode,
+        punchIn: shared.punchIn,
+        punchOut: shared.punchOut,
+        punchLoop: shared.punchLoop,
+        selectedOutputDeviceId: shared.selectedOutputDeviceId,
+        activeTakeId: shared.activeTake?.id ?? null,
+        takes: shared.takes,
+        isPlaying: transport.playing,
+        playbackRate: transport.rate,
+        currentTime,
+      });
 
-  const uninstallTimeSource = deps.installTimeSource(() => clock.now(now()));
+      const songId = shared.song?.id ?? null;
+      if (songId && songId !== loadedSongId) {
+        loadedSongId = songId;
+        deps.loadSongAnalysis(songId).catch((e: unknown) =>
+          console.error("[detached] could not load the song analysis:", e),
+        );
+      }
+
+      const key = shared.activeTake ? takeKey(shared.activeTake) : null;
+      if (key !== loadedTakeKey) {
+        loadedTakeKey = key;
+        if (shared.activeTake) deps.loadTakeAnalysis(shared.activeTake);
+        else deps.clearTakeAnalysis();
+      }
+    },
+
+    listeners: {
+      [EVT_LIVE]: (payload) => {
+        if (!isLiveMessage(payload)) {
+          console.warn("[detached] ignoring a malformed live message:", payload);
+          return;
+        }
+        const message: LiveMessage = payload;
+        const base = message.reset ? [] : analysis.getState().livePitch;
+        analysis.setState({ livePitch: [...base, ...message.points], liveCents: message.cents });
+      },
+      [EVT_SPECTRUM]: (payload) => {
+        if (!isSpectrumMessage(payload)) {
+          console.warn("[detached] ignoring a malformed spectrum message:", payload);
+          return;
+        }
+        deps.onSpectrum(payload);
+      },
+    },
+  });
 
   player.setState({
     seek: (time) => {
-      if (transport) {
-        transport = { ...transport, time, sentAt: now() };
-        clock.apply(transport);
-      }
-      writeTime();
-      player.setState({ currentTime: time });
-      command({ type: "seek", time });
+      bridge.seekLocal(time);
+      bridge.command({ type: "seek", time });
     },
-    setPunchIn: (time) => command({ type: "setPunchIn", time }),
-    setPunchOut: (time) => command({ type: "setPunchOut", time }),
-    clearPunch: () => command({ type: "clearPunch" }),
+    setPunchIn: (time) => bridge.command({ type: "setPunchIn", time }),
+    setPunchOut: (time) => bridge.command({ type: "setPunchOut", time }),
+    clearPunch: () => bridge.command({ type: "clearPunch" }),
     setActiveTake: (id) => {
       player.setState({ activeTakeId: id });
-      command({ type: "setActiveTake", id });
+      bridge.command({ type: "setActiveTake", id });
     },
-    deleteTake: async (id) => command({ type: "deleteTake", id }),
-    renameTake: async (id, name) => command({ type: "renameTake", id, name }),
+    deleteTake: async (id) => bridge.command({ type: "deleteTake", id }),
+    renameTake: async (id, name) => bridge.command({ type: "renameTake", id, name }),
   });
 
-  const applyState = (message: StateMessage) => {
-    const { shared } = message;
-    transport = message.transport;
-    clock.apply(transport);
-    clock.setDuration(shared.duration);
-
-    player.setState({
-      song: shared.song,
-      duration: shared.duration,
-      isRecording: shared.isRecording,
-      isMonitoring: shared.isMonitoring,
-      exerciseMode: shared.exerciseMode,
-      punchIn: shared.punchIn,
-      punchOut: shared.punchOut,
-      punchLoop: shared.punchLoop,
-      selectedOutputDeviceId: shared.selectedOutputDeviceId,
-      activeTakeId: shared.activeTake?.id ?? null,
-      takes: shared.takes,
-      isPlaying: transport.playing,
-      playbackRate: transport.rate,
-      currentTime: clock.now(now()),
-    });
-
-    const songId = shared.song?.id ?? null;
-    if (songId && songId !== loadedSongId) {
-      loadedSongId = songId;
-      deps.loadSongAnalysis(songId).catch((e: unknown) =>
-        console.error("[detached] could not load the song analysis:", e),
-      );
-    }
-
-    const key = shared.activeTake ? takeKey(shared.activeTake) : null;
-    if (key !== loadedTakeKey) {
-      loadedTakeKey = key;
-      if (shared.activeTake) deps.loadTakeAnalysis(shared.activeTake);
-      else deps.clearTakeAnalysis();
-    }
-  };
-
-  const applyLive = (message: LiveMessage) => {
-    const base = message.reset ? [] : analysis.getState().livePitch;
-    analysis.setState({ livePitch: [...base, ...message.points], liveCents: message.cents });
-  };
-
-  const unlistenState = await deps.listen(EVT_STATE, (payload) => {
-    if (!isStateMessage(payload)) {
-      console.warn("[detached] ignoring a malformed state message:", payload);
-      return;
-    }
-    applyState(payload);
-  });
-
-  const unlistenLive = await deps.listen(EVT_LIVE, (payload) => {
-    if (!isLiveMessage(payload)) {
-      console.warn("[detached] ignoring a malformed live message:", payload);
-      return;
-    }
-    applyLive(payload);
-  });
-
-  const unlistenSpectrum = await deps.listen(EVT_SPECTRUM, (payload) => {
-    if (!isSpectrumMessage(payload)) {
-      console.warn("[detached] ignoring a malformed spectrum message:", payload);
-      return;
-    }
-    deps.onSpectrum(payload);
-  });
-
-  const timer = setInterval(writeTime, TICK_MS);
-
-  send(EVT_HELLO, { panelId: deps.panelId });
-
-  return {
-    dispose() {
-      clearInterval(timer);
-      unlistenState();
-      unlistenLive();
-      unlistenSpectrum();
-      uninstallTimeSource();
-    },
-  };
+  await bridge.start();
+  return { dispose: bridge.dispose };
 }

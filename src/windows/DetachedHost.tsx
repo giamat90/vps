@@ -10,6 +10,7 @@ import VibratoCard from "../components/analysis/VibratoCard";
 import CoachPanel from "../components/coaching/CoachPanel";
 import LyricsPanel from "../components/lyrics/LyricsPanel";
 import TakeList from "../components/recording/TakeList";
+import DockHandle from "../components/panels/DockHandle";
 import { dockPanel } from "../lib/tauri";
 import { useAnalysisStore } from "../stores/analysis";
 import { usePlayerStore } from "../stores/player";
@@ -112,6 +113,7 @@ function DetachedHost({ panel }: DetachedHostProps) {
           {TITLES[panel]}
           {song ? ` — ${song.title}` : ""}
         </span>
+        <DockHandle />
         <button
           type="button"
           className="detached-host__dock"

@@ -57,6 +57,7 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
       { panelId: "lyrics", x: null, y: null }],
     ["closeDetachedPanel", () => api.closeDetachedPanel("coach"), "close_detached_panel", { panelId: "coach" }],
     ["dockPanel", () => api.dockPanel(), "dock_panel", undefined],
+    ["cursorOverMain", () => api.cursorOverMain(), "cursor_over_main", undefined],
     ["closeDetachedWindows", () => api.closeDetachedWindows(), "close_detached_windows", undefined],
   ];
 

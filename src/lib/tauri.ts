@@ -221,6 +221,11 @@ export async function dockPanel(): Promise<void> {
   return invoke("dock_panel");
 }
 
+/** Is the mouse pointer over the main window? Asked of the OS, in physical pixels. */
+export async function cursorOverMain(): Promise<boolean> {
+  return invoke("cursor_over_main");
+}
+
 /** Close every detached window (leaving the practice room, or the song, ends them). */
 export async function closeDetachedWindows(): Promise<void> {
   return invoke("close_detached_windows");

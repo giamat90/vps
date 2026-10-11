@@ -54,6 +54,7 @@ pub fn run() {
             windows::detach_panel,
             windows::dock_panel,
             windows::close_detached_panel,
+            windows::cursor_over_main,
             windows::close_detached_windows,
         ])
         .setup(|app| {
