@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.73] - 2026-10-12
+
+### Changed
+- With **Show multiple lines** on, the second voice's current note is also highlighted on the piano roll's key strip and on the piano keyboard, in the same lighter blue as its ribbon. The live mic, the take and the main voice keep priority when they sound the same note.
+
 ## [0.1.72] - 2026-10-12
 
 ### Added
