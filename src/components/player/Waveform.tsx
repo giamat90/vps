@@ -4,7 +4,7 @@ import { useAnalysisStore } from "../../stores/analysis";
 import TimeRuler from "./TimeRuler";
 import type { Song, Take } from "../../lib/types";
 import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "@giamat90/mps-core/zoomPan";
-import { audibleTakes, takeSilence, type TakeSilence } from "@giamat90/mps-core/takes";
+import { audibleTakes } from "@giamat90/mps-core/takes";
 
 // Live-preview analysis updates during a take drag are throttled to the same
 // ~30fps notification rate the audio engine's rAF tick already uses, since
@@ -20,26 +20,6 @@ const TAKE_NUDGE_COARSE_MULTIPLIER = 5; // Shift+Arrow = 50ms
 
 interface WaveformProps {
   song: Song;
-}
-
-/** What the selected take's lane says about itself; the selection must be visible even when it is silent. */
-function selectedTakeLabel(playback: "all" | "selected", silence: TakeSilence | null): { text: string; hint: string } {
-  switch (silence) {
-    case null:
-      return playback === "selected"
-        ? { text: "\u25B6 Playing", hint: "The selected take is the one you hear." }
-        : { text: "Selected", hint: "The selected take. Click another take's name to select it instead." };
-    case "muted":
-      return { text: "Selected \u00B7 muted", hint: "This take is selected but muted on its own lane: press M on the lane to hear it." };
-    case "channel":
-      return { text: "Selected \u00B7 takes muted", hint: "This take is selected, but the main take mute (or another track's solo) silences every take." };
-    case "recording":
-      return { text: "Selected \u00B7 silent while recording", hint: "Takes are silent while recording; see the toggle in the takes bar." };
-    case "soloed-other":
-      return { text: "Selected \u00B7 another take soloed", hint: "Another take is soloed on its lane, so only that one plays." };
-    default:
-      return { text: "Selected", hint: "The selected take." };
-  }
 }
 
 function PunchOverlay() {
@@ -318,7 +298,7 @@ function Waveform({ song }: WaveformProps) {
   const shownTakes = shownTakeIds
     .map((id) => takes.find((t) => t.id === id))
     .filter((t): t is Take => t !== undefined);
-  const audibility = {
+  const audibleIds = audibleTakes({
     shown: shownTakeIds,
     active: activeTakeId,
     playback: takePlayback,
@@ -327,8 +307,7 @@ function Waveform({ song }: WaveformProps) {
     muteWhileRecording: muteTakesWhileRecording,
     soloed: soloedTakeId,
     silenced: takeChannelSilent,
-  };
-  const audibleIds = audibleTakes(audibility);
+  });
 
   useEffect(() => {
     if (!vocalsRef.current || !instrumentalRef.current || isLoading.current) return;
@@ -497,7 +476,6 @@ function Waveform({ song }: WaveformProps) {
           const isAudible = audibleIds.includes(take.id);
           const isMuted = mutedTakeIds.includes(take.id);
           const isSoloed = soloedTakeId === take.id;
-          const selectedLabel = isActive ? selectedTakeLabel(takePlayback, takeSilence(audibility, take.id)) : null;
           const label = take.name || `Take ${takes.indexOf(take) + 1}`;
           return (
             <div
@@ -521,14 +499,6 @@ function Waveform({ song }: WaveformProps) {
                   >
                     {label}
                   </button>
-                  {selectedLabel && (
-                    <span
-                      className={`waveform__take-state${takeSilence(audibility, take.id) ? " waveform__take-state--silent" : ""}`}
-                      title={selectedLabel.hint}
-                    >
-                      {selectedLabel.text}
-                    </span>
-                  )}
                   <button
                     type="button"
                     className="waveform__take-hide"
