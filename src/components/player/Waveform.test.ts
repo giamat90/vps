@@ -230,6 +230,21 @@ describe("take lanes", () => {
     expect(render()).not.toContain("waveform__take-state");
   });
 
+  it("groups the takes bar and the lanes in one section of their own, after the other tracks", () => {
+    h.state.shownTakeIds = ["a", "b"];
+    h.state.activeTakeId = "b";
+    const html = render();
+    expect(html.match(/waveform__takes"/g)).toHaveLength(1);
+    const section = html.indexOf('class="waveform__takes"');
+    expect(html.indexOf("Instrumental")).toBeLessThan(section);
+    expect(html.indexOf("waveform__takes-bar")).toBeGreaterThan(section);
+    expect(html.indexOf("waveform__track--take")).toBeGreaterThan(html.indexOf("waveform__takes-bar"));
+  });
+
+  it("has no takes section while no take is shown", () => {
+    expect(render()).not.toContain("waveform__takes\"");
+  });
+
   it("has a hide button on every lane", () => {
     h.state.shownTakeIds = ["a", "b"];
     h.state.activeTakeId = "b";

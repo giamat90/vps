@@ -440,6 +440,7 @@ function Waveform({ song }: WaveformProps) {
         </div>
 
         {shownTakes.length > 0 && (
+          <div className="waveform__takes" role="group" aria-label="Recorded takes">
           <div className="waveform__takes-bar">
             <span className="waveform__label waveform__label--take">Takes</span>
             <label className="waveform__takes-option" title="When on, only the selected take plays and clicking another take switches to it. When off, every shown take plays together; use M on a lane to silence one.">
@@ -460,7 +461,6 @@ function Waveform({ song }: WaveformProps) {
             </label>
             <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
           </div>
-        )}
         {shownTakes.map((take) => {
           const isActive = take.id === activeTakeId;
           const isAudible = audibleIds.includes(take.id);
@@ -556,6 +556,8 @@ function Waveform({ song }: WaveformProps) {
             </div>
           );
         })}
+          </div>
+        )}
       </div>
     </div>
   );
