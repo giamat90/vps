@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.71] - 2026-10-12
+
+### Added
+- A **×** button next to the Takes bar deletes every recorded take at once, after an inline confirmation. If one take cannot be deleted, the takes that could not be are kept.
+
 ## [0.1.70] - 2026-10-11
 
 ### Added
