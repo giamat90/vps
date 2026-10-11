@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
-  ProcessingStatus, Song, Take, ExerciseTake, Folder,
+  ProcessingStatus, Song, Take, ExerciseTake, Folder, NamedLoop,
 } from "./types";
 
 /** Process a song file through the Python sidecar */
@@ -56,6 +56,11 @@ export async function setTakeManualOffsetApi(songId: string, takeId: string, off
 /** Persist the metronome's downbeat anchor (song time, seconds) for this song; null clears it back to song start */
 export async function setMetronomeOffsetApi(songId: string, offset: number | null): Promise<Song> {
   return invoke<Song>("set_metronome_offset", { songId, offset });
+}
+
+/** Replace the song's saved named loops; the backend trims names and keeps them in time order */
+export async function setSongLoopsApi(songId: string, loops: NamedLoop[]): Promise<Song> {
+  return invoke<Song>("set_song_loops", { songId, loops });
 }
 
 /** Rename a song's library title. Empty/whitespace is rejected. */

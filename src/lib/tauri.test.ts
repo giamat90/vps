@@ -28,6 +28,8 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["setTakeManualOffsetApi", () => api.setTakeManualOffsetApi("s1", "t1", -0.25), "set_take_manual_offset",
       { songId: "s1", takeId: "t1", offset: -0.25 }],
     ["setMetronomeOffsetApi", () => api.setMetronomeOffsetApi("s1", null), "set_metronome_offset", { songId: "s1", offset: null }],
+    ["setSongLoopsApi", () => api.setSongLoopsApi("s1", [{ id: "l", name: "V", start: 1, end: 2 }]), "set_song_loops",
+      { songId: "s1", loops: [{ id: "l", name: "V", start: 1, end: 2 }] }],
     ["renameSongApi", () => api.renameSongApi("s1", "New"), "rename_song", { songId: "s1", title: "New" }],
     ["listFolders", () => api.listFolders(), "list_folders", undefined],
     ["createFolder", () => api.createFolder("Band"), "create_folder", { name: "Band" }],

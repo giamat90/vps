@@ -4,6 +4,8 @@ import DownloadAllButton from "../components/player/DownloadAllButton";
 import ExportMixButton from "../components/player/ExportMixButton";
 import TransportControls from "../components/player/TransportControls";
 import LoopButton from "../components/player/LoopButton";
+import LoopsMenu from "../components/player/LoopsMenu";
+import { installPlayerShortcuts } from "../lib/shortcuts";
 import TempoControl from "../components/player/TempoControl";
 import KeyTranspose from "../components/player/KeyTranspose";
 import OutputSelector from "../components/player/OutputSelector";
@@ -81,6 +83,8 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
   // On screen in this window: wanted, and not living in a window of its own.
   const docked = (id: DetachablePanel) => visible[id] && !detached[id];
+
+  useEffect(() => installPlayerShortcuts(() => usePlayerStore.getState()), []);
 
   // Load song analysis on mount
   useEffect(() => {
@@ -167,6 +171,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
       <div className="practice-room__topbar">
         <TransportControls />
         <LoopButton />
+        <LoopsMenu />
         <TempoControl detectedBpm={song.detectedBpm} />
         <div className="practice-room__topbar-devices">
           <div className="practice-room__io-group">

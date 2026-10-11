@@ -1,4 +1,8 @@
 
+import type { NamedLoop } from "@giamat90/mps-core/loops";
+
+export type { NamedLoop };
+
 /** Song in the library */
 export interface Song {
   id: string;
@@ -10,6 +14,7 @@ export interface Song {
   processedAt: string;
   directory: string;
   kind?: "vocal" | "instrument";
+  loops?: NamedLoop[];
   metronomeOffset?: number;
   folderId?: string | null;
   sortIndex: number;

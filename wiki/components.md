@@ -177,6 +177,12 @@ Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
 
 Slimmed down to play/pause/stop + elapsed/total time — volume sliders were moved onto each waveform track's own row (see `Waveform` below). Sits inside the sticky `practice-room__topbar` (see `PracticeRoom` layout).
 
+### LoopsMenu and keyboard shortcuts
+
+`LoopsMenu` (practice-room topbar, beside `LoopButton`) keeps two lists in one popover. **Saved loops** are named regions stored on the song (`Song.loops`, `set_song_loops`; the pure rules are `@giamat90/mps-core/loops`: `addLoop`, `renameLoop`, `removeLoop`, `validateLoop`). Saving takes the current punch region; clicking a loop calls `applyLoopRegion(start, end)`, which sets the punch region, turns the loop on and seeks to the start. **Bars** cuts the song into groups of 2, 4, 8 or 16 bars counted from the metronome downbeat at four beats to a bar (`barSections`); it is not structure detection, and needs a detected tempo.
+
+Keyboard shortcuts (`src/lib/shortcuts.ts`, installed by `PracticeRoom` on `window` through `@giamat90/mps-core/shortcuts`): Space play/pause, Home / End skip to start / end, ← → step 5 s (Shift: 1 s), L toggle the loop, [ and ] mark the region start and end at the playhead. Typing in a field, ctrl / alt / meta chords, auto-repeat and a focused button's own Space are left alone, and nothing runs while recording or counting in. The Free Exercise page has none.
+
 ### LoopButton
 
 Standalone component (`src/components/player/LoopButton.tsx`), self-contained like `RecordButton`/`MonitorButton` — reads `punchIn`/`punchOut`/`punchLoop`/`isRecording`/`setPunchLoop` directly from `usePlayerStore`, no props. Always rendered (unlike the old in-ruler buttons it replaced, which disappeared entirely with no region set) — a circular `⟳` toggle, red-tinted (`.loop-btn--active`, using the same `#e94560` accent as the punch-region highlight) when `punchLoop` is true, `disabled` (dimmed via `.loop-btn:disabled`, `opacity: 0.4`) whenever there's no punch region (`punchIn === null || punchOut === null`) or while recording — so the button stays put as a stable landmark in the topbar instead of shifting the row layout in and out.
