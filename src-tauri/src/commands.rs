@@ -275,6 +275,7 @@ pub async fn process_song(
                     metronome_offset: None,
                     folder_id: None,
                     sort_index: 0,
+                    loops: vec![],
                 };
 
                 // Save analysis data to analysis.json
@@ -382,6 +383,11 @@ pub async fn delete_song(song_id: String) -> Result<(), String> {
 #[tauri::command]
 pub async fn set_metronome_offset(song_id: String, offset: Option<f64>) -> Result<Song, String> {
     library::update_metronome_offset(&song_id, offset)
+}
+
+#[tauri::command]
+pub async fn set_song_loops(song_id: String, loops: Vec<library::NamedLoop>) -> Result<Song, String> {
+    library::set_loops(&song_id, loops)
 }
 
 #[tauri::command]
@@ -1101,6 +1107,7 @@ pub async fn import_youtube(
                     metronome_offset: None,
                     folder_id: None,
                     sort_index: 0,
+                    loops: vec![],
                 };
 
                 let analysis = serde_json::json!({
@@ -1749,11 +1756,17 @@ mod tests {
         library::add(Song {
             id: "a".into(), title: "A".into(), artist: None, duration: 1.0, detected_key: None, detected_bpm: None,
             processed_at: "x".into(), directory: storage::song_dir("a").to_string_lossy().to_string(),
-            kind: "vocal".into(), metronome_offset: None, folder_id: None, sort_index: 0,
+            kind: "vocal".into(), metronome_offset: None, folder_id: None, sort_index: 0, loops: vec![],
         })
         .unwrap();
 
         assert_eq!(run(rename_song("a".into(), " Renamed ".into())).unwrap().title, "Renamed");
+        let saved = run(set_song_loops(
+            "a".into(),
+            vec![library::NamedLoop { id: "l".into(), name: " Verse ".into(), start: 1.0, end: 9.0 }],
+        ))
+        .unwrap();
+        assert_eq!(saved.loops[0].name, "Verse");
         assert_eq!(run(set_metronome_offset("a".into(), Some(3.0))).unwrap().metronome_offset, Some(3.0));
 
         let folder = run(create_folder("Band".into())).unwrap();

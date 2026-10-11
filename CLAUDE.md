@@ -106,7 +106,8 @@ VPS/
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
 │   │   │   ├── OutputSelector.tsx  audio output device picker
-│   │   │   └── LoopButton.tsx      punch-loop toggle (standalone, beside TransportControls)
+│   │   │   ├── LoopButton.tsx      punch-loop toggle (standalone, beside TransportControls)
+│   │   │   └── LoopsMenu.tsx       saved named loops + bar sections (practice-room topbar)
 │   │   ├── recording/
 │   │   │   ├── RecordButton.tsx    start/stop recording
 │   │   │   ├── MicSelector.tsx     microphone input picker
@@ -180,7 +181,7 @@ VPS/
 
 ## Shared code (`@giamat90/mps-core`)
 
-Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, note/frequency maths (`music`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
+Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), note/frequency maths (`music`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
 
 ## Data model
 
@@ -285,6 +286,7 @@ interface PitchPoint {       // frontend-internal representation
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
 | `rename_song(songId, title)` | `Song` | |
+| `set_song_loops(songId, loops)` | `Song` | replaces the song's saved named loops (`Song.loops`); names trimmed, region at least 0.25 s, at most 100, stored in time order |
 | `set_metronome_offset(songId, offset?)` | `Song` | persists the metronome's downbeat anchor (song time, seconds); `null` clears it back to song start |
 | `list_folders()` | `Folder[]` | reads library.json |
 | `create_folder(name)` / `rename_folder(folderId, name)` | `Folder` | empty/whitespace name rejected |

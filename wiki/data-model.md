@@ -204,6 +204,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `import_youtube` | `url: string, highQuality?: boolean, cookiesPath?: string` | `Song` |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
+| `set_song_loops` | `songId, loops: NamedLoop[]` | `Song` (replaces the saved loops; names trimmed, at most 100, 1-80 characters, regions at least 0.25 s, unique ids, stored in time order) |
 | `rename_song` | `songId, title: string` | `Song` |
 | `list_folders` | — | `Folder[]` |
 | `create_folder` | `name: string` | `Folder` (empty/whitespace name rejected) |

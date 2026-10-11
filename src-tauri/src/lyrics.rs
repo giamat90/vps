@@ -251,6 +251,7 @@ mod tests {
             metronome_offset: None,
             folder_id: None,
             sort_index: 0,
+            loops: vec![],
         }
     }
 
