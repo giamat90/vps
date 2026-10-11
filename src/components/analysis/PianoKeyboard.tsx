@@ -17,6 +17,8 @@ const CONF_MIN  = 0.3;
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);
 
 export const COLOR_SONG = "rgba(74, 158, 255, 0.88)";
+// The second singer: the same blue, lighter, so the two lines read as one family.
+export const COLOR_SONG_ALT = "rgba(170, 212, 255, 0.82)";
 export const COLOR_TAKE = "rgba(233, 69, 96,  0.92)";
 export const COLOR_LIVE = "rgba(255, 140, 30,  0.9)";
 const COLOR_PREVIEW = "rgba(255, 255, 255, 0.5)";

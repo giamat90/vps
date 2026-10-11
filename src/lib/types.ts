@@ -37,6 +37,9 @@ export interface PitchData {
   f0: number[];        // Hz; 0.0 for unvoiced frames
   voiced: boolean[];
   confidence: number[];
+  /** Second singer under the main line (songs only), Hz; 0.0 where only one voice sings. Absent in
+   *  songs analysed before it existed. */
+  f0Alt?: number[];
 }
 
 /** Pitch data point used internally by the frontend */

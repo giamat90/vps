@@ -47,6 +47,23 @@ def _log(msg: str):
     print(msg, file=sys.stderr, flush=True)
 
 
+# SRH analysis grid. detect_pitch_srh and detect_second_voice must frame the audio identically:
+# the second voice is found on the same frames, and a frame-count mismatch is how it recognises a
+# pitch line that did not come from detect_pitch_srh.
+SRH_SAMPLE_RATE = 22050
+SRH_FRAME_LENGTH = 2756  # 125 ms at 22050 Hz — optimal for singing (Babacan et al. 2019)
+SRH_FFT_SIZE = 4096      # zero-pad to 4096: 5.4 Hz/bin with only 125 ms temporal blur
+SRH_HOP_LENGTH = 512
+SRH_N_HARMONICS = 7
+SRH_FMIN = 65.0          # C2 — lowest practical singing fundamental
+SRH_FMAX = 1400.0        # above F#6 — matches VoceVista upper limit; no singer exceeds this
+SRH_CANDIDATE_STEP = 0.5
+SRH_N_CANDIDATES = 5     # SRH peaks per frame handed to the Viterbi path
+SRH_MIN_PEAK_GAP = 10    # candidate-grid cells (5 Hz): keeps one ripple from filling every slot
+SRH_VITERBI_BETA = 0.1
+SRH_CONTRAST_THRESHOLD = 0.6
+
+
 def _smooth_voiced(f0_clean: np.ndarray, voiced: np.ndarray) -> np.ndarray:
     """
     Median + Gaussian smoothing on voiced frames only, shared across the
@@ -281,33 +298,33 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
 
     # Resample to 22050 Hz for consistent bin resolution
     # Zero-padding to fft_size=4096 gives 5.4 Hz/bin with only 125 ms analysis window
-    target_sr = 22050
+    target_sr = SRH_SAMPLE_RATE
     if sr != target_sr:
         audio = librosa.resample(audio, orig_sr=sr, target_sr=target_sr)
         sr = target_sr
 
-    frame_length = 2756  # 125 ms at 22050 Hz — optimal for singing (Babacan et al. 2019)
-    fft_size = 4096      # zero-pad to 4096: 5.4 Hz/bin with only 125 ms temporal blur
-    hop_length = 512
+    frame_length = SRH_FRAME_LENGTH
+    fft_size = SRH_FFT_SIZE
+    hop_length = SRH_HOP_LENGTH
     # 7, not 5: with 5 the score of a strong upper harmonic (e.g. the 3rd) can beat the true F0
     # on loud harmonic-rich notes. A pitch_lab sweep (2026-10-08) on two tracks raised agreement
     # with the Praat/pYIN/CREPE consensus (58.6% vs 49.0% within 50 cents on "Them Bones") and
     # didn't hurt "Like a Stone"; 8+ trades too-high errors for too-low ones.
-    n_harmonics = 7
-    fmin = 65.0    # C2 — lowest practical singing fundamental
-    fmax = 1400.0  # above F#6 — matches VoceVista upper limit; no singer exceeds this
+    n_harmonics = SRH_N_HARMONICS
+    fmin = SRH_FMIN
+    fmax = SRH_FMAX
     amplitude_threshold = 10 ** (-50 / 20)  # −50 dBFS; silent frames skipped before SRH
     # Voiced iff the chosen F0's harmonic contrast clears this. Replaced "score / track max > 0.22",
     # which called 62-88% of the loud frames that Praat, pYIN and CREPE all call unvoiced voiced
     # (AUC 0.73-0.92 vs 0.93-0.99 on three Demucs vocals). 0.6 matches or beats the old recall on
     # every track but the raspiest (-1.5 points); 0.5 is the safer value if voiced coverage on raspy
     # voices ever matters more than rejecting noise.
-    contrast_threshold = 0.6
-    n_candidates = 5      # SRH peaks per frame handed to the Viterbi path
-    min_peak_gap = 10     # candidate-grid cells (5 Hz): keeps one ripple from filling every slot
+    contrast_threshold = SRH_CONTRAST_THRESHOLD
+    n_candidates = SRH_N_CANDIDATES
+    min_peak_gap = SRH_MIN_PEAK_GAP
     # 0.1 per semitone, capped at an octave: a one-frame octave flip costs ~2.4 so it needs a clearly
     # stronger score to survive, a sustained move to the new octave costs 1.2 once.
-    viterbi_beta = 0.1
+    viterbi_beta = SRH_VITERBI_BETA
     runs_median_size = 5  # ~115 ms at 43 fps
 
     # Pad audio
@@ -325,7 +342,7 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
 
     # Candidate F0 range — evaluate SRH at each candidate
     # Use fine resolution: 0.5 Hz steps for sub-Hz precision
-    f0_candidates = np.arange(fmin, fmax, 0.5)
+    f0_candidates = np.arange(fmin, fmax, SRH_CANDIDATE_STEP)
 
     # Precompute candidate bin indices for harmonics and inter-harmonics
     # Shape: (n_candidates, n_harmonics)
@@ -406,6 +423,187 @@ def detect_pitch_srh(audio: np.ndarray, sr: int) -> dict:
         "voiced": voiced.tolist(),
         "confidence": confidence.tolist()
     }
+
+
+# ── second voice ──────────────────────────────────────────────────────────────
+# Two singers on one stem. detect_pitch_srh has one slot per frame and fills it with whichever voice
+# scores higher, so two sustained notes of similar strength make the line hop between them. The
+# second voice is found by cancelling the first one's harmonics and running SRH on what is left.
+# Prototyped and validated in pitch_lab on "Them Bones" (C#4 + G#3 held a fourth apart, 2026-10-11).
+SECOND_VOICE_NOTCH_BINS = 3        # ± bins zeroed around each harmonic of the first voice
+SECOND_VOICE_MIN_SEPARATION = 2.5  # semitones: closer than this is leakage from the first voice
+SECOND_VOICE_MIN_RELATIVE = 0.15   # residual SRH score / first voice's score
+SECOND_VOICE_MIN_NOTE_FRAMES = 8   # ~185 ms of both voices holding a note
+SECOND_VOICE_MAX_STEP = 1.5        # semitones between frames before a stretch is split
+SECOND_VOICE_MAX_WOBBLE = 0.5      # semitones, median absolute deviation inside a stretch
+SECOND_VOICE_CLOSE_GAP = 4         # frames bridged between two stretches
+SECOND_VOICE_MIN_STRETCH = 8       # frames
+
+
+def _true_runs(mask: np.ndarray):
+    """(start, stop_inclusive) of every run of True."""
+    idx = np.flatnonzero(mask)
+    if len(idx) == 0:
+        return []
+    cuts = np.flatnonzero(np.diff(idx) > 1) + 1
+    return [(int(r[0]), int(r[-1])) for r in np.split(idx, cuts)]
+
+
+def _close_gaps(mask: np.ndarray, max_gap: int) -> np.ndarray:
+    """Set the False gaps of at most max_gap frames that sit between two True runs."""
+    out = mask.copy()
+    runs = _true_runs(mask)
+    for (_, end), (start, _) in zip(runs, runs[1:]):
+        if start - end - 1 <= max_gap:
+            out[end + 1:start] = True
+    return out
+
+
+def _mad(values: np.ndarray) -> float:
+    return float(np.median(np.abs(values - np.median(values))))
+
+
+def detect_second_voice(audio: np.ndarray, sr: int, f0, voiced) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Find a second, simultaneously sung voice under an SRH pitch line.
+
+    `f0` / `voiced` are the arrays of detect_pitch_srh for this same audio. Returns (lead, alt), both
+    one value per frame, 0 where nothing is reported:
+    - alt is the other voice. It is only reported where both voices hold a steady note for at least
+      ~185 ms and are at least 2.5 semitones apart, and never for a voice that is just a harmonic of
+      the first (octave, twelfth): there the spectrum cannot tell two voices from one.
+    - lead is f0, except inside a two-voice stretch, where one voice is held for the whole stretch
+      instead of hopping: the one the plain line followed most often there, i.e. the louder one.
+
+    A line that was not produced by detect_pitch_srh at this frame count is returned unchanged.
+    """
+    f0 = np.asarray(f0, dtype=float)
+    voiced = np.asarray(voiced, dtype=bool) & (f0 > 0)
+    n = len(f0)
+    lead = f0.copy()
+    alt = np.zeros(n)
+    if n == 0 or not voiced.any():
+        return lead, alt
+
+    if sr != SRH_SAMPLE_RATE:
+        audio = librosa.resample(audio, orig_sr=sr, target_sr=SRH_SAMPLE_RATE)
+    padded = np.pad(audio, SRH_FRAME_LENGTH // 2, mode="reflect")
+    if len(padded) < SRH_FRAME_LENGTH:
+        return lead, alt
+    frames = librosa.util.frame(padded, frame_length=SRH_FRAME_LENGTH, hop_length=SRH_HOP_LENGTH)
+    if frames.shape[1] != n:
+        return lead, alt
+
+    bin_width = SRH_SAMPLE_RATE / SRH_FFT_SIZE
+    last_bin = SRH_FFT_SIZE // 2
+    grid = np.arange(SRH_FMIN, SRH_FMAX, SRH_CANDIDATE_STEP)
+    harmonics = np.arange(1, SRH_N_HARMONICS + 1)
+    harmonic_bins = np.clip(np.round(grid[:, None] * harmonics / bin_width).astype(int), 0, last_bin)
+    inter_bins = np.clip(np.round(grid[:, None] * (harmonics + 0.5) / bin_width).astype(int), 0, last_bin)
+    window = chebwin(SRH_FRAME_LENGTH, at=100)
+    notch = np.arange(-SECOND_VOICE_NOTCH_BINS, SECOND_VOICE_NOTCH_BINS + 1)
+
+    cand_f = np.full((n, SRH_N_CANDIDATES), np.nan)
+    cand_s = np.zeros((n, SRH_N_CANDIDATES))
+    cand_c = np.zeros((n, SRH_N_CANDIDATES))
+    relative = np.zeros(n)
+
+    for i in np.flatnonzero(voiced):
+        spectrum = np.abs(np.fft.rfft(frames[:, i] * window, n=SRH_FFT_SIZE))
+        spectrum = spectrum / (spectrum.max() + 1e-8)
+
+        own = np.clip(np.round(f0[i] * harmonics / bin_width).astype(int), 0, last_bin)
+        own_inter = np.clip(np.round(f0[i] * (harmonics + 0.5) / bin_width).astype(int), 0, last_bin)
+        first_score = spectrum[own].sum() - spectrum[own_inter].sum()
+        if first_score <= 0:
+            continue
+
+        comb = np.round(np.arange(1, int(SRH_SAMPLE_RATE / 2 / f0[i]) + 1) * f0[i] / bin_width).astype(int)
+        cancel = np.clip((comb[:, None] + notch[None, :]).ravel(), 0, last_bin)
+        residual = spectrum.copy()
+        residual[cancel] = 0.0
+
+        scores = residual[harmonic_bins].sum(axis=1) - residual[inter_bins].sum(axis=1)
+        if scores.max() <= 0:
+            continue
+        freq, score = _srh_candidates(scores, grid, SRH_N_CANDIDATES, SRH_MIN_PEAK_GAP)
+        cand_f[i, :len(freq)] = freq
+        cand_s[i, :len(freq)] = score
+        cand_c[i, :len(freq)] = _harmonic_contrast(residual, freq, bin_width, SRH_N_HARMONICS)
+        relative[i] = score[0] / first_score
+
+    chosen = _viterbi_pick(cand_f, cand_s, SRH_VITERBI_BETA)
+    rows = np.arange(n)
+    col = np.maximum(chosen, 0)
+    second = np.where(chosen >= 0, cand_f[rows, col], 0.0)
+    contrast = np.where(chosen >= 0, cand_c[rows, col], 0.0)
+
+    found = voiced & (chosen >= 0) & (contrast > SRH_CONTRAST_THRESHOLD) & (relative > SECOND_VOICE_MIN_RELATIVE)
+    apart = np.abs(12 * np.log2(np.maximum(second, 1.0) / np.maximum(f0, 1.0)))
+    multiple = np.round(2 ** (apart / 12))
+    harmonic_of_first = (multiple >= 2) & (np.abs(apart - 12 * np.log2(np.maximum(multiple, 1))) < 0.6)
+    found &= (apart >= SECOND_VOICE_MIN_SEPARATION) & ~harmonic_of_first
+
+    low = np.where(found, np.minimum(f0, second), 0.0)
+    high = np.where(found, np.maximum(f0, second), 0.0)
+
+    # Only held notes are trusted: both voices steady, for long enough, and not gliding past each other.
+    steady = np.zeros(n, dtype=bool)
+    i = 0
+    while i < n:
+        if not found[i]:
+            i += 1
+            continue
+        j = i
+        while (
+            j + 1 < n and found[j + 1]
+            and abs(12 * np.log2(low[j + 1] / low[j])) < SECOND_VOICE_MAX_STEP
+            and abs(12 * np.log2(high[j + 1] / high[j])) < SECOND_VOICE_MAX_STEP
+        ):
+            j += 1
+        if j - i + 1 >= SECOND_VOICE_MIN_NOTE_FRAMES:
+            wobble_low = _mad(12 * np.log2(low[i:j + 1]))
+            wobble_high = _mad(12 * np.log2(high[i:j + 1]))
+            if wobble_low < SECOND_VOICE_MAX_WOBBLE and wobble_high < SECOND_VOICE_MAX_WOBBLE:
+                steady[i:j + 1] = True
+        i = j + 1
+
+    held = _close_gaps(steady, SECOND_VOICE_CLOSE_GAP)
+    for start, stop in _true_runs(held):
+        seg = slice(start, stop + 1)
+        if stop - start + 1 < SECOND_VOICE_MIN_STRETCH:
+            continue
+        have = steady[seg]
+        if not have.any():
+            continue
+        t = np.arange(start, stop + 1)
+        lo = np.interp(t, t[have], low[seg][have])
+        hi = np.interp(t, t[have], high[seg][have])
+        v = voiced[seg]
+
+        # The voice the plain line followed most often over the stretch is the louder one.
+        followed = np.where(v, f0[seg], 0.0)
+        near_lo = (np.abs(12 * np.log2(np.maximum(followed, 1.0) / np.median(lo))) < 1.5).sum()
+        near_hi = (np.abs(12 * np.log2(np.maximum(followed, 1.0) / np.median(hi))) < 1.5).sum()
+        lead_is_low = near_lo > near_hi
+
+        lead[seg] = np.where(v, lo if lead_is_low else hi, lead[seg])
+        alt[seg] = np.where(v, hi if lead_is_low else lo, 0.0)
+
+    return lead, alt
+
+
+def add_second_voice(pitch_result: dict, audio: np.ndarray, sr: int) -> dict:
+    """
+    Add `f0Alt` (the second singer's pitch, 0 where there is none) to an SRH result and hold the lead
+    on one voice inside two-voice stretches. Everything else in the result is passed through.
+    """
+    voiced = np.array(pitch_result["voiced"], dtype=bool)
+    lead, alt = detect_second_voice(audio, sr, pitch_result["f0"], voiced)
+    out = dict(pitch_result)
+    out["f0"] = np.where(voiced, lead, 0.0).tolist()
+    out["f0Alt"] = np.where(voiced, alt, 0.0).tolist()
+    return out
 
 
 def detect_pitch_hps(audio: np.ndarray, sr: int, n_harmonics: int = 5, fmin: float = 65.0, fmax: float = 1400.0) -> dict:
@@ -940,6 +1138,12 @@ def process(
         pitch_result = get_pitch_fn(pitch_algorithm)(vocals_mono, sr_pyin)
         n_voiced = sum(pitch_result["voiced"])
         _log(f"Pitch detection complete: {n_voiced} voiced frames")
+        if get_pitch_fn(pitch_algorithm) is detect_pitch_srh:
+            try:
+                pitch_result = add_second_voice(pitch_result, vocals_mono, sr_pyin)
+                _log(f"Second voice: {sum(1 for v in pitch_result['f0Alt'] if v > 0)} frames")
+            except Exception as e:
+                _log(f"second voice error: {e}\n{traceback.format_exc()}")
 
     except Exception as e:
         _log(f"pitch detection error: {e}\n{traceback.format_exc()}")
@@ -1058,6 +1262,20 @@ def compute_st_spectrum_from_file(audio_path: str, offset_s: float = 0.0) -> dic
     """
     audio, sr = librosa.load(audio_path, sr=SAMPLE_RATE, mono=True, offset=offset_s)
     return compute_short_term_spectrum(audio, sr)
+
+
+def compute_second_voice_from_file(audio_path: str, pitch_data: dict) -> dict:
+    """
+    Backfill helper: the second voice of a song that was analysed before it existed, from the
+    already-separated vocals.wav and the pitch line stored in analysis.json. Returns the lead line
+    (held on one voice inside two-voice stretches) and `f0Alt`; an all-zero `f0Alt` is the marker
+    that this song has been looked at, so it is not analysed again on every open.
+    """
+    audio, sr = librosa.load(audio_path, sr=SRH_SAMPLE_RATE, mono=True)
+    result = add_second_voice(
+        {"f0": pitch_data["f0"], "voiced": pitch_data["voiced"]}, audio, sr
+    )
+    return {"f0": result["f0"], "f0Alt": result["f0Alt"]}
 
 
 def pitch_shift_song(song_dir: str, cache_dir: str, n_steps: float, on_progress=None):

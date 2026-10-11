@@ -29,7 +29,7 @@ App
 ├── analysis/
 │   ├── DualTuner          — real-time pitch tuner (reference vs. singer)
 │   ├── PianoKeyboard      — horizontal piano key strip with live/song/take highlight
-│   ├── PianoRoll          — scrolling pitch ribbon display (song + take + live)
+│   ├── PianoRoll          — scrolling pitch ribbon display (song + take + live; optional second-voice ribbon)
 │   ├── SpectrogramPanel   — scrolling live mic spectrogram (Free Exercise only)
 │   ├── ShortTermSpectrumPanel — real-time spectral snapshot of the live mic (Free Exercise)
 │   ├── ShortTermSpectrumComparisonPanel — song vs. take vs. live spectral envelope overlay (PracticeRoom)
@@ -599,3 +599,14 @@ Rules for a panel:
 - Add a panel by adding it to `PRACTICE_PANELS` (its default is a product decision), rendering it behind `visible.<id>` in `PracticeRoom`, and extending `PracticeRoom.test.ts`.
 - Known limit: hiding Lyrics while a sync is running unmounts the panel (its cleanup clears the lyrics store). The sync still finishes and is saved; showing the panel again loads the result.
 - The piano roll's ruler also sets the punch region; with it hidden, use the main timeline ruler.
+
+## Second voice in the PianoRoll (2026-10-11)
+
+When a song holds two singers at once the sidecar stores the second one as `pitchData.f0Alt` (see `wiki/python-sidecar.md`, "Second voice"). Two controls in the PianoRoll header, both disabled with a tooltip when the song has no second voice, and hidden in Free Exercise:
+
+- **Show multiple lines** (toggle, `aria-pressed`, **off by default**): draws the second singer as a lighter tint of the song blue (`COLOR_SONG_ALT` `rgba(170, 212, 255, 0.82)` vs `COLOR_SONG` `rgba(74, 158, 255, 0.88)`), *under* the main line so it stays readable where they cross. The legend gains a "Second voice" entry while it is on.
+- **Main line** (select: Loudest / Higher / Lower, default Loudest): which of two simultaneous voices is *the* line. Applied per frame by `arrangeVoices` (`src/lib/voices.ts`); a frame with one voice is never moved. It is applied in the analysis store, so `songPitch` - and with it the DualTuner, coach tips, keyboard highlight and live-feedback reference - follows the choice, not just the ribbon.
+
+State: `useVoiceViewStore` (`src/stores/voiceView.ts`, localStorage key `vps_voice_view`, `{showMultipleLines, mainVoice}`). It follows `storage` events so a detached piano-roll window and the main window stay in step. `useAnalysisStore` keeps the raw `songPitchData` and re-arranges `songPitch` / `songPitchAlt` when `mainVoice` changes, without reloading the song. Takes have no second voice.
+
+Songs analysed before this get `f0Alt` on their next open through the `load_analysis` backfill (once, persisted); the lead line of such a song may also change, because inside a two-voice stretch it is now held on one voice.

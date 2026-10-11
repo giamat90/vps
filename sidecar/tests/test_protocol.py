@@ -144,6 +144,27 @@ def test_compute_st_spectrum(sidecar, work):
     assert (d["stSpectrumMinDb"], d["stSpectrumMaxDb"]) == (-100.0, 0.0)
 
 
+def test_compute_second_voice_returns_both_lines_for_a_stored_pitch_line(sidecar, work):
+    from processor import detect_pitch_srh
+    import soundfile as sf
+    audio, sr = sf.read(str(work / "tone.wav"), dtype="float32")
+    stored = detect_pitch_srh(audio, sr)
+    msg, _ = sidecar.call({"cmd": "compute_second_voice", "audioPath": str(work / "tone.wav"), "pitchData": stored})
+    assert msg["type"] == "result" and msg["cmd"] == "compute_second_voice"
+    d = msg["data"]
+    assert len(d["f0"]) == len(d["f0Alt"]) == len(stored["f0"])
+    assert not any(d["f0Alt"]), "a single tone has no second voice"
+    assert d["f0"] == stored["f0"]
+
+
+def test_compute_second_voice_with_a_line_from_another_grid_is_all_zero(sidecar, work):
+    stored = {"f0": [220.0] * 7, "voiced": [True] * 7}
+    msg, _ = sidecar.call({"cmd": "compute_second_voice", "audioPath": str(work / "tone.wav"), "pitchData": stored})
+    assert msg["type"] == "result"
+    assert msg["data"]["f0Alt"] == [0.0] * 7
+    assert msg["data"]["f0"] == [220.0] * 7
+
+
 def test_analyze_streams_progress_then_a_result(sidecar, work):
     msg, progress = sidecar.call({"cmd": "analyze", "recordingPath": str(work / "tone.wav"), "outputDir": str(work), "audioOffset": 0, "algorithm": "srh"})
     assert msg["type"] == "result" and msg["cmd"] == "analyze"

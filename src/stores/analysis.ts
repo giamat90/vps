@@ -11,6 +11,8 @@ import type {
 import { loadAnalysis } from "../lib/tauri";
 import { computeTimingDeviations } from "../audio/analysisUtils";
 import { buildSpectroCanvas, decodeSTSpectrumFrames } from "../lib/spectroUtils";
+import { arrangeVoices, type MainVoice } from "../lib/voices";
+import { useVoiceViewStore } from "./voiceView";
 
 export interface SongSpectrogram {
   times: number[];
@@ -64,8 +66,26 @@ function pitchDataToPoints(pd: PitchData, toSongTime: (t: number) => number): Pi
   return out;
 }
 
+function arrangedSongPitch(
+  pd: PitchData | null,
+  mode: MainVoice,
+): { songPitch: PitchPoint[]; songPitchAlt: PitchPoint[] } {
+  if (!pd || !Array.isArray(pd.times)) return { songPitch: [], songPitchAlt: [] };
+  const { main, second } = arrangeVoices(pd.f0, pd.f0Alt, mode);
+  const identity = (t: number) => t;
+  return {
+    songPitch: pitchDataToPoints({ ...pd, f0: main }, identity),
+    songPitchAlt: pitchDataToPoints({ ...pd, f0: second }, identity),
+  };
+}
+
 interface AnalysisState {
+  /** The song's main line, arranged by the user's main-voice preference. */
   songPitch: PitchPoint[];
+  /** The other singer, same arrangement; empty when only one voice sings or it was never analysed. */
+  songPitchAlt: PitchPoint[];
+  /** The stored pitch data, kept so a change of preference re-arranges without reloading. */
+  songPitchData: PitchData | null;
   songOnsets: number[];
   songDynamics: DynamicsPoint[];
   songSpectrogram: SongSpectrogram | null;
@@ -86,6 +106,7 @@ interface AnalysisActions {
   loadSongAnalysis: (songId: string) => Promise<void>;
   loadTakeAnalysis: (take: Take) => void;
   clearTakeAnalysis: () => void;
+  arrangeSongVoices: (mode: MainVoice) => void;
   previewTakeManualOffset: (take: Take, offset: number) => void;
   loadExerciseTakeAnalysis: (take: ExerciseTake) => void;
   appendLivePitch: (point: PitchPoint) => void;
@@ -96,6 +117,8 @@ interface AnalysisActions {
 
 const empty: AnalysisState = {
   songPitch: [],
+  songPitchAlt: [],
+  songPitchData: null,
   songOnsets: [],
   songDynamics: [],
   songSpectrogram: null,
@@ -139,7 +162,8 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
         );
 
         set({
-          songPitch: data.pitchData ? pitchDataToPoints(data.pitchData, (t) => t) : [],
+          songPitchData: data.pitchData && Array.isArray(data.pitchData.times) ? data.pitchData : null,
+          ...arrangedSongPitch(data.pitchData ?? null, useVoiceViewStore.getState().mainVoice),
           songOnsets: (data.onsets as number[]) ?? [],
           songDynamics: (data.dynamics as DynamicsPoint[]) ?? [],
           songSpectrogram,
@@ -150,6 +174,8 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
         console.error("Failed to load analysis:", e);
       }
     },
+
+    arrangeSongVoices: (mode) => set(arrangedSongPitch(get().songPitchData, mode)),
 
     loadTakeAnalysis: (take) => {
       const { songOnsets } = get();
@@ -233,3 +259,9 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
     clear: () => set(empty),
   })
 );
+
+// The main voice is chosen in the piano roll (or in another window of it); everything that follows
+// the song's line, the tuner and the coach included, has to follow the choice.
+useVoiceViewStore.subscribe((state, prev) => {
+  if (state.mainVoice !== prev.mainVoice) useAnalysisStore.getState().arrangeSongVoices(state.mainVoice);
+});
