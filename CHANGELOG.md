@@ -6,6 +6,13 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.69] - 2026-10-11
+
+### Changed
+- Pitch detection on a song's separated vocal is more accurate: notes no longer start with a slide from the previous note, breaths, consonants and noise between notes no longer get a pitch line, and wrong-octave frames are rarer. Vibrato shows closer to its real depth.
+- Recorded takes get the same detector, so the take and song ribbons stay comparable.
+- Songs already in the library keep the pitch they were analysed with; import a song again to get the new detection.
+
 ## [0.1.68] - 2026-10-11
 
 ### Fixed
