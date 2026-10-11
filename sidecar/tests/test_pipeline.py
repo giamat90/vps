@@ -99,6 +99,37 @@ class TestProcessInstrumentTrack:
         assert result["detectedKey"] in ("C major", "A minor")
 
 
+class TestSecondVoiceInTheSongPitchData:
+    @staticmethod
+    def two_singers(tmp_path):
+        from helpers import vibrato_tone
+        a = vibrato_tone(220.0, SR, 4.0, rate_hz=5.3, depth_cents=20, amp=0.4)
+        b = vibrato_tone(220.0 * 2 ** (5 / 12), SR, 4.0, rate_hz=6.1, depth_cents=20, amp=0.28)
+        mix = (a + b).astype(np.float32)
+        return write_wav(tmp_path / "duet.wav", 0.4 * mix / np.max(np.abs(mix)), SR)
+
+    def test_srh_songs_carry_the_second_line(self, tmp_path):
+        src = self.two_singers(tmp_path)
+        result = processor.process(src, str(tmp_path / "out"), skip_separation=True, pitch_algorithm="srh")
+        pitch = result["pitchData"]
+        n = len(pitch["times"])
+        assert len(pitch["f0Alt"]) == len(pitch["f0"]) == n
+        found = [f for f in pitch["f0Alt"] if f > 0]
+        assert len(found) > 0.6 * sum(pitch["voiced"])
+        assert abs(cents(float(np.median(found)), 220.0 * 2 ** (5 / 12))) < 60
+
+    def test_a_single_voice_has_an_all_zero_second_line_so_it_is_not_analysed_again(self, tmp_path):
+        src = write_wav(tmp_path / "solo.wav", harmonic_tone(220.0, SR, 3.0), SR)
+        result = processor.process(src, str(tmp_path / "out"), skip_separation=True, pitch_algorithm="srh")
+        assert "f0Alt" in result["pitchData"]
+        assert not any(result["pitchData"]["f0Alt"])
+
+    def test_other_algorithms_do_not_get_one(self, tmp_path):
+        src = self.two_singers(tmp_path)
+        result = processor.process(src, str(tmp_path / "out"), skip_separation=True, pitch_algorithm="piano")
+        assert "f0Alt" not in result["pitchData"]
+
+
 class TestPitchShift:
     def make_song(self, tmp_path, channels=1):
         song = tmp_path / "song"

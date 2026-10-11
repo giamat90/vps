@@ -78,6 +78,23 @@ fn the_rust_commands_and_the_python_sidecar_work_together() {
     assert_eq!(persisted["stSpectrumBins"], MIN_BINS);
     assert_eq!(load_analysis(&state, "song-1").unwrap(), persisted, "second open is a cache hit");
 
+    // 1b ─ Second-voice backfill: a stored pitch line gains `f0Alt`, once. A line that does not
+    // match the sidecar's frame grid (here: 5 frames) is answered with zeros, which is the marker.
+    let sv_dir = storage::song_dir("song-voices");
+    write_wav(&sv_dir.join("vocals.wav"), &tones(&[(220.0, 0.5)], sr, 2.0), sr);
+    let sv_path = sv_dir.join("analysis.json");
+    let stored = json!({"pitchData": {"times": [0.0, 0.1, 0.2, 0.3, 0.4], "f0": [220.0, 220.0, 0.0, 220.0, 220.0],
+                                      "voiced": [true, true, false, true, true], "confidence": [1.0, 1.0, 0.0, 1.0, 1.0]},
+                        "onsets": [], "dynamics": [],
+                        "stSpectrumB64": "AAAA", "stSpectrumMinDb": -100.0, "stSpectrumMaxDb": 0.0, "stSpectrumBins": MIN_BINS});
+    std::fs::write(&sv_path, stored.to_string()).unwrap();
+    let with_voice = load_analysis(&state, "song-voices").expect("load_analysis");
+    assert_eq!(with_voice["pitchData"]["f0Alt"], json!([0.0, 0.0, 0.0, 0.0, 0.0]));
+    assert_eq!(with_voice["pitchData"]["f0"], json!([220.0, 220.0, 0.0, 220.0, 220.0]), "the main line is kept");
+    let persisted: Value = serde_json::from_str(&std::fs::read_to_string(&sv_path).unwrap()).unwrap();
+    assert!(persisted["pitchData"]["f0Alt"].is_array(), "the backfill is cached in analysis.json");
+    assert_eq!(load_analysis(&state, "song-voices").unwrap(), persisted, "second open is a cache hit");
+
     // 2 ─ A song whose vocals cannot be decoded still loads (without a spectrum).
     let bad_dir = storage::song_dir("song-bad");
     std::fs::write(bad_dir.join("vocals.wav"), b"not audio").unwrap();

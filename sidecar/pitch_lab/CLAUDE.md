@@ -77,6 +77,10 @@ from something found only in one track's plot.
   (verified frame by frame), `srh_legacy()` is the pre-port behaviour, `--algo srh-legacy` overlays it.
   Still open: female/soft voices untested; HPS/CREPE still use the Gaussian `_smooth_voiced`; a sustained
   wrong octave (not an isolated frame) is not fixed by the Viterbi cost.
+- **Ported 2026-10-11 (second voice):** two singers on one stem (Them Bones 11-14 s, C#4 + G#3). Harmonic
+  cancellation of the first voice + SRH/Viterbi on the residual, steady stretches only, lead held per stretch
+  -> `processor.detect_second_voice` / `add_second_voice`, output `pitchData.f0Alt`. Prototype scripts were
+  scratch-only; the production function is the reference. See `wiki/python-sidecar.md` "Second voice".
 - Everything else above is still lab-only/provisional.
 - Only two real tracks tested so far. Treat the HPSS/denoise verdicts as directional, not universal,
   until validated against more voice types/timbres (the existing rejections were specific to Layne

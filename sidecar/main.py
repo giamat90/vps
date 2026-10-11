@@ -29,7 +29,7 @@ if getattr(sys, "frozen", False):
     bundled_dir = getattr(sys, "_MEIPASS", os.path.dirname(sys.executable))
     os.environ["PATH"] = bundled_dir + os.pathsep + os.environ.get("PATH", "")
 
-from processor import process, compute_st_spectrum_from_file
+from processor import process, compute_st_spectrum_from_file, compute_second_voice_from_file
 from analysis import analyze_recording, convert_take_to_wav, mix_export
 from mps_core import lyrics
 from mps_core.app import AppIdentity
@@ -102,6 +102,10 @@ def main():
                     offset_s=float(cmd.get("audioOffset", 0.0)),
                 )
                 send({"type": "result", "cmd": "compute_st_spectrum", "data": result})
+
+            elif cmd.get("cmd") == "compute_second_voice":
+                result = compute_second_voice_from_file(cmd["audioPath"], cmd["pitchData"])
+                send({"type": "result", "cmd": "compute_second_voice", "data": result})
 
             elif cmd.get("cmd") == "convert_take":
                 result = convert_take_to_wav(cmd["recordingPath"], cmd["outputPath"])

@@ -1,5 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
+import { useVoiceViewStore } from "../../stores/voiceView";
+import { MAIN_VOICES, isMainVoice } from "../../lib/voices";
 import { usePlayerStore } from "../../stores/player";
 import { getPlaybackTime } from "../../windows/playbackClock";
 import { frequencyToMidi, NOTE_NAMES } from "@giamat90/mps-core/music";
@@ -10,7 +12,7 @@ import {
   stepPianoWindow,
 } from "../../lib/constants";
 import type { PitchPoint } from "../../lib/types";
-import { getCurrentMidi, COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
+import { getCurrentMidi, COLOR_SONG, COLOR_SONG_ALT, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 import { startPreviewNote, startPreview, endPreview, getPreviewState, type PreviewVoice } from "../../audio/notePreview";
 
 // ─── constants ───────────────────────────────────────────────────────────────
@@ -355,6 +357,11 @@ export default function PianoRoll() {
   const canvasRef        = useRef<HTMLCanvasElement>(null);
   const rulerRef         = useRef<HTMLCanvasElement>(null);
   const songPitch        = useAnalysisStore((s) => s.songPitch);
+  const songPitchAlt     = useAnalysisStore((s) => s.songPitchAlt);
+  const showMultipleLines = useVoiceViewStore((s) => s.showMultipleLines);
+  const setShowMultipleLines = useVoiceViewStore((s) => s.setShowMultipleLines);
+  const mainVoice        = useVoiceViewStore((s) => s.mainVoice);
+  const setMainVoice     = useVoiceViewStore((s) => s.setMainVoice);
   const takePitch        = useAnalysisStore((s) => s.takePitch);
   const livePitch        = useAnalysisStore((s) => s.livePitch);
   const isLoaded         = useAnalysisStore((s) => s.isLoaded);
@@ -476,6 +483,10 @@ export default function PianoRoll() {
       const midiMin = windowMinRef.current;
 
       drawLanes(ctx, W, H, midiMin);
+      // Under the main line: where the two voices cross, the main one stays readable.
+      if (showMultipleLines && songPitchAlt.length > 0) {
+        drawRibbon(ctx, songPitchAlt, COLOR_SONG_ALT, t0, t1, H, midiMin, timeToX);
+      }
       drawRibbon(ctx, songPitch, COLOR_SONG, t0, t1, H, midiMin, timeToX);
       if (takePitch.length > 0) {
         drawRibbon(ctx, takePitch, COLOR_TAKE, t0, t1, H, midiMin, timeToX);
@@ -496,7 +507,7 @@ export default function PianoRoll() {
     };
 
     drawRef.current();
-  }, [songPitch, takePitch, livePitch, isLoaded, punchIn, punchOut, isRecording]);
+  }, [songPitch, songPitchAlt, showMultipleLines, takePitch, livePitch, isLoaded, punchIn, punchOut, isRecording]);
 
   useEffect(() => {
     if (!isLoaded && !exerciseMode) return;
@@ -676,13 +687,22 @@ export default function PianoRoll() {
     }
   };
 
+  const hasSecondVoice = songPitchAlt.length > 0;
+  const noSecondVoiceHint = "No second voice was found in this song";
+
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
         <span className="analysis-panel__label">Piano Roll</span>
         <div className="analysis-panel__legend">
-          <span className="legend-dot legend-dot--song" />
+          <span className="legend-dot legend-dot--song-ribbon" />
           <span>{songLabel}</span>
+          {showMultipleLines && hasSecondVoice && (
+            <>
+              <span className="legend-dot legend-dot--song-alt" />
+              <span>Second voice</span>
+            </>
+          )}
           {takePitch.length > 0 && (
             <>
               <span className="legend-dot legend-dot--take" />
@@ -696,6 +716,35 @@ export default function PianoRoll() {
             </>
           )}
         </div>
+        {!exerciseMode && (
+          <div className="piano-roll__voices">
+            <label className="piano-roll__main-voice">
+              <span>Main line</span>
+              <select
+                value={mainVoice}
+                disabled={!hasSecondVoice}
+                title={hasSecondVoice ? "Which voice is the main line where two sing" : noSecondVoiceHint}
+                onChange={(e) => {
+                  if (isMainVoice(e.target.value)) setMainVoice(e.target.value);
+                }}
+              >
+                {MAIN_VOICES.map((v) => (
+                  <option key={v.id} value={v.id}>{v.label}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className={`piano-roll__toggle${showMultipleLines ? " piano-roll__toggle--on" : ""}`}
+              aria-pressed={showMultipleLines}
+              disabled={!hasSecondVoice}
+              title={hasSecondVoice ? "Draw the second singer in a lighter line" : noSecondVoiceHint}
+              onClick={() => setShowMultipleLines(!showMultipleLines)}
+            >
+              Show multiple lines
+            </button>
+          </div>
+        )}
       </div>
       <div className="piano-roll__ruler-wrap">
         <canvas

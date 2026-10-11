@@ -49,6 +49,27 @@ fn analysis_has_current_spectrum(analysis: &serde_json::Value) -> bool {
     )
 }
 
+/// The second singer's line is stored next to the main one as `pitchData.f0Alt`. An all-zero array
+/// is the marker for "looked at, nobody there", so the backfill runs once per song.
+fn analysis_has_second_voice(analysis: &serde_json::Value) -> bool {
+    analysis
+        .get("pitchData")
+        .and_then(|p| p.get("f0Alt"))
+        .is_some_and(|v| v.is_array())
+}
+
+/// The part of a stored pitch line the sidecar needs to look for a second voice, or None when the
+/// song has no usable line (never analysed, or analysed with nothing voiced to follow).
+fn analysis_pitch_line(analysis: &serde_json::Value) -> Option<serde_json::Value> {
+    let pitch = analysis.get("pitchData")?;
+    let f0 = pitch.get("f0")?.as_array()?;
+    let voiced = pitch.get("voiced")?.as_array()?;
+    if f0.is_empty() || f0.len() != voiced.len() {
+        return None;
+    }
+    Some(serde_json::json!({"f0": f0, "voiced": voiced}))
+}
+
 fn take_has_current_spectrum(take: &Take) -> bool {
     spectrum_is_current(
         take.st_spectrum_b64.as_ref(),
@@ -70,33 +91,28 @@ fn ensure_sidecar(
     Ok(guard)
 }
 
-/// Backfill helper: compute the Short-Term Spectrum dataset for an audio file
-/// already on disk, for library entries that predate this feature. Returns
-/// None on any failure, always logged as a warning with the file concerned —
-/// non-fatal, callers just skip the backfill and retry on the next open.
-fn compute_st_spectrum(
+/// Send one backfill command to the sidecar and wait for its result. Returns None on any failure,
+/// always logged as a warning with the command and the file concerned — non-fatal, callers just skip
+/// the backfill and retry on the next open.
+fn backfill_request(
     state: &SidecarState,
-    audio_path: &str,
-    audio_offset: f64,
+    what: &str,
+    subject: &str,
+    cmd: &serde_json::Value,
 ) -> Option<serde_json::Value> {
     let guard = match ensure_sidecar(state) {
         Ok(guard) => guard,
         Err(e) => {
-            log::warn!("compute_st_spectrum backfill skipped for {audio_path}: sidecar unavailable: {e}");
+            log::warn!("{what} backfill skipped for {subject}: sidecar unavailable: {e}");
             return None;
         }
     };
     let Some(sidecar) = guard.as_ref() else {
-        log::warn!("compute_st_spectrum backfill skipped for {audio_path}: sidecar not running");
+        log::warn!("{what} backfill skipped for {subject}: sidecar not running");
         return None;
     };
-    let cmd = serde_json::json!({
-        "cmd": "compute_st_spectrum",
-        "audioPath": audio_path,
-        "audioOffset": audio_offset,
-    });
-    if let Err(e) = sidecar.send_command(&cmd) {
-        log::warn!("compute_st_spectrum backfill skipped for {audio_path}: could not send command: {e}");
+    if let Err(e) = sidecar.send_command(cmd) {
+        log::warn!("{what} backfill skipped for {subject}: could not send command: {e}");
         return None;
     }
     let timeout = Duration::from_secs(120);
@@ -104,20 +120,50 @@ fn compute_st_spectrum(
         match sidecar.recv_timeout(timeout) {
             Ok(SidecarMessage::Result { data, .. }) => return Some(data),
             Ok(SidecarMessage::Error { message, .. }) => {
-                log::warn!("compute_st_spectrum backfill error for {audio_path}: {message}");
+                log::warn!("{what} backfill error for {subject}: {message}");
                 return None;
             }
             Ok(SidecarMessage::Progress { .. }) => continue,
             Ok(_) => {
-                log::warn!("compute_st_spectrum backfill for {audio_path}: unexpected sidecar message");
+                log::warn!("{what} backfill for {subject}: unexpected sidecar message");
                 return None;
             }
             Err(e) => {
-                log::warn!("compute_st_spectrum backfill for {audio_path}: no result: {e}");
+                log::warn!("{what} backfill for {subject}: no result: {e}");
                 return None;
             }
         }
     }
+}
+
+/// Backfill helper: compute the Short-Term Spectrum dataset for an audio file
+/// already on disk, for library entries that predate this feature.
+fn compute_st_spectrum(
+    state: &SidecarState,
+    audio_path: &str,
+    audio_offset: f64,
+) -> Option<serde_json::Value> {
+    let cmd = serde_json::json!({
+        "cmd": "compute_st_spectrum",
+        "audioPath": audio_path,
+        "audioOffset": audio_offset,
+    });
+    backfill_request(state, "compute_st_spectrum", audio_path, &cmd)
+}
+
+/// Backfill helper: look for a second singer under an already stored pitch line, using the
+/// song's separated vocals. No separation or pitch run is repeated.
+fn compute_second_voice(
+    state: &SidecarState,
+    audio_path: &str,
+    pitch_line: &serde_json::Value,
+) -> Option<serde_json::Value> {
+    let cmd = serde_json::json!({
+        "cmd": "compute_second_voice",
+        "audioPath": audio_path,
+        "pitchData": pitch_line,
+    });
+    backfill_request(state, "compute_second_voice", audio_path, &cmd)
 }
 
 /// A song job that failed in the sidecar never reached library.json, so nothing
@@ -578,6 +624,12 @@ pub async fn load_analysis(
     load_analysis_impl(&state, &song_id)
 }
 
+fn is_instrument_song(song_id: &str) -> bool {
+    library::load_songs()
+        .map(|songs| songs.iter().any(|s| s.id == song_id && s.kind == "instrument"))
+        .unwrap_or(false)
+}
+
 pub(crate) fn load_analysis_impl(state: &SidecarState, song_id: &str) -> Result<serde_json::Value, String> {
     let song_dir = storage::song_dir(song_id);
     let path = song_dir.join("analysis.json");
@@ -594,31 +646,52 @@ pub(crate) fn load_analysis_impl(state: &SidecarState, song_id: &str) -> Result<
     // fields in analysis.json — any older/lower-res encoding is transparently
     // recomputed rather than misread or left stale. Uses the already-separated
     // vocals.wav, so future loads skip straight to the cached data.
-    if !analysis_has_current_spectrum(&analysis) {
-        let vocals_path = song_dir.join("vocals.wav");
-        if vocals_path.exists() {
-            if let Some(result) = compute_st_spectrum(state, &vocals_path.to_string_lossy(), 0.0) {
-                if let Some(obj) = analysis.as_object_mut() {
-                    for key in [
-                        "stSpectrumTimes", "stSpectrumB64", "stSpectrumFrames",
-                        "stSpectrumBins", "stSpectrumMinDb", "stSpectrumMaxDb",
-                    ] {
-                        if let Some(v) = result.get(key) {
-                            obj.insert(key.to_string(), v.clone());
-                        }
+    let vocals_path = song_dir.join("vocals.wav");
+    let mut changed = false;
+
+    if !analysis_has_current_spectrum(&analysis) && vocals_path.exists() {
+        if let Some(result) = compute_st_spectrum(state, &vocals_path.to_string_lossy(), 0.0) {
+            if let Some(obj) = analysis.as_object_mut() {
+                for key in [
+                    "stSpectrumTimes", "stSpectrumB64", "stSpectrumFrames",
+                    "stSpectrumBins", "stSpectrumMinDb", "stSpectrumMaxDb",
+                ] {
+                    if let Some(v) = result.get(key) {
+                        obj.insert(key.to_string(), v.clone());
                     }
-                }
-                // The spectrum is already in the value returned below, so a failed
-                // write only means the backfill runs again on the next open.
-                match serde_json::to_string_pretty(&analysis) {
-                    Ok(json) => {
-                        if let Err(e) = std::fs::write(&path, json) {
-                            log::warn!("Could not cache backfilled spectrum in {}: {e}", path.display());
-                        }
-                    }
-                    Err(e) => log::warn!("Could not serialize backfilled analysis for {}: {e}", path.display()),
                 }
             }
+            changed = true;
+        }
+    }
+
+    // Second voice: songs analysed before it existed have no `pitchData.f0Alt`. The sidecar also
+    // returns the main line, held on one voice where two sing, so both replace the stored ones.
+    // An instrument track has no singer to find a second one under.
+    if !analysis_has_second_voice(&analysis) && vocals_path.exists() && !is_instrument_song(song_id) {
+        if let Some(line) = analysis_pitch_line(&analysis) {
+            if let Some(result) = compute_second_voice(state, &vocals_path.to_string_lossy(), &line) {
+                if let (Some(f0), Some(alt)) = (result.get("f0"), result.get("f0Alt")) {
+                    if let Some(pitch) = analysis.get_mut("pitchData").and_then(|p| p.as_object_mut()) {
+                        pitch.insert("f0".to_string(), f0.clone());
+                        pitch.insert("f0Alt".to_string(), alt.clone());
+                        changed = true;
+                    }
+                }
+            }
+        }
+    }
+
+    if changed {
+        // Whatever was backfilled is already in the value returned below, so a failed write
+        // only means the backfill runs again on the next open.
+        match serde_json::to_string_pretty(&analysis) {
+            Ok(json) => {
+                if let Err(e) = std::fs::write(&path, json) {
+                    log::warn!("Could not cache backfilled analysis in {}: {e}", path.display());
+                }
+            }
+            Err(e) => log::warn!("Could not serialize backfilled analysis for {}: {e}", path.display()),
         }
     }
 
@@ -1405,6 +1478,29 @@ mod tests {
             assert!(!analysis_has_current_spectrum(&v), "missing {field} should be stale");
         }
         assert!(!analysis_has_current_spectrum(&json!({})));
+    }
+
+    #[test]
+    fn a_song_has_a_second_voice_once_the_array_is_stored_even_when_it_is_all_zero() {
+        assert!(!analysis_has_second_voice(&json!({"pitchData": {"f0": [1.0], "voiced": [true]}})));
+        assert!(!analysis_has_second_voice(&json!({"pitchData": []})));
+        assert!(!analysis_has_second_voice(&json!({"pitchData": {"f0Alt": null}})));
+        assert!(analysis_has_second_voice(&json!({"pitchData": {"f0Alt": [0.0, 0.0]}})));
+        assert!(analysis_has_second_voice(&json!({"pitchData": {"f0Alt": []}})));
+    }
+
+    #[test]
+    fn only_a_complete_stored_pitch_line_is_sent_for_the_second_voice() {
+        let ok = json!({"pitchData": {"times": [0.0, 0.1], "f0": [220.0, 0.0], "voiced": [true, false], "confidence": [1.0, 0.0]}});
+        assert_eq!(
+            analysis_pitch_line(&ok),
+            Some(json!({"f0": [220.0, 0.0], "voiced": [true, false]})),
+            "only the two arrays the sidecar reads are sent, not the whole line",
+        );
+        assert_eq!(analysis_pitch_line(&json!({"pitchData": []})), None, "no analysis yet");
+        assert_eq!(analysis_pitch_line(&json!({"pitchData": {"f0": [], "voiced": []}})), None, "nothing to follow");
+        assert_eq!(analysis_pitch_line(&json!({"pitchData": {"f0": [1.0], "voiced": [true, true]}})), None, "ragged");
+        assert_eq!(analysis_pitch_line(&json!({"onsets": []})), None);
     }
 
     #[test]

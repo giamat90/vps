@@ -164,7 +164,7 @@ VPS/
 │   └── lib.rs         Tauri builder + invoke_handler registration
 ├── tests/contract/    cross-language tests that read the TS and Rust sources (IPC command/argument contract)
 ├── sidecar/
-│   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, ping, quit)
+│   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, compute_second_voice, ping, quit)
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
 │   ├── analysis.py    Take analysis (SRH + onsets + dynamics + vibrato + spectrum), RMS loudness normalization, mixdown rendering
 │   ├── yt_importer.py yt-dlp + processor pipeline
@@ -301,7 +301,7 @@ interface PitchPoint {       // frontend-internal representation
 | `find_lyrics(songId)` | `FoundLyrics` | LRCLIB lookup via sidecar, nothing saved |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
 | `import_exercise_file(filePath, duration)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
-| `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) |
+| `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) and, once per song, the second voice (`pitchData.f0Alt`) via `compute_second_voice` |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
 | `import_youtube(url, highQuality?, cookiesPath?)` | `Song` | yt-dlp + Demucs; 15-min timeout; `cookiesPath` (Settings → YouTube cookies file) is tried before the live-browser cookie cascade |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
@@ -435,6 +435,7 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 | `process` | Demucs htdemucs (or `htdemucs_ft` when `highQuality`) → SRH pitch → onsets → dynamics → BPM → key; `kind: "instrument"` skips separation | 600 s |
 | `analyze` | SRH pitch → onsets → dynamics → vibrato → short-term spectrum for recorded takes; with `referencePath` also RMS-normalizes take loudness against that stem and returns `normalizedPath` | 300 s |
 | `compute_st_spectrum` | log-Hz spectral envelope over time for an audio file (comparison panel) | 120 s |
+| `compute_second_voice` | second singer under a stored SRH line (`{audioPath, pitchData:{f0,voiced}}` -> `{f0, f0Alt}`); backfill for songs analysed before it existed | 120 s |
 | `pitch_shift` | phase-vocoder shift vocals + instrumental; cached in `pitched/{n}/` | 300 s |
 | `import_yt` | yt-dlp download → `process` pipeline; bot-detection browser cookie fallback | 900 s |
 | `convert_take` | decode a take (webm/opus) via `librosa.load` + write WAV via `soundfile`; used for take export | 120 s |
@@ -447,7 +448,7 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 - **Fixed by the app, not chosen by the user** — a singer should not have to know what SRH or pYIN is. `src-tauri/src/pitch.rs` holds `DEFAULT` (`"srh"`) and is the only place a command asks which algorithm to use: no IPC command takes an `algorithm`, there is no setting and no UI. The same algorithm runs for song vocals (`processor.py`'s `process()`) and recorded takes (`analysis.py`'s `analyze_recording()`) so the two pitch ribbons stay comparable. Dispatch is a small registry in `processor.py` (`PITCH_ALGORITHMS` / `get_pitch_fn`).
 - **Changing the algorithm is an experiment, then a one-line change.** Offline: `sidecar/pitch_lab/`. In the real app: launch with `VPS_PITCH_ALGORITHM=<srh|praat|pyin|hps|crepe>`; an unknown value fails the import/recording loudly instead of silently running SRH. Promoting a winner = change `DEFAULT` in `pitch.rs`; `sidecar/tests/test_pitch.py` keeps the Rust list and the sidecar registry in step. A legacy `pitchAlgorithm` in `localStorage` from older versions is ignored and dropped. Songs already analysed keep their stored pitch data until re-imported.
 - **SRH** (Summation of Residual Harmonics, Drugman & Dutoit 2011) — **the default** (reinstated 2026-07-12 after Praat held the default from `v0.1.37`; the user's own in-app A/B across all five algorithms rated SRH clearly best, CREPE second). Originally chosen because pYIN and CREPE both tracked upper harmonics instead of the fundamental on strong chest-voice singers. SRH sums harmonic energy and subtracts inter-harmonic energy — structurally immune to dominant upper harmonics. Validated on Chris Cornell vocals vs VoceVista.
-  - Resamples to 22050 Hz, `frame_length=2756` (125 ms, per Babacan et al. 2019), 0.5 Hz candidate grid, `n_harmonics=7` (was 5 until 2026-10-08), F0 = Viterbi path over each frame's top-5 SRH peaks, voiced iff harmonic contrast `(H−I)/(H+I) > 0.6` (was `score/track max > 0.22` until 2026-10-11), parabolic interpolation, median-5 inside each voiced run (was median+Gaussian over gap-joined frames). `confidence` stays the track-max-normalised best score. See `wiki/python-sidecar.md`.
+  - Resamples to 22050 Hz, `frame_length=2756` (125 ms, per Babacan et al. 2019), 0.5 Hz candidate grid, `n_harmonics=7` (was 5 until 2026-10-08), F0 = Viterbi path over each frame's top-5 SRH peaks, voiced iff harmonic contrast `(H−I)/(H+I) > 0.6` (was `score/track max > 0.22` until 2026-10-11), parabolic interpolation, median-5 inside each voiced run (was median+Gaussian over gap-joined frames). `confidence` stays the track-max-normalised best score. For songs, `process()` then adds a **second voice** (`pitchData.f0Alt`, lead held on one voice inside two-voice stretches); the piano roll shows it behind an opt-in "Show multiple lines" toggle and the user picks the main line (Loudest/Higher/Lower). See `wiki/python-sidecar.md`.
 - **pYIN** (`detect_pitch` in `processor.py`) — was unused dead code for a period (comparison baseline only in `sidecar/pitch_lab/`), an experiment candidate (`VPS_PITCH_ALGORITHM=pyin`).
 - **HPS** (`detect_pitch_hps`) — new; Harmonic Product Spectrum, no new dependency, more octave-jitter-prone than SRH by design (multiplicative harmonic combination).
 - **CREPE** (`detect_pitch_crepe`) — new; deep-learning tracker via `torchcrepe` (`"tiny"` model, reuses the `torch` dependency Demucs already needs), slower than the DSP algorithms on full-song audio. Rated second-best in the 2026-07-12 in-app A/B.

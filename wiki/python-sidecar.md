@@ -141,6 +141,22 @@ Returns the same dict as `process`, with `"title"` added (extracted from yt-dlp 
 
 **Why `cookiesPath` exists:** live `cookiesfrombrowser` extraction is fragile on Windows — Chromium browsers (Chrome/Edge/Brave/Opera) encrypt their cookie store with a key only reliably reachable while that browser is running (Chrome 127+ "app-bound encryption"), and it only tries five hardcoded browser names, so anyone on a different browser (e.g. Ecosia — Chromium-based but not in the list) always falls through to the no-cookies attempt and gets bot-blocked. A one-time exported `cookies.txt` (e.g. via the "Get cookies.txt LOCALLY" extension) sidesteps this entirely. See MPS `wiki/known-issues.md`.
 
+### Second voice (`detect_second_voice`, `add_second_voice`, 2026-10-11)
+
+Two singers on one stem (lead + harmony): `detect_pitch_srh` has one F0 per frame and fills it with the louder voice, so two sustained notes of similar strength made the line hop between them (Them Bones 11-14 s: C#4 and G#3 held a fourth apart). After SRH, `process()` runs `add_second_voice`, which
+
+1. cancels the chosen F0's harmonics (±3 bins) from each voiced frame's spectrum and runs SRH + the Viterbi path again on the residual (candidate accepted when its harmonic contrast > 0.6 and its score > 0.15 x the first voice's);
+2. rejects a candidate less than 2.5 semitones from the first voice (leakage) or that is an integer multiple of it (octave/twelfth: the spectrum cannot tell two voices from one), and keeps only stretches where both voices hold a note (>= 8 frames, each frame step < 1.5 semitones, median absolute deviation < 0.5 semitone) - glides are not trusted;
+3. bridges gaps of up to 4 frames and, inside each stretch, holds **one** voice as the lead: the one the plain line followed most often (the louder one; a tie goes to the upper voice).
+
+Result: `pitchData.f0` is the lead (identical to the plain SRH line outside two-voice stretches), `pitchData.f0Alt` the other voice (0 where only one sings). `confidence`, `voiced`, `times` are untouched; `f0Alt` is only non-zero on voiced frames. A line whose frame count is not the SRH grid is returned unchanged. Failures are logged and the song keeps its plain line.
+
+Not run for takes (`analyze_recording`), HPS/CREPE/Praat/pYIN experiments, or `kind: "instrument"` imports.
+
+`compute_second_voice` (command): `{audioPath, pitchData: {f0, voiced}}` -> `{f0, f0Alt}`. Backfill for songs analysed before this existed; Rust `load_analysis` calls it once per song when `pitchData.f0Alt` is absent and persists the result (an all-zero `f0Alt` is the "looked, nobody there" marker).
+
+Measured (pitch_lab / production function): Them Bones stem 32% of voiced frames carry a second voice (57% of them exactly 5 semitones: the parallel fourth), Like a Stone 0%, Black Hole Sun 0.6%, six real mic takes 0-0.7%. Synthetic pairs from a minor third to a major sixth are found down to -12 dB; a perfect fifth at -12 dB only 10% of the time. Known limits: octave doubling and double-tracked unison are not separable by pitch; a pair a fourth/fifth apart is a harmonic series of a note an octave-plus below, so the *first* pass can still lock there (Them Bones ~14.3-15 s: C#2/C#3) and no second voice is reported; only two voices; which voice is "the" melody is the user's preference, applied in the frontend (`src/lib/voices.ts`).
+
 ### `compute_st_spectrum`
 
 Computes the log-Hz short-term spectral envelope of an audio file over time (used for the song side of the `ShortTermSpectrumComparisonPanel`). Implemented as `compute_st_spectrum_from_file` in `processor.py`; accepts an optional `audioOffset` in seconds. Returns the same base64-packed byte-matrix shape as the `stSpectrum*` fields of `analyze` (`times`, `b64`, `frames`, `bins`, `minDb`, `maxDb`). The encoded range is the absolute −100…0 dBFS: `librosa.amplitude_to_db` is called with `top_db=None` (its default of 80 used to lift the floor of a quiet passage to peak − 80 dB whenever the same file also held a loud one; blobs cached before 2026-10-09 carry that lifted floor and are not recomputed, since the cache marker is the bin count).

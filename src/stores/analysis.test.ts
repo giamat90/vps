@@ -11,6 +11,7 @@ vi.mock("../lib/spectroUtils", async (importOriginal) => ({
 }));
 
 import { useAnalysisStore } from "./analysis";
+import { useVoiceViewStore } from "./voiceView";
 
 const b64 = (bytes: number[]) => btoa(String.fromCharCode(...bytes));
 
@@ -41,6 +42,80 @@ beforeEach(() => {
   buildSpectroCanvas.mockReset();
   useAnalysisStore.setState(initial, true);
   useAnalysisStore.getState().clear();
+  useVoiceViewStore.setState({ showMultipleLines: false, mainVoice: "loudest" });
+});
+
+// 220 Hz with 277 Hz above it on frames 1-2, then 277 Hz leading over 220 Hz on frame 3.
+const duet = (): PitchData => ({
+  times: [0, 0.1, 0.2, 0.3],
+  f0: [220, 220, 220, 277],
+  f0Alt: [0, 277, 277, 220],
+  voiced: [true, true, true, true],
+  confidence: [0.9, 0.9, 0.9, 0.9],
+});
+const hz = (pts: { frequency: number }[]) => pts.map((p) => p.frequency);
+
+describe("second voice", () => {
+  it("loads the other singer as songPitchAlt, only where it sings", async () => {
+    loadAnalysis.mockResolvedValue({ pitchData: duet(), onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+    const s = useAnalysisStore.getState();
+    expect(hz(s.songPitch)).toEqual([220, 220, 220, 277]);
+    expect(hz(s.songPitchAlt)).toEqual([277, 277, 220]);
+    expect(s.songPitchAlt.map((p) => p.time)).toEqual([0.1, 0.2, 0.3]);
+  });
+
+  it("has no second line for a song analysed before it existed", async () => {
+    loadAnalysis.mockResolvedValue({ pitchData: pitchData(), onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+    expect(useAnalysisStore.getState().songPitchAlt).toEqual([]);
+  });
+
+  it("follows the user's main-voice choice when the song loads", async () => {
+    useVoiceViewStore.setState({ mainVoice: "higher" });
+    loadAnalysis.mockResolvedValue({ pitchData: duet(), onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+    expect(hz(useAnalysisStore.getState().songPitch)).toEqual([220, 277, 277, 277]);
+    expect(hz(useAnalysisStore.getState().songPitchAlt)).toEqual([220, 220, 220]);
+  });
+
+  it("re-arranges a loaded song when the choice changes, without reloading it", async () => {
+    loadAnalysis.mockResolvedValue({ pitchData: duet(), onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+
+    useVoiceViewStore.getState().setMainVoice("lower");
+    expect(hz(useAnalysisStore.getState().songPitch)).toEqual([220, 220, 220, 220]);
+    expect(hz(useAnalysisStore.getState().songPitchAlt)).toEqual([277, 277, 277]);
+
+    useVoiceViewStore.getState().setMainVoice("loudest");
+    expect(hz(useAnalysisStore.getState().songPitch)).toEqual([220, 220, 220, 277]);
+    expect(loadAnalysis).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not touch the take's line", async () => {
+    loadAnalysis.mockResolvedValue({ pitchData: duet(), onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+    useAnalysisStore.getState().loadTakeAnalysis(take({ pitchData: pitchData() }));
+    useVoiceViewStore.getState().setMainVoice("higher");
+    expect(hz(useAnalysisStore.getState().takePitch)).toEqual([220, 230, 240]);
+  });
+
+  it("is cleared with the rest of the analysis", async () => {
+    loadAnalysis.mockResolvedValue({ pitchData: duet(), onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+    useAnalysisStore.getState().clear();
+    expect(useAnalysisStore.getState().songPitchAlt).toEqual([]);
+    useVoiceViewStore.getState().setMainVoice("higher");
+    expect(useAnalysisStore.getState().songPitch).toEqual([]);
+  });
+
+  it("copes with the empty pitchData array load_analysis answers for a song without analysis", async () => {
+    loadAnalysis.mockResolvedValue({ pitchData: [], onsets: [], dynamics: [] });
+    await useAnalysisStore.getState().loadSongAnalysis("s");
+    useVoiceViewStore.getState().setMainVoice("higher");
+    expect(useAnalysisStore.getState().songPitch).toEqual([]);
+    expect(useAnalysisStore.getState().songPitchAlt).toEqual([]);
+  });
 });
 
 describe("loadSongAnalysis", () => {
