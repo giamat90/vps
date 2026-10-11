@@ -40,6 +40,9 @@ export interface DetachedPlayer {
   mutedTakeIds: string[];
   soloedTakeId: string | null;
   muteTakesWhileRecording: boolean;
+  /** Mirrors the main window's take mute; the other tracks are not shown here. */
+  mutedTracks: { vocals: boolean; instrumental: boolean; take: boolean };
+  soloedTrack: "vocals" | "instrumental" | "take" | null;
   takes: TakeSummary[];
   seek: (time: number) => void;
   setPunchIn: (time: number) => void;
@@ -108,6 +111,8 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
         takePlayback: shared.takePlayback,
         mutedTakeIds: shared.mutedTakeIds,
         soloedTakeId: shared.soloedTakeId,
+        mutedTracks: { vocals: false, instrumental: false, take: shared.takesSilenced },
+        soloedTrack: null,
         muteTakesWhileRecording: shared.muteTakesWhileRecording,
         takes: shared.takes,
         isPlaying: transport.playing,

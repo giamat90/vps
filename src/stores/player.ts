@@ -176,6 +176,7 @@ export function buildMixSources(state: PlayerState): {
       recording: false,
       muteWhileRecording: false,
       soloed: soloedTakeOf(state),
+      silenced: false,
     });
     for (const id of audible) {
       const take = state.takes.find((t) => t.id === id);
@@ -215,9 +216,14 @@ function applyEffectiveVolumes(state: {
 
 export type TrackKey = "vocals" | "instrumental" | "take";
 
-// A take soloed on its own lane: the take channel is soloed and names the take.
-const soloedTakeOf = (s: { soloedTrack: string | null; soloedTakeId: string | null }): string | null =>
-  s.soloedTrack === "take" ? s.soloedTakeId : null;
+// A take soloed on its own lane only chooses among the takes; it never touches the
+// other tracks, and the take channel's own mute / solo state outranks it.
+const soloedTakeOf = (s: { soloedTakeId: string | null }): string | null => s.soloedTakeId;
+
+/** The takes as a whole are silent: the main take mute is on, or another track is soloed. */
+export function takesSilenced(s: { mutedTracks: Record<TrackKey, boolean>; soloedTrack: TrackKey | null }): boolean {
+  return effectiveVolume("take", 1, s.mutedTracks, s.soloedTrack) === 0;
+}
 
 const selectionOf = (s: { shownTakeIds: string[]; activeTakeId: string | null }): TakeSelection => ({
   shown: s.shownTakeIds,
@@ -435,11 +441,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     set({
       shownTakeIds: [...next.shown],
       activeTakeId: next.active,
-      ...(s.soloedTakeId !== null && !stillSoloed
-        ? { soloedTakeId: null, soloedTrack: s.soloedTrack === "take" ? null : s.soloedTrack }
-        : {}),
+      ...(s.soloedTakeId !== null && !stillSoloed ? { soloedTakeId: null } : {}),
     });
-    if (s.soloedTakeId !== null && !stillSoloed) applyEffectiveVolumes(get());
   };
 
   return {
@@ -628,16 +631,12 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   },
 
   toggleSolo: (track) => {
-    set((s) => ({ soloedTrack: s.soloedTrack === track ? null : track, soloedTakeId: null }));
+    set((s) => ({ soloedTrack: s.soloedTrack === track ? null : track }));
     applyEffectiveVolumes(get());
   },
 
   toggleTakeSolo: (takeId) => {
-    set((s) => {
-      const on = s.soloedTrack === "take" && s.soloedTakeId === takeId;
-      return { soloedTrack: on ? null : "take", soloedTakeId: on ? null : takeId };
-    });
-    applyEffectiveVolumes(get());
+    set((s) => ({ soloedTakeId: s.soloedTakeId === takeId ? null : takeId }));
   },
 
   setTakeGain: (takeId, gain) => {
@@ -1119,9 +1118,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       activeTakeId: next.active,
       mutedTakeIds: state.mutedTakeIds.filter((id) => ids.includes(id)),
       takeGains: Object.fromEntries(Object.entries(state.takeGains).filter(([id]) => ids.includes(id))),
-      ...(state.soloedTakeId !== null && !ids.includes(state.soloedTakeId)
-        ? { soloedTakeId: null, soloedTrack: state.soloedTrack === "take" ? null : state.soloedTrack }
-        : {}),
+      ...(state.soloedTakeId !== null && !ids.includes(state.soloedTakeId) ? { soloedTakeId: null } : {}),
     }));
   },
 
@@ -1136,7 +1133,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       activeTakeId: next.active,
       mutedTakeIds: state.mutedTakeIds.filter((id) => id !== takeId),
       takeGains: Object.fromEntries(Object.entries(state.takeGains).filter(([id]) => id !== takeId)),
-      ...(state.soloedTakeId === takeId ? { soloedTakeId: null, soloedTrack: state.soloedTrack === "take" ? null : state.soloedTrack } : {}),
+      ...(state.soloedTakeId === takeId ? { soloedTakeId: null } : {}),
     }));
   },
 
@@ -1365,6 +1362,7 @@ function pushTakeAudio(state: PlayerState): void {
       recording: state.isRecording,
       muteWhileRecording: state.muteTakesWhileRecording,
       soloed: soloedTakeOf(state),
+      silenced: takesSilenced(state),
     }),
   );
 }
@@ -1380,6 +1378,7 @@ usePlayerStore.subscribe((state, prev) => {
     state.mutedTakeIds === prev.mutedTakeIds &&
     state.soloedTakeId === prev.soloedTakeId &&
     state.soloedTrack === prev.soloedTrack &&
+    state.mutedTracks === prev.mutedTracks &&
     state.takeGains === prev.takeGains &&
     state.isRecording === prev.isRecording &&
     state.muteTakesWhileRecording === prev.muteTakesWhileRecording

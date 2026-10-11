@@ -44,6 +44,8 @@ const h = vi.hoisted(() => ({
 vi.mock("../../stores/player", () => ({
   usePlayerStore: Object.assign((sel: (s: unknown) => unknown) => sel(h.state), { getState: () => h.state }),
   getEngine: () => ({}),
+  takesSilenced: (s: { mutedTracks: { take: boolean }; soloedTrack: string | null }) =>
+    s.soloedTrack !== null ? s.soloedTrack !== "take" : s.mutedTracks.take,
 }));
 vi.mock("../../stores/analysis", () => ({
   useAnalysisStore: (sel: (s: unknown) => unknown) => sel({ previewTakeManualOffset: () => {} }),
@@ -71,6 +73,7 @@ beforeEach(() => {
   h.state.soloedTakeId = null;
   h.state.soloedTrack = null;
   h.state.takeGains = {};
+  h.state.mutedTracks = { vocals: false, instrumental: false, take: false };
   h.state.isRecording = false;
   h.state.muteTakesWhileRecording = true;
 });
@@ -95,7 +98,7 @@ describe("take lanes", () => {
     h.state.shownTakeIds = ["a", "b"];
     h.state.activeTakeId = "b";
     const html = render();
-    expect(html.match(/title="Mute (Take 1|Verse)"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Mute (Take 1|Verse)"/g)).toHaveLength(2);
   });
 
   it("marks a muted lane as muted and silent", () => {
@@ -103,7 +106,7 @@ describe("take lanes", () => {
     h.state.activeTakeId = "b";
     h.state.mutedTakeIds = ["a"];
     const html = render();
-    expect(html).toContain('title="Unmute Take 1"');
+    expect(html).toContain('aria-label="Unmute Take 1"');
     expect(lanes(html)).toEqual(["waveform__track--silent", "waveform__track--active"]);
   });
 
@@ -112,8 +115,8 @@ describe("take lanes", () => {
     h.state.activeTakeId = "b";
     h.state.takePlayback = "selected";
     const html = render();
-    expect(html.match(/title="Mute (Take 1|Verse)"/g)).toHaveLength(2);
-    expect(html.match(/title="Solo (Take 1|Verse)"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Mute (Take 1|Verse)"/g)).toHaveLength(2);
+    expect(html.match(/aria-label="Solo (Take 1|Verse)"/g)).toHaveLength(2);
     expect(lanes(html)).toEqual(["waveform__track--silent", "waveform__track--active"]);
   });
 
@@ -132,7 +135,7 @@ describe("take lanes", () => {
     h.state.soloedTrack = "take";
     h.state.soloedTakeId = "a";
     const html = render();
-    expect(html).toContain('title="Unsolo Take 1"');
+    expect(html).toContain('aria-label="Unsolo Take 1"');
     expect(lanes(html)).toEqual(["", "waveform__track--active waveform__track--silent"]);
   });
 
@@ -142,7 +145,7 @@ describe("take lanes", () => {
     const html = render();
     const name = html.indexOf("waveform__take-name");
     const sync = html.indexOf("waveform__take-sync");
-    const controls = html.indexOf('title="Mute Take 1"');
+    const controls = html.indexOf('aria-label="Mute Take 1"');
     expect(name).toBeLessThan(sync);
     expect(sync).toBeLessThan(controls);
   });
@@ -165,6 +168,37 @@ describe("take lanes", () => {
     h.state.activeTakeId = "b";
     h.state.isRecording = true;
     expect(lanes(render())).toEqual(["waveform__track--silent", "waveform__track--active waveform__track--silent"]);
+  });
+
+  it("dims every lane when the main take mute is on, whatever the lanes say", () => {
+    h.state.shownTakeIds = ["a", "b"];
+    h.state.activeTakeId = "b";
+    h.state.soloedTakeId = "a";
+    h.state.mutedTracks = { vocals: false, instrumental: false, take: true };
+    expect(lanes(render())).toEqual(["waveform__track--silent", "waveform__track--active waveform__track--silent"]);
+  });
+
+  it("dims the takes when another track is soloed", () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    h.state.soloedTrack = "vocals";
+    expect(lanes(render())).toEqual(["waveform__track--active waveform__track--silent"]);
+  });
+
+  it("says in the main buttons' tooltips that they come before the lanes", () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    const html = render();
+    expect(html).toContain("This main mute wins over the mute and solo on each take");
+    expect(html).toContain("Solo on a take then picks one take among them");
+  });
+
+  it("says in a lane's tooltips that it does not affect the other tracks", () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    const html = render();
+    expect(html).toContain("The other tracks are not affected, and the main take mute and solo above still come first");
+    expect(html).toContain("The main take mute and solo above still come first");
   });
 
   it("has a hide button on every lane", () => {

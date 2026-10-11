@@ -31,6 +31,8 @@ const take = (id: string, extra: Partial<Take> = {}) =>
 
 const SONG = { id: "s1", title: "Song", kind: "vocal" } as never;
 
+const silenced = { value: false };
+
 function setup() {
   const seek = vi.fn();
   const setPunchIn = vi.fn();
@@ -68,6 +70,7 @@ function setup() {
       return unlisten;
     },
     now: () => nowMs,
+    takesSilenced: () => silenced.value,
   };
 
   return {
@@ -87,6 +90,7 @@ function setup() {
 }
 
 beforeEach(() => {
+  silenced.value = false;
   vi.useFakeTimers();
 });
 

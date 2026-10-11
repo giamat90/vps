@@ -58,6 +58,8 @@ export interface MainBridgeDeps {
   emit: (event: string, payload: unknown) => void | Promise<void>;
   listen: (event: string, cb: (payload: unknown) => void) => Promise<() => void>;
   now: () => number;
+  /** The main take mute is on, or another track is soloed: no take is heard. */
+  takesSilenced: () => boolean;
   /** The part of the spectrum comparison that needs the engine or the microphone. */
   spectrum?: { read(): SpectrumMessage | null; reset?(): void };
 }
@@ -187,6 +189,7 @@ export function startMainBridge(deps: MainBridgeDeps): Promise<{ dispose(): void
         takePlayback: p.takePlayback,
         mutedTakeIds: p.mutedTakeIds,
         soloedTakeId: p.soloedTakeId,
+        takesSilenced: deps.takesSilenced(),
         muteTakesWhileRecording: p.muteTakesWhileRecording,
         takes: lastSummaries,
       };

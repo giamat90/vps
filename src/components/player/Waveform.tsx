@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent } from "react";
-import { usePlayerStore, getEngine, type TrackKey } from "../../stores/player";
+import { usePlayerStore, getEngine, takesSilenced, type TrackKey } from "../../stores/player";
 import { useAnalysisStore } from "../../stores/analysis";
 import TimeRuler from "./TimeRuler";
 import type { Song, Take } from "../../lib/types";
@@ -51,20 +51,37 @@ function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
   const soloed      = usePlayerStore((s) => s.soloedTrack === track);
   const toggleMute  = usePlayerStore((s) => s.toggleMute);
   const toggleSolo  = usePlayerStore((s) => s.toggleSolo);
+  const forTakes    = track === "take";
 
   return (
     <div className="waveform__track-controls">
       <button
         className={`waveform__mute${muted ? " waveform__mute--on" : ""}`}
         onClick={() => toggleMute(track)}
-        title={muted ? "Unmute" : "Mute"}
+        title={
+          forTakes
+            ? muted
+              ? "Unmute the takes"
+              : "Mute all the takes. This main mute wins over the mute and solo on each take."
+            : muted
+              ? "Unmute"
+              : "Mute"
+        }
       >
         M
       </button>
       <button
         className={`waveform__solo${soloed ? " waveform__solo--on" : ""}`}
         onClick={() => toggleSolo(track)}
-        title={soloed ? "Unsolo" : "Solo this track"}
+        title={
+          forTakes
+            ? soloed
+              ? "Stop soloing the takes"
+              : "Solo the takes: only the takes are heard and the other tracks go quiet. Solo on a take then picks one take among them."
+            : soloed
+              ? "Unsolo"
+              : "Solo this track"
+        }
       >
         S
       </button>
@@ -268,7 +285,8 @@ function Waveform({ song }: WaveformProps) {
   const toggleTakeSolo        = usePlayerStore((s) => s.toggleTakeSolo);
   const setTakeGain           = usePlayerStore((s) => s.setTakeGain);
   const takeGains             = usePlayerStore((s) => s.takeGains);
-  const soloedTakeId          = usePlayerStore((s) => (s.soloedTrack === "take" ? s.soloedTakeId : null));
+  const soloedTakeId          = usePlayerStore((s) => s.soloedTakeId);
+  const takeChannelSilent     = usePlayerStore((s) => takesSilenced(s));
   const setMuteTakesWhileRecording = usePlayerStore((s) => s.setMuteTakesWhileRecording);
   const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
   const isLoading        = useRef(false);
@@ -288,6 +306,7 @@ function Waveform({ song }: WaveformProps) {
     recording: isRecording,
     muteWhileRecording: muteTakesWhileRecording,
     soloed: soloedTakeId,
+    silenced: takeChannelSilent,
   });
 
   useEffect(() => {
@@ -497,7 +516,12 @@ function Waveform({ song }: WaveformProps) {
                     className={`waveform__mute${isMuted ? " waveform__mute--on" : ""}`}
                     onClick={() => toggleTakeMute(take.id)}
                     aria-pressed={isMuted}
-                    title={isMuted ? `Unmute ${label}` : `Mute ${label}`}
+                    aria-label={isMuted ? `Unmute ${label}` : `Mute ${label}`}
+                    title={
+                      isMuted
+                        ? `Unmute ${label}`
+                        : `Mute ${label}. The main take mute and solo above still come first.`
+                    }
                   >
                     M
                   </button>
@@ -506,7 +530,12 @@ function Waveform({ song }: WaveformProps) {
                     className={`waveform__solo${isSoloed ? " waveform__solo--on" : ""}`}
                     onClick={() => toggleTakeSolo(take.id)}
                     aria-pressed={isSoloed}
-                    title={isSoloed ? `Unsolo ${label}` : `Solo ${label}`}
+                    aria-label={isSoloed ? `Unsolo ${label}` : `Solo ${label}`}
+                    title={
+                      isSoloed
+                        ? `Unsolo ${label}`
+                        : `Solo ${label} among the takes. The other tracks are not affected, and the main take mute and solo above still come first.`
+                    }
                   >
                     S
                   </button>

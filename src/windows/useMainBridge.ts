@@ -4,7 +4,7 @@ import { closeDetachedPanel, closeDetachedWindows } from "../lib/tauri";
 import { useAnalysisStore } from "../stores/analysis";
 import { useDetachedStore } from "../stores/detached";
 import { usePracticePanels } from "../stores/panels";
-import { usePlayerStore } from "../stores/player";
+import { takesSilenced, usePlayerStore } from "../stores/player";
 import { startMainBridge } from "./mainBridge";
 import { panelsToClose } from "./panelsToClose";
 import { EVT_DOCKED } from "./protocol";
@@ -34,6 +34,7 @@ export function useMainBridge(): void {
       emit: (event, payload) => emit(event, payload),
       listen: (event, cb) => listen(event, (e) => cb(e.payload)),
       now: () => Date.now(),
+      takesSilenced: () => takesSilenced(usePlayerStore.getState()),
     })
       .then((b) => {
         if (cancelled) b.dispose();
