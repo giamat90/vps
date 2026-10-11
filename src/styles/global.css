@@ -1050,8 +1050,8 @@ button.waveform__take-name {
   opacity: 0.45;
 }
 
-/* The recorded takes are a section of their own, apart from the vocal and instrumental tracks.
-   It scrolls by itself, so those waveforms stay in view however many takes are shown. */
+/* The recorded takes are set apart from the vocal and instrumental tracks by a divider only:
+   they are part of the same widget and scroll with it, not in a scroll area of their own. */
 .waveform__takes {
   display: flex;
   flex-direction: column;
@@ -1059,12 +1059,9 @@ button.waveform__take-name {
   margin-top: 0.5rem;
   padding-top: 0.75rem;
   border-top: 0.15rem solid var(--bg-surface);
-  max-height: 45vh;
-  overflow-y: auto;
 }
 
-/* Never let the lanes shrink to fit the cap: their waveform area has overflow hidden, so a
-   shrunk lane would hide the waveform. The section scrolls instead. */
+/* A lane's waveform area has overflow hidden, so a lane must never be squeezed. */
 .waveform__takes > * {
   flex-shrink: 0;
 }
@@ -1075,10 +1072,6 @@ button.waveform__take-name {
   flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.25rem 0.1rem;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  background: var(--bg-primary);
 }
 
 /* The take channel's mute / solo / volume sit at the far right, like every other track's */
