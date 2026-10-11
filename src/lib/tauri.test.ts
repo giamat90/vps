@@ -51,6 +51,14 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["deleteExerciseTakeApi", () => api.deleteExerciseTakeApi("e1"), "delete_exercise_take", { takeId: "e1" }],
     ["importExerciseFile", () => api.importExerciseFile("/f.wav", 12), "import_exercise_file",
       { filePath: "/f.wav", duration: 12 }],
+    ["detachPanel", () => api.detachPanel("pianoRoll", 2460, 584), "detach_panel",
+      { panelId: "pianoRoll", x: 2460, y: 584 }],
+    ["detachPanelRemembered", () => api.detachPanel("lyrics"), "detach_panel",
+      { panelId: "lyrics", x: null, y: null }],
+    ["closeDetachedPanel", () => api.closeDetachedPanel("coach"), "close_detached_panel", { panelId: "coach" }],
+    ["dockPanel", () => api.dockPanel(), "dock_panel", undefined],
+    ["cursorOverMain", () => api.cursorOverMain(), "cursor_over_main", undefined],
+    ["closeDetachedWindows", () => api.closeDetachedWindows(), "close_detached_windows", undefined],
   ];
 
   it.each(cases)("%s", async (_name, call, command, payload) => {
@@ -62,7 +70,7 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
 
   it("covers every exported command wrapper", () => {
     const wrappers = Object.entries(api).filter(([, v]) => typeof v === "function").map(([k]) => k);
-    const covered = new Set(cases.map(([name]) => name).concat("onProcessingProgress"));
+    const covered = new Set(cases.map(([name]) => name).concat("onProcessingProgress", "detachPanelRemembered"));
     expect(wrappers.filter((w) => !covered.has(w))).toEqual([]);
   });
 

@@ -77,6 +77,8 @@ interface AnalysisState {
   takeSTSpectrum: STSpectrum | null;
   timingDeviations: TimingDeviation[];
   livePitch: PitchPoint[];
+  /** Deviation of the live voice from the reference, in cents; null when not listening. */
+  liveCents: number | null;
   isLoaded: boolean;
 }
 
@@ -88,6 +90,7 @@ interface AnalysisActions {
   loadExerciseTakeAnalysis: (take: ExerciseTake) => void;
   appendLivePitch: (point: PitchPoint) => void;
   clearLivePitch: () => void;
+  setLiveCents: (cents: number | null) => void;
   clear: () => void;
 }
 
@@ -104,6 +107,7 @@ const empty: AnalysisState = {
   takeSTSpectrum: null,
   timingDeviations: [],
   livePitch: [],
+  liveCents: null,
   isLoaded: false,
 };
 
@@ -223,6 +227,8 @@ export const useAnalysisStore = create<AnalysisState & AnalysisActions>(
       set((s) => ({ livePitch: [...s.livePitch, point] })),
 
     clearLivePitch: () => set({ livePitch: [] }),
+
+    setLiveCents: (cents) => set({ liveCents: cents }),
 
     clear: () => set(empty),
   })

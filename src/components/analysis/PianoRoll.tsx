@@ -1,6 +1,7 @@
 import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
-import { getEngine, usePlayerStore } from "../../stores/player";
+import { usePlayerStore } from "../../stores/player";
+import { getPlaybackTime } from "../../windows/playbackClock";
 import { frequencyToMidi, NOTE_NAMES } from "@giamat90/mps-core/music";
 import {
   PIANO_WINDOW_SIZE,
@@ -414,7 +415,7 @@ export default function PianoRoll() {
         }
         const rCtx = ruler.getContext("2d");
         if (rCtx) {
-          const ct = getEngine().getCurrentTime();
+          const ct = getPlaybackTime();
           const ov = rulerOverride.current;
           drawRuler(
             rCtx, rW, rH, ct,
@@ -439,7 +440,7 @@ export default function PianoRoll() {
       ctx.fillStyle = "#0f0f1e";
       ctx.fillRect(0, 0, W, H);
 
-      const currentTime = getEngine().getCurrentTime();
+      const currentTime = getPlaybackTime();
       const t0 = currentTime - WINDOW_S / 2;
       const t1 = currentTime + WINDOW_S / 2;
       const rollW = W - PIANO_W;
@@ -524,7 +525,7 @@ export default function PianoRoll() {
     e.preventDefault();
 
     const rollW = canvas.offsetWidth - PIANO_W;
-    const capturedT0 = getEngine().getCurrentTime() - WINDOW_S / 2;
+    const capturedT0 = getPlaybackTime() - WINDOW_S / 2;
     const x = e.nativeEvent.offsetX;
     const xToT = (px: number) => capturedT0 + ((px - PIANO_W) / rollW) * WINDOW_S;
     const tX   = (t: number)  => PIANO_W + ((t - capturedT0) / WINDOW_S) * rollW;
@@ -556,7 +557,7 @@ export default function PianoRoll() {
 
     if (!mode) {
       if (!isRecording && punchIn !== null && punchOut !== null) {
-        const ct = getEngine().getCurrentTime();
+        const ct = getPlaybackTime();
         const t0live = ct - WINDOW_S / 2;
         const tXlive = (time: number) => PIANO_W + ((time - t0live) / WINDOW_S) * rollW;
         const xi = tXlive(punchIn);
@@ -622,7 +623,7 @@ export default function PianoRoll() {
       const canvas = canvasRef.current;
       const H = canvas?.offsetHeight ?? 0;
       const midi = midiFromY(e.nativeEvent.offsetY, H, windowMinRef.current);
-      const now = getEngine().getCurrentTime();
+      const now = getPlaybackTime();
       stripDrag.current.voice?.release();
       stripDrag.current = {
         active: true,
@@ -636,7 +637,7 @@ export default function PianoRoll() {
     rollDrag.current = {
       active: true,
       startX: e.nativeEvent.offsetX,
-      startTime: getEngine().getCurrentTime(),
+      startTime: getPlaybackTime(),
     };
   };
 
@@ -646,7 +647,7 @@ export default function PianoRoll() {
       const H = canvas?.offsetHeight ?? 0;
       const midi = midiFromY(e.nativeEvent.offsetY, H, windowMinRef.current);
       if (midi !== stripDrag.current.lastMidi) {
-        const now = getEngine().getCurrentTime();
+        const now = getPlaybackTime();
         stripDrag.current.voice?.release();
         stripDrag.current.lastMidi = midi;
         stripDrag.current.voice = startPreviewNote(midi, selectedOutputDeviceId);
@@ -671,7 +672,7 @@ export default function PianoRoll() {
       stripDrag.current.voice?.release();
       stripDrag.current.active = false;
       stripDrag.current.voice = null;
-      endPreview(getEngine().getCurrentTime());
+      endPreview(getPlaybackTime());
     }
   };
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { open } from "@tauri-apps/plugin-dialog";
 import PianoRoll from "../components/analysis/PianoRoll";
 import PianoKeyboard from "../components/analysis/PianoKeyboard";
+import LivePitchFeed from "../components/analysis/LivePitchFeed";
 import SpectrogramPanel from "../components/analysis/SpectrogramPanel";
 import ShortTermSpectrumPanel from "../components/analysis/ShortTermSpectrumPanel";
 import DynamicsCurve from "../components/analysis/DynamicsCurve";
@@ -111,6 +112,8 @@ function ExercisePage({ onBack }: ExercisePageProps) {
           {formatElapsed(currentTime)}
         </span>
       </header>
+
+      <LivePitchFeed />
 
       <div className="exercise-page__keyboard">
         <PianoKeyboard />

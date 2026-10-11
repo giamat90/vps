@@ -6,6 +6,18 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [Unreleased]
+
+### Added
+- Any panel of the practice room (Takes, Lyrics, Piano roll, Spectrum comparison, Dynamics, Vibrato, Timing, Coach) can be dragged out of the window into a window of its own, for a second monitor, or popped out with its button. The detached window follows playback, recording and the selected take; clicking or dragging in it (seek, punch region, select / rename / delete a take) acts on the main window. Dock it with its button or by closing it.
+- A detached window opens where it was last (and the same size) when that is still on a connected monitor.
+- The Panels menu marks panels that are in their own window, and hiding one closes its window.
+- A detached panel goes back by carrying the grip in its bar over the main window and letting go (the Dock button and closing the window still work).
+
+### Changed
+- The window plumbing (playhead clock, event bridges, drag gestures) now comes from `mps-core` v0.3.0.
+- The live pitch trace and the tuner reading no longer depend on the piano keyboard being on screen: they keep running while recording or monitoring whichever panels are shown, hidden or detached.
+
 ## [0.1.65] - 2026-10-10
 
 ### Added

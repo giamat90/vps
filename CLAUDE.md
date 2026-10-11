@@ -148,6 +148,7 @@ VPS/
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
 │   │   ├── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
 │   │   └── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
+│   ├── windows/           detachable panels (spike): VPS-specific state, commands and streams on top of `@giamat90/mps-core/windows` — see wiki/detachable-panels.md
 │   ├── pages/
 │   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)
 │   │   ├── PracticeRoom.tsx   main practice UI (waveforms + analysis + recording)

@@ -1,7 +1,5 @@
-import { useRef, useEffect, useState } from "react";
-import { PitchDetector } from "../../audio/pitchDetector";
 import { useAnalysisStore } from "../../stores/analysis";
-import { usePlayerStore, getMonitorStream, getRecorderStream } from "../../stores/player";
+import { usePlayerStore } from "../../stores/player";
 import { pitchAtTime, centsDeviation } from "../../audio/analysisUtils";
 
 // ─── horizontal bar tuner constants ──────────────────────────────────────────
@@ -19,76 +17,18 @@ function centsToX(c: number): number {
   return TRACK_CX + Math.max(-50, Math.min(50, c)) * PX_PER_CENT;
 }
 
+/**
+ * Only draws the gauge. The live reading comes from the headless
+ * LivePitchFeed, so this works the same in a detached window.
+ */
 export default function DualTuner() {
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const isPlaying    = usePlayerStore((s) => s.isPlaying);
   const currentTime  = usePlayerStore((s) => s.currentTime);
-  const exerciseMode = usePlayerStore((s) => s.exerciseMode);
   const songPitch    = useAnalysisStore((s) => s.songPitch);
   const takePitch    = useAnalysisStore((s) => s.takePitch);
-  // Free Exercise has no song; a loaded track's pitch (stored as takePitch) is the reference.
-  const refPitch     = exerciseMode ? takePitch : songPitch;
-  const appendLivePitch = useAnalysisStore((s) => s.appendLivePitch);
-  const clearLivePitch  = useAnalysisStore((s) => s.clearLivePitch);
-
-  const [liveCents, setLiveCents] = useState<number | null>(null);
-  const detectorRef = useRef<PitchDetector | null>(null);
-  const rafRef      = useRef<number>(0);
-
-  const currentTimeRef   = useRef(currentTime);
-  const refPitchRef      = useRef(refPitch);
-  const appendLiveRef    = useRef(appendLivePitch);
-  const clearLiveRef     = useRef(clearLivePitch);
-  useEffect(() => { currentTimeRef.current = currentTime; },    [currentTime]);
-  useEffect(() => { refPitchRef.current = refPitch; },          [refPitch]);
-  useEffect(() => { appendLiveRef.current = appendLivePitch; }, [appendLivePitch]);
-  useEffect(() => { clearLiveRef.current = clearLivePitch; },   [clearLivePitch]);
-
-  useEffect(() => {
-    // Monitoring alone isn't enough — while paused, currentTime is frozen, so a
-    // running detector would keep appending points at the same time, painting a
-    // stale smear on the piano roll instead of a trace. Recording always implies
-    // isPlaying (see stores/player.ts), so this only changes monitor-only behavior.
-    const isActive = isRecording || (isMonitoring && isPlaying);
-    if (!isActive) {
-      if (detectorRef.current) { detectorRef.current.stop(); detectorRef.current = null; }
-      cancelAnimationFrame(rafRef.current);
-      clearLiveRef.current();
-      setLiveCents(null);
-      return;
-    }
-
-    const stream = isMonitoring ? getMonitorStream() : getRecorderStream();
-    if (!stream) return;
-
-    clearLiveRef.current();
-
-    const det = new PitchDetector();
-    det.start(stream);
-    detectorRef.current = det;
-
-    let rafActive = true;
-    const tick = () => {
-      const reading = det.getCurrentPitch();
-      if (reading) {
-        const t   = currentTimeRef.current;
-        const ref = pitchAtTime(refPitchRef.current, t);
-        if (ref && ref.frequency > 0) {
-          setLiveCents(centsDeviation(reading.frequency, ref.frequency));
-        } else {
-          setLiveCents(reading.cents);
-        }
-        if (reading.frequency > 0) {
-          appendLiveRef.current({ time: t, frequency: reading.frequency, confidence: 1.0 });
-        }
-      }
-      if (rafActive) rafRef.current = requestAnimationFrame(tick);
-    };
-    rafRef.current = requestAnimationFrame(tick);
-
-    return () => { rafActive = false; cancelAnimationFrame(rafRef.current); };
-  }, [isRecording, isMonitoring, isPlaying]);
+  const liveCents    = useAnalysisStore((s) => s.liveCents);
 
   // ─── derive display values ────────────────────────────────────────────────
 
