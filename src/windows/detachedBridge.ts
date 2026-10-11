@@ -1,3 +1,4 @@
+import { toggleTake } from "@giamat90/mps-core/takes";
 import { createDetachedBridge } from "@giamat90/mps-core/windows";
 import type { PitchPoint, Take } from "../lib/types";
 import {
@@ -34,12 +35,13 @@ export interface DetachedPlayer {
   punchLoop: boolean;
   selectedOutputDeviceId: string | null;
   activeTakeId: string | null;
+  shownTakeIds: string[];
   takes: TakeSummary[];
   seek: (time: number) => void;
   setPunchIn: (time: number) => void;
   setPunchOut: (time: number) => void;
   clearPunch: () => void;
-  setActiveTake: (id: string) => void;
+  toggleTake: (id: string) => void;
   deleteTake: (id: string) => Promise<void>;
   renameTake: (id: string, name: string) => Promise<void>;
 }
@@ -98,6 +100,7 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
         punchLoop: shared.punchLoop,
         selectedOutputDeviceId: shared.selectedOutputDeviceId,
         activeTakeId: shared.activeTake?.id ?? null,
+        shownTakeIds: shared.shownTakeIds,
         takes: shared.takes,
         isPlaying: transport.playing,
         playbackRate: transport.rate,
@@ -148,9 +151,11 @@ export async function startDetachedBridge(deps: DetachedBridgeDeps): Promise<{ d
     setPunchIn: (time) => bridge.command({ type: "setPunchIn", time }),
     setPunchOut: (time) => bridge.command({ type: "setPunchOut", time }),
     clearPunch: () => bridge.command({ type: "clearPunch" }),
-    setActiveTake: (id) => {
-      player.setState({ activeTakeId: id });
-      bridge.command({ type: "setActiveTake", id });
+    toggleTake: (id) => {
+      const { shownTakeIds, activeTakeId } = player.getState();
+      const next = toggleTake({ shown: shownTakeIds, active: activeTakeId }, id);
+      player.setState({ shownTakeIds: [...next.shown], activeTakeId: next.active });
+      bridge.command({ type: "toggleTake", id });
     },
     deleteTake: async (id) => bridge.command({ type: "deleteTake", id }),
     renameTake: async (id, name) => bridge.command({ type: "renameTake", id, name }),

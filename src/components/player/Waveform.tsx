@@ -87,7 +87,7 @@ function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
 // Unclamped in both directions — dragging left of song time 0 is allowed
 // (the leading part of the take before song time 0 just isn't reachable
 // during playback; the recorded file itself is never trimmed or modified).
-function TakeSyncControls({ take }: { take: Take }) {
+function TakeSyncControls({ take, isActive }: { take: Take; isActive: boolean }) {
   const minPxPerSec = usePlayerStore((s) => s.minPxPerSec);
   const setTakeManualOffset = usePlayerStore((s) => s.setTakeManualOffset);
   const previewTakeManualOffset = useAnalysisStore((s) => s.previewTakeManualOffset);
@@ -131,12 +131,13 @@ function TakeSyncControls({ take }: { take: Take }) {
       setDragging(true);
     }
     const newOffset = d.startOffset + deltaPx / minPxPerSec;
-    getEngine().setTakeManualOffset(newOffset);
+    getEngine().setTakeManualOffset(take.id, newOffset);
     // Live-track PianoRoll/ShortTermSpectrumComparisonPanel so the user can
     // eyeball pitch/spectral alignment while still dragging, not just after
-    // release — throttled since each call re-derives point arrays.
+    // release — throttled since each call re-derives point arrays. Those
+    // overlays show the active take only.
     const now = performance.now();
-    if (now - lastPreviewAt.current >= TAKE_PREVIEW_THROTTLE_MS) {
+    if (isActive && now - lastPreviewAt.current >= TAKE_PREVIEW_THROTTLE_MS) {
       lastPreviewAt.current = now;
       previewTakeManualOffset(take, newOffset);
     }
@@ -245,9 +246,9 @@ function Waveform({ song }: WaveformProps) {
   const timelineRef      = useRef<HTMLDivElement>(null);
   const vocalsRef        = useRef<HTMLDivElement>(null);
   const instrumentalRef  = useRef<HTMLDivElement>(null);
-  const takeRef          = useRef<HTMLDivElement>(null);
   const loadSong         = usePlayerStore((s) => s.loadSong);
   const activeTakeId     = usePlayerStore((s) => s.activeTakeId);
+  const shownTakeIds     = usePlayerStore((s) => s.shownTakeIds);
   const takes            = usePlayerStore((s) => s.takes);
   const vocalsVolume       = usePlayerStore((s) => s.vocalsVolume);
   const instrumentalVolume = usePlayerStore((s) => s.instrumentalVolume);
@@ -255,12 +256,18 @@ function Waveform({ song }: WaveformProps) {
   const setVocalsVolume       = usePlayerStore((s) => s.setVocalsVolume);
   const setInstrumentalVolume = usePlayerStore((s) => s.setInstrumentalVolume);
   const setTakeVolume         = usePlayerStore((s) => s.setTakeVolume);
+  const setActiveTake         = usePlayerStore((s) => s.setActiveTake);
+  const hideTake              = usePlayerStore((s) => s.hideTake);
   const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
   const isLoading        = useRef(false);
-  const loadedTakeId     = useRef<string | null>(null);
+  // Lane containers by take id, and the takes currently loaded into the engine
+  const takeRails        = useRef(new Map<string, HTMLDivElement>());
+  const loadedTakes      = useRef(new Set<string>());
   const [loadError, setLoadError] = useState<string | null>(null);
   const isInstrument = song.kind === "instrument";
-  const activeTake = takes.find((t) => t.id === activeTakeId) ?? null;
+  const shownTakes = shownTakeIds
+    .map((id) => takes.find((t) => t.id === id))
+    .filter((t): t is Take => t !== undefined);
 
   useEffect(() => {
     if (!vocalsRef.current || !instrumentalRef.current || isLoading.current) return;
@@ -278,22 +285,28 @@ function Waveform({ song }: WaveformProps) {
     return () => { isLoading.current = false; };
   }, [song.id]);
 
-  // Load (or clear) the take track whenever the active take changes.
+  // Keep the engine's take tracks in step with the lanes on screen: load the
+  // ones that appeared, drop the ones that were hidden or deleted.
   useEffect(() => {
     const eng = getEngine();
-    if (!activeTakeId) {
-      eng.clearTakeTrack();
-      loadedTakeId.current = null;
-      return;
+    const wanted = new Set(shownTakes.map((t) => t.id));
+    for (const id of [...loadedTakes.current]) {
+      if (wanted.has(id)) continue;
+      eng.removeTakeTrack(id);
+      loadedTakes.current.delete(id);
     }
-    if (activeTakeId === loadedTakeId.current) return;
-    const take = takes.find((t) => t.id === activeTakeId);
-    if (!take || !takeRef.current) return;
-    loadedTakeId.current = activeTakeId;
-    eng.loadTakeTrack(take.filepath, takeRef.current, take.startPosition, take.audioOffset ?? 0, take.manualOffset ?? 0)
-      .then(() => syncTrackVolumes())
-      .catch((e: unknown) => console.error("[Waveform] loadTakeTrack failed:", e));
-  }, [activeTakeId, takes]);
+    for (const take of shownTakes) {
+      const rail = takeRails.current.get(take.id);
+      if (loadedTakes.current.has(take.id) || !rail) continue;
+      loadedTakes.current.add(take.id);
+      eng.loadTakeTrack(take.id, take.filepath, rail, take.startPosition, take.audioOffset ?? 0, take.manualOffset ?? 0)
+        .then(() => syncTrackVolumes())
+        .catch((e: unknown) => {
+          loadedTakes.current.delete(take.id);
+          console.error("[Waveform] loadTakeTrack failed:", e);
+        });
+    }
+  }, [shownTakeIds, takes]);
 
   // Ctrl+wheel zoom-to-cursor / shift+wheel pan. Attached as a native,
   // non-passive listener — React's onWheel prop is passive since React 17,
@@ -386,21 +399,50 @@ function Waveform({ song }: WaveformProps) {
           </div>
         </div>
 
-        {activeTakeId && activeTake && (
-          <div className="waveform__track">
-            <div className="waveform__track-header">
-              <span className="waveform__label waveform__label--take">Take</span>
-              <TakeSyncControls take={activeTake} />
-              <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />
-            </div>
-            <div className="waveform__track-body">
-              <div className="waveform__take-rail">
-                <div ref={takeRef} />
+        {shownTakes.map((take) => {
+          const isActive = take.id === activeTakeId;
+          const label = take.name || `Take ${takes.indexOf(take) + 1}`;
+          return (
+            <div
+              key={take.id}
+              className={`waveform__track waveform__track--take${isActive ? " waveform__track--active" : " waveform__track--silent"}`}
+            >
+              <div className="waveform__track-header">
+                <button
+                  type="button"
+                  className="waveform__label waveform__label--take waveform__take-name"
+                  onClick={() => setActiveTake(take.id)}
+                  title={isActive ? "This take is playing" : "Play this take instead"}
+                  aria-pressed={isActive}
+                >
+                  {label}
+                </button>
+                <TakeSyncControls take={take} isActive={isActive} />
+                {isActive && <TrackControls track="take" volume={takeVolume} onVolumeChange={setTakeVolume} />}
+                <button
+                  type="button"
+                  className="waveform__take-hide"
+                  onClick={() => hideTake(take.id)}
+                  title="Hide this take (it stays in the list)"
+                  aria-label={`Hide ${label}`}
+                >
+                  &times;
+                </button>
               </div>
-              <PunchOverlay />
+              <div className="waveform__track-body">
+                <div className="waveform__take-rail">
+                  <div
+                    ref={(el) => {
+                      if (el) takeRails.current.set(take.id, el);
+                      else takeRails.current.delete(take.id);
+                    }}
+                  />
+                </div>
+                <PunchOverlay />
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })}
       </div>
     </div>
   );

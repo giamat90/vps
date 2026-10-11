@@ -68,7 +68,7 @@ After a successful open, `stream.getAudioTracks()[0].getSettings()` is logged to
 ## startRecording Sequence
 
 ```
-0a. if (activeTakeId) set activeTakeId=null + eng.clearTakeTrack()   deselect previous take
+0a. if (activeTakeId) set activeTakeId=null + eng.setActiveTakeTrack(null)   silence the previous take (its lane stays)
 0b. if (isMonitoring) stopMonitoring()   stop monitor stream first
 1. recordingStartPos = punchIn ?? currentTime  use punch-in if set
 2. eng.pause()                          pause playback
@@ -338,3 +338,5 @@ Mirrors `stopRecording`'s exact shape (see above) — flip `isRecording` off and
 Practice Room recording is only reachable after a song has been loaded, processed, or imported — all of which already spawn and warm the sidecar via `process_song`/`import_youtube` well before the user gets to Record. Free Exercise has no such prerequisite: a user can go straight from the library to Free Exercise and hit Record as the very first sidecar-touching action of the session, hitting the full cold-import cost (`torch`/`demucs`/`torchcrepe`/`praat-parselmouth`/`librosa`) inline with that first recording. This is why the sidecar's ready-handshake timeout was raised from 30s to 90s alongside the fixes above — see [Python Sidecar](python-sidecar.md). The longer that window got, the more exposed bug (2) above became, which is how it surfaced during testing of the timeout bump.
 
 Note that even a sidecar spawn failure doesn't block the take from saving — `analyze_and_persist_exercise_take` (`commands.rs`) swallows sidecar errors and still persists the raw recording (just without pitch/dynamics/vibrato data). Bug (1) above is what actually made a failed save look like a vanished recording; bug (2) is what made a *successful* save's tail window race a same-take double-click.
+
+> **Several takes (2026-10-11):** after saving, the new take is *added* to the shown takes and made active (`showTake`); takes already on screen keep their lanes. Starting a recording only silences them (`setActiveTakeTrack(null)`); it no longer unloads them. See `audio-engine.md`.

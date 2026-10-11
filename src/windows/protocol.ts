@@ -59,6 +59,8 @@ export interface SharedState {
   punchLoop: boolean;
   selectedOutputDeviceId: string | null;
   activeTake: Take | null;
+  /** Takes with a lane on screen, in the order they were shown. */
+  shownTakeIds: string[];
   takes: TakeSummary[];
 }
 
@@ -89,7 +91,7 @@ export type Command =
   | { type: "setPunchIn"; time: number }
   | { type: "setPunchOut"; time: number }
   | { type: "clearPunch" }
-  | { type: "setActiveTake"; id: string }
+  | { type: "toggleTake"; id: string }
   | { type: "deleteTake"; id: string }
   | { type: "renameTake"; id: string; name: string };
 
@@ -108,7 +110,7 @@ export function parseCommand(value: unknown): Command | null {
       return isNumber(value.time) && value.time >= 0 ? { type: value.type, time: value.time } : null;
     case "clearPunch":
       return { type: "clearPunch" };
-    case "setActiveTake":
+    case "toggleTake":
     case "deleteTake":
       return isId(value.id) ? { type: value.type, id: value.id } : null;
     case "renameTake":
@@ -129,6 +131,7 @@ export function isSharedState(value: unknown): value is SharedState {
     typeof s.exerciseMode === "boolean" && typeof s.punchLoop === "boolean" &&
     isNumberOrNull(s.punchIn) && isNumberOrNull(s.punchOut) &&
     isStringOrNull(s.selectedOutputDeviceId) && isObjectOrNull(s.activeTake) &&
+    Array.isArray(s.shownTakeIds) && s.shownTakeIds.every(isId) &&
     Array.isArray(s.takes) && s.takes.every((t) => isObject(t) && isId(t.id))
   );
 }

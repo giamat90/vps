@@ -44,6 +44,8 @@ vi.mock("../audio/engine", () => ({
     setLoop = vi.fn();
     clearLoop = vi.fn();
     clearTakeTrack = vi.fn();
+    removeTakeTrack = vi.fn();
+    setActiveTakeTrack = vi.fn();
     setTakeManualOffset = vi.fn();
     loadVocalsFromPath = vi.fn();
     loadInstrumentalFromPath = vi.fn();
@@ -725,11 +727,18 @@ describe("startRecording", () => {
     expect(eng().seekTo).toHaveBeenCalledWith(30);
   });
 
-  it("deselects and unloads the active take first, so the singer records against the backing track alone", async () => {
-    store().setState({ activeTakeId: "old" });
+  it("silences the active take first, so the singer records against the backing track alone", async () => {
+    store().setState({ activeTakeId: "old", shownTakeIds: ["old"] });
     await store().getState().startRecording();
     expect(store().getState().activeTakeId).toBeNull();
-    expect(eng().clearTakeTrack).toHaveBeenCalled();
+    expect(eng().setActiveTakeTrack).toHaveBeenCalledWith(null);
+  });
+
+  it("keeps the shown takes on screen while recording, only none of them is heard", async () => {
+    store().setState({ activeTakeId: "b", shownTakeIds: ["a", "b"] });
+    await store().getState().startRecording();
+    expect(store().getState().shownTakeIds).toEqual(["a", "b"]);
+    expect(eng().clearTakeTrack).not.toHaveBeenCalled();
   });
 
   it("pins output to the hardware device that shares a token with the mic, skipping Default/Communications/Steam", async () => {
@@ -848,6 +857,8 @@ describe("stopRecording: latency compensation and take saving", () => {
     const s = store().getState();
     expect(s.takes.map((t) => t.id)).toEqual(["new"]);
     expect(s.activeTakeId).toBe("new");
+    expect(s.shownTakeIds).toEqual(["new"]);
+    expect(eng().setActiveTakeTrack).toHaveBeenLastCalledWith("new");
     expect(s).toMatchObject({ isRecording: false, isPlaying: false, isSavingTake: false, currentTime: 0 });
     expect(rec().releaseStream).toHaveBeenCalled();
     expect(eng().setOutputDevice).toHaveBeenLastCalledWith("");
@@ -1004,16 +1015,32 @@ describe("takes", () => {
   });
 
   it("deleteTake removes it and deselects it if it was active", async () => {
-    store().setState({ takes: [take(), take({ id: "t2" })], activeTakeId: "t1" });
+    store().setState({ takes: [take(), take({ id: "t2" })], activeTakeId: "t1", shownTakeIds: ["t1"] });
     h.api.deleteTakeApi.mockResolvedValue(undefined);
     await store().getState().deleteTake("t1");
     expect(h.api.deleteTakeApi).toHaveBeenCalledWith("s1", "t1");
     expect(store().getState().takes.map((t) => t.id)).toEqual(["t2"]);
     expect(store().getState().activeTakeId).toBeNull();
+    expect(store().getState().shownTakeIds).toEqual([]);
+  });
+
+  it("deleteTake hands the sound to another shown take when the active one goes", async () => {
+    store().setState({ takes: [take(), take({ id: "t2" })], activeTakeId: "t2", shownTakeIds: ["t1", "t2"] });
+    await store().getState().deleteTake("t2");
+    expect(store().getState().shownTakeIds).toEqual(["t1"]);
+    expect(store().getState().activeTakeId).toBe("t1");
+    expect(eng().setActiveTakeTrack).toHaveBeenLastCalledWith("t1");
+  });
+
+  it("deleteTake of a take that is shown but not active keeps the active one", async () => {
+    store().setState({ takes: [take(), take({ id: "t2" })], activeTakeId: "t2", shownTakeIds: ["t1", "t2"] });
+    await store().getState().deleteTake("t1");
+    expect(store().getState().shownTakeIds).toEqual(["t2"]);
+    expect(store().getState().activeTakeId).toBe("t2");
   });
 
   it("deleteTake keeps another active take selected", async () => {
-    store().setState({ takes: [take(), take({ id: "t2" })], activeTakeId: "t2" });
+    store().setState({ takes: [take(), take({ id: "t2" })], activeTakeId: "t2", shownTakeIds: ["t2"] });
     await store().getState().deleteTake("t1");
     expect(store().getState().activeTakeId).toBe("t2");
   });
@@ -1034,26 +1061,124 @@ describe("takes", () => {
     expect(store().getState().takes[1].name).toBeUndefined();
   });
 
-  it("setActiveTake selects", () => {
+  it("setActiveTake shows the take and makes it the one that is heard", () => {
     store().getState().setActiveTake("t9");
     expect(store().getState().activeTakeId).toBe("t9");
+    expect(store().getState().shownTakeIds).toEqual(["t9"]);
+    expect(eng().setActiveTakeTrack).toHaveBeenLastCalledWith("t9");
+  });
+
+  it("fetchTakes forgets shown takes that no longer exist", async () => {
+    store().setState({ takes: [take(), take({ id: "t2" })], shownTakeIds: ["t1", "t2"], activeTakeId: "t2" });
+    h.api.listTakes.mockResolvedValue([take()]);
+    await store().getState().fetchTakes();
+    expect(store().getState().shownTakeIds).toEqual(["t1"]);
+    expect(store().getState().activeTakeId).toBe("t1");
+  });
+});
+
+describe("showing and hiding takes", () => {
+  beforeEach(async () => {
+    await loadedSong();
+    store().setState({ takes: [take(), take({ id: "t2" }), take({ id: "t3" })] });
+  });
+
+  it("starts with nothing shown", () => {
+    expect(store().getState().shownTakeIds).toEqual([]);
+    expect(store().getState().activeTakeId).toBeNull();
+  });
+
+  it("clicking a take shows it and makes it the one that is heard", () => {
+    store().getState().toggleTake("t1");
+    expect(store().getState().shownTakeIds).toEqual(["t1"]);
+    expect(store().getState().activeTakeId).toBe("t1");
+    expect(eng().setActiveTakeTrack).toHaveBeenLastCalledWith("t1");
+  });
+
+  it("clicking another take shows it as well and keeps the first one on screen", () => {
+    store().getState().toggleTake("t1");
+    store().getState().toggleTake("t2");
+    expect(store().getState().shownTakeIds).toEqual(["t1", "t2"]);
+    expect(store().getState().activeTakeId).toBe("t2");
+  });
+
+  it("clicking a shown take that is not playing switches to it and hides nothing", () => {
+    store().getState().toggleTake("t1");
+    store().getState().toggleTake("t2");
+    store().getState().toggleTake("t1");
+    expect(store().getState().shownTakeIds).toEqual(["t1", "t2"]);
+    expect(store().getState().activeTakeId).toBe("t1");
+    expect(eng().setActiveTakeTrack).toHaveBeenLastCalledWith("t1");
+  });
+
+  it("clicking the take that is playing hides it, and the last shown one takes over", () => {
+    store().getState().toggleTake("t1");
+    store().getState().toggleTake("t2");
+    store().getState().toggleTake("t2");
+    expect(store().getState().shownTakeIds).toEqual(["t1"]);
+    expect(store().getState().activeTakeId).toBe("t1");
+  });
+
+  it("clicking the only shown take leaves nothing shown and nothing heard", () => {
+    store().getState().toggleTake("t1");
+    store().getState().toggleTake("t1");
+    expect(store().getState().shownTakeIds).toEqual([]);
+    expect(store().getState().activeTakeId).toBeNull();
+    expect(eng().setActiveTakeTrack).toHaveBeenLastCalledWith(null);
+  });
+
+  it("hideTake removes one lane without touching the rest", () => {
+    store().getState().toggleTake("t1");
+    store().getState().toggleTake("t2");
+    store().getState().hideTake("t1");
+    expect(store().getState().shownTakeIds).toEqual(["t2"]);
+    expect(store().getState().activeTakeId).toBe("t2");
+  });
+
+  it("pushes the effective take volume again so the newly heard take has the right level", () => {
+    store().getState().setTakeVolume(0.4);
+    store().getState().toggleTake("t1");
+    expect(eng().setTakeVolume).toHaveBeenLastCalledWith(0.4);
+  });
+
+  it("closing the song forgets what was shown", () => {
+    store().getState().toggleTake("t1");
+    store().getState().cleanup();
+    expect(store().getState().shownTakeIds).toEqual([]);
   });
 });
 
 describe("setTakeManualOffset", () => {
   beforeEach(async () => {
     await loadedSong();
-    store().setState({ takes: [take({ pitchData: { times: [0], f0: [200], voiced: [true], confidence: [1] } })] });
+    store().setState({
+      takes: [take({ pitchData: { times: [0], f0: [200], voiced: [true], confidence: [1] } })],
+      shownTakeIds: ["t1"],
+      activeTakeId: "t1",
+    });
     h.api.setTakeManualOffsetApi.mockResolvedValue(take());
   });
 
   it("rounds to 10 ms, updates engine, analysis and backend together", async () => {
     store().getState().setTakeManualOffset("t1", 0.12345);
     expect(store().getState().takes[0].manualOffset).toBe(0.12);
-    expect(eng().setTakeManualOffset).toHaveBeenCalledWith(0.12);
+    expect(eng().setTakeManualOffset).toHaveBeenCalledWith("t1", 0.12);
     expect(h.api.setTakeManualOffsetApi).toHaveBeenCalledWith("s1", "t1", 0.12);
     const { useAnalysisStore } = await import("./analysis");
     expect(useAnalysisStore.getState().takePitch[0].time).toBeCloseTo(5.12, 9);
+  });
+
+  it("leaves the analysis overlays alone when the nudged take is not the active one", async () => {
+    store().setState({
+      takes: [take(), take({ id: "t2", pitchData: { times: [0], f0: [300], voiced: [true], confidence: [1] } })],
+      shownTakeIds: ["t1", "t2"],
+      activeTakeId: "t1",
+    });
+    const { useAnalysisStore } = await import("./analysis");
+    const before = useAnalysisStore.getState().takePitch;
+    store().getState().setTakeManualOffset("t2", 0.5);
+    expect(eng().setTakeManualOffset).toHaveBeenCalledWith("t2", 0.5);
+    expect(useAnalysisStore.getState().takePitch).toBe(before);
   });
 
   it("accepts negative offsets (take dragged before song start)", () => {

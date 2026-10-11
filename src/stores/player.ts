@@ -6,6 +6,7 @@ import { saveTake, listTakes, deleteTakeApi, renameTakeApi, setTakeManualOffsetA
 import type { ExerciseTake } from "../lib/types";
 import { useAnalysisStore } from "./analysis";
 import { metronome } from "@giamat90/mps-core/metronome";
+import { hideTake, reconcileTakes, showTake, toggleTake, type TakeSelection } from "@giamat90/mps-core/takes";
 import { countInDurationSeconds } from "@giamat90/mps-core/metronomeSync";
 import { pickHardwareOutput } from "../audio/outputDevice";
 
@@ -195,6 +196,11 @@ function applyEffectiveVolumes(state: {
 
 export type TrackKey = "vocals" | "instrumental" | "take";
 
+const selectionOf = (s: { shownTakeIds: string[]; activeTakeId: string | null }): TakeSelection => ({
+  shown: s.shownTakeIds,
+  active: s.activeTakeId,
+});
+
 interface PlayerState {
   song: Song | null;
   isPlaying: boolean;
@@ -221,6 +227,8 @@ interface PlayerState {
   isSavingTake: boolean;
   isMonitoring: boolean;
   takes: Take[];
+  // Takes with a lane on screen (in the order they were shown), and the one that is heard.
+  shownTakeIds: string[];
   activeTakeId: string | null;
   takeVolume: number;
   // Punch-in / punch-out region (null = not set)
@@ -291,6 +299,9 @@ interface PlayerActions {
   renameTake: (takeId: string, name: string) => Promise<void>;
   setTakeManualOffset: (takeId: string, offset: number) => void;
   setActiveTake: (takeId: string) => void;
+  // A click in the takes list: show it, switch to it, or hide it when it is the active one
+  toggleTake: (takeId: string) => void;
+  hideTake: (takeId: string) => void;
   setTakeVolume: (v: number) => void;
   // Punch region actions
   setPunchIn: (t: number) => void;
@@ -347,7 +358,14 @@ function _persistOffsets(offsets: Record<string, CalibrationEntry>): void {
   }
 }
 
-export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => ({
+export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => {
+  const applySelection = (next: TakeSelection) => {
+    set({ shownTakeIds: [...next.shown], activeTakeId: next.active });
+    getEngine().setActiveTakeTrack(next.active);
+    applyEffectiveVolumes(get());
+  };
+
+  return {
   song: null,
   isPlaying: false,
   currentTime: 0,
@@ -370,6 +388,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
   isSavingTake: false,
   isMonitoring: false,
   takes: [],
+  shownTakeIds: [],
   activeTakeId: null,
   takeVolume: 1.0,
   punchIn: null,
@@ -438,6 +457,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       transpose: 0,
       isTransposing: false,
       isRecording: false,
+      shownTakeIds: [],
       activeTakeId: null,
       // instrument-kind songs write identical audio to vocals.wav and
       // instrumental.wav; mute the instrumental track so only the
@@ -571,6 +591,7 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
       isSavingTake: false,
       isMonitoring: false,
       takes: [],
+      shownTakeIds: [],
       activeTakeId: null,
     });
   },
@@ -766,16 +787,15 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const { song } = get();
     if (!song) return;
 
-    // Deselect any active take before recording a new one. The previous take
-    // stays saved (takes.json is never touched) and re-selectable from the
-    // take list, but it's dropped from playback and the analysis overlay so
-    // the singer records against the backing track alone — not their last
-    // attempt. Nulling activeTakeId drives Waveform's clearTakeTrack() and
-    // PracticeRoom's clearTakeAnalysis() via their activeTakeId effects; the
-    // direct clearTakeTrack() closes the gap before React flushes those.
+    // Silence the active take before recording a new one. Every take stays
+    // saved (takes.json is never touched) and shown, but none is heard and the
+    // analysis overlay drops it, so the singer records against the backing
+    // track alone — not their last attempt. Nulling activeTakeId drives
+    // PracticeRoom's clearTakeAnalysis(); the engine is told directly to close
+    // the gap before React flushes that effect.
     if (get().activeTakeId) {
       set({ activeTakeId: null });
-      getEngine().clearTakeTrack();
+      getEngine().setActiveTakeTrack(null);
     }
 
     // Stop monitoring before opening the recorder's mic stream
@@ -963,13 +983,17 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
         );
       }
 
-      // Auto-select the new take — Waveform loads it into the take track.
+      // Show and select the new take — Waveform loads it into a lane of its
+      // own; the takes already shown stay where they are.
+      const next = showTake(selectionOf(get()), take.id);
       set((state) => ({
         isSavingTake: false,
         currentTime: 0,
         takes: [...state.takes, take],
-        activeTakeId: take.id,
+        shownTakeIds: [...next.shown],
+        activeTakeId: next.active,
       }));
+      eng.setActiveTakeTrack(next.active);
     } catch (e) {
       _destroyMicAnalyser();
       rec.releaseStream();
@@ -983,17 +1007,22 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const { song } = get();
     if (!song) return;
     const takes = await listTakes(song.id);
-    set({ takes });
+    const next = reconcileTakes(selectionOf(get()), takes.map((t) => t.id));
+    set({ takes, shownTakeIds: [...next.shown], activeTakeId: next.active });
+    getEngine().setActiveTakeTrack(next.active);
   },
 
   deleteTake: async (takeId) => {
-    const { song, activeTakeId } = get();
+    const { song } = get();
     if (!song) return;
     await deleteTakeApi(song.id, takeId);
+    const next = hideTake(selectionOf(get()), takeId);
     set((state) => ({
       takes: state.takes.filter((t) => t.id !== takeId),
-      activeTakeId: activeTakeId === takeId ? null : activeTakeId,
+      shownTakeIds: [...next.shown],
+      activeTakeId: next.active,
     }));
+    getEngine().setActiveTakeTrack(next.active);
   },
 
   renameTake: async (takeId, name) => {
@@ -1016,15 +1045,24 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     const rounded = Math.round(offset * 100) / 100;
     const updated = { ...take, manualOffset: rounded || undefined };
     set({ takes: takes.map((t) => (t.id === takeId ? updated : t)) });
-    getEngine().setTakeManualOffset(rounded);
-    useAnalysisStore.getState().loadTakeAnalysis(updated);
+    getEngine().setTakeManualOffset(takeId, rounded);
+    // The analysis overlays belong to the active take only.
+    if (takeId === get().activeTakeId) useAnalysisStore.getState().loadTakeAnalysis(updated);
     setTakeManualOffsetApi(song.id, takeId, rounded).catch((e: unknown) =>
       console.error("[player] failed to persist take manual offset:", e)
     );
   },
 
   setActiveTake: (takeId) => {
-    set({ activeTakeId: takeId });
+    applySelection(showTake(selectionOf(get()), takeId));
+  },
+
+  toggleTake: (takeId) => {
+    applySelection(toggleTake(selectionOf(get()), takeId));
+  },
+
+  hideTake: (takeId) => {
+    applySelection(hideTake(selectionOf(get()), takeId));
   },
 
   setTakeVolume: (v) => {
@@ -1166,7 +1204,8 @@ export const usePlayerStore = create<PlayerState & PlayerActions>((set, get) => 
     _countInResolve = null;
     resolve(false);
   },
-}));
+  };
+});
 
 // While monitoring (not recording), a paused playhead means currentTime is frozen —
 // DualTuner's detector would otherwise keep appending points at the same time,

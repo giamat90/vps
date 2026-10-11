@@ -92,10 +92,15 @@ async function reloadVocals(engine: AudioEngine, vocals: any, offset: number, du
   await loading;
 }
 
-async function withTake(engine: AudioEngine, opts: { duration: number; start: number; audioOffset?: number; manual?: number }) {
+async function withTake(
+  engine: AudioEngine,
+  opts: { duration: number; start: number; audioOffset?: number; manual?: number; id?: string; active?: boolean },
+) {
   ws.config.readyDuration = opts.duration;
   const el = container();
-  await engine.loadTakeTrack("/t.wav", el, opts.start, opts.audioOffset ?? 0, opts.manual ?? 0);
+  const id = opts.id ?? "t1";
+  await engine.loadTakeTrack(id, `/${id}.wav`, el, opts.start, opts.audioOffset ?? 0, opts.manual ?? 0);
+  if (opts.active !== false) engine.setActiveTakeTrack(id);
   return { take: ws.instances[ws.instances.length - 1], el };
 }
 
@@ -431,7 +436,7 @@ describe("take track", () => {
     engine.zoomAll(10, 0);
     const { take, el } = await withTake(engine, { duration: 20, start: 10 });
     instrumental.currentTime = 15;
-    engine.setTakeManualOffset(2);
+    engine.setTakeManualOffset("t1", 2);
     expect(style(el).marginLeft).toBe(`${(10 + 2) * 10}px`);
     expect(take.seekTo).toHaveBeenLastCalledWith((15 - 12) / 20);
   });
@@ -442,7 +447,7 @@ describe("take track", () => {
     engine.clearTakeTrack();
     expect(take.destroy).toHaveBeenCalled();
     expect(engine.take).toBeNull();
-    expect(() => engine.setTakeManualOffset(1)).not.toThrow();
+    expect(() => engine.setTakeManualOffset("t1", 1)).not.toThrow();
   });
 
   it("replacing the take destroys the old one", async () => {
@@ -456,7 +461,7 @@ describe("take track", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const { engine } = await loadedEngine();
     ws.config.failWith = new Error("decode failure");
-    await expect(engine.loadTakeTrack("/t.wav", container())).rejects.toThrow("decode failure");
+    await expect(engine.loadTakeTrack("t1", "/t.wav", container())).rejects.toThrow("decode failure");
   });
 
   it("resumes the take mid-play when loaded while the playhead is inside its window", async () => {
@@ -465,6 +470,179 @@ describe("take track", () => {
     engine.play();
     const { take } = await withTake(engine, { duration: 10, start: 10 });
     expect(take.play).toHaveBeenCalled();
+  });
+});
+
+describe("several takes at once", () => {
+  it("keeps every loaded take in sync with its own window, playing them all", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 10 });
+    const b = await withTake(engine, { id: "b", duration: 10, start: 12, active: false });
+    instrumental.currentTime = 13;
+    engine.play();
+    expect(a.take.play).toHaveBeenCalled();
+    expect(b.take.play).toHaveBeenCalled();
+    engine.seekTo(15);
+    expect(a.take.seekTo).toHaveBeenLastCalledWith((15 - 10) / 10);
+    expect(b.take.seekTo).toHaveBeenLastCalledWith((15 - 12) / 10);
+  });
+
+  it("only the active take is audible, the others are silent but still loaded", async () => {
+    const { engine } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 10, start: 0, active: false });
+    engine.setTakeVolume(0.7);
+    expect(a.take.setVolume).toHaveBeenLastCalledWith(0.7);
+    expect(b.take.setVolume).toHaveBeenLastCalledWith(0);
+  });
+
+  it("switching the active take swaps who is audible without stopping or reloading anything", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 10, start: 0, active: false });
+    instrumental.currentTime = 2;
+    engine.play();
+    engine.setTakeVolume(0.8);
+    a.take.pause.mockClear();
+    b.take.pause.mockClear();
+    engine.setActiveTakeTrack("b");
+    expect(b.take.setVolume).toHaveBeenLastCalledWith(0.8);
+    expect(a.take.setVolume).toHaveBeenLastCalledWith(0);
+    expect(a.take.pause).not.toHaveBeenCalled();
+    expect(a.take.destroy).not.toHaveBeenCalled();
+    expect(engine.take).toBe(b.take);
+  });
+
+  it("a take loaded after the choice is silent until it is the active one", async () => {
+    const { engine } = await loadedEngine();
+    engine.setActiveTakeTrack("a");
+    engine.setTakeVolume(0.9);
+    const b = await withTake(engine, { id: "b", duration: 10, start: 0, active: false });
+    expect(b.take.setVolume).toHaveBeenLastCalledWith(0);
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0, active: false });
+    expect(a.take.setVolume).toHaveBeenLastCalledWith(0.9);
+  });
+
+  it("no active take silences them all", async () => {
+    const { engine } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0 });
+    engine.setActiveTakeTrack(null);
+    expect(a.take.setVolume).toHaveBeenLastCalledWith(0);
+    expect(engine.take).toBeNull();
+  });
+
+  it("removing one take leaves the others", async () => {
+    const { engine } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 10, start: 0, active: false });
+    engine.removeTakeTrack("a");
+    expect(a.take.destroy).toHaveBeenCalled();
+    expect(b.take.destroy).not.toHaveBeenCalled();
+    expect(engine.take).toBeNull();
+    expect(() => engine.removeTakeTrack("a")).not.toThrow();
+  });
+
+  it("clearing removes every take and the active choice", async () => {
+    const { engine } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 10, start: 0, active: false });
+    engine.clearTakeTrack();
+    expect(a.take.destroy).toHaveBeenCalled();
+    expect(b.take.destroy).toHaveBeenCalled();
+    expect(engine.take).toBeNull();
+  });
+
+  it("sizes and positions each take's rail on its own, and again on zoom", async () => {
+    const { engine } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 20, start: 10 });
+    const b = await withTake(engine, { id: "b", duration: 30, start: 40, audioOffset: 5, active: false });
+    engine.zoomAll(10, 5);
+    expect(style(a.el).marginLeft).toBe(`${(10 - 5) * 10}px`);
+    expect(style(a.el).width).toBe(`${20 * 10}px`);
+    expect(style(b.el).marginLeft).toBe(`${(40 - 5) * 10}px`);
+    expect(style(b.el).width).toBe(`${(30 - 5) * 10}px`);
+  });
+
+  it("a manual offset moves only that take", async () => {
+    const { engine } = await loadedEngine();
+    engine.zoomAll(10, 0);
+    const a = await withTake(engine, { id: "a", duration: 20, start: 10 });
+    const b = await withTake(engine, { id: "b", duration: 20, start: 10, active: false });
+    engine.setTakeManualOffset("b", 3);
+    expect(style(a.el).marginLeft).toBe("100px");
+    expect(style(b.el).marginLeft).toBe(`${13 * 10}px`);
+  });
+
+  it("clicking a take's own waveform seeks the song through that take's offsets", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    await withTake(engine, { id: "a", duration: 30, start: 10 });
+    const b = await withTake(engine, { id: "b", duration: 30, start: 20, audioOffset: 2, active: false });
+    b.take.emit("interaction", 6);
+    expect(instrumental.seekTo).toHaveBeenLastCalledWith((6 - 2 + 20) / 100);
+  });
+
+  it("starts and stops each take at its own window as the playhead moves", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 10, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 10, start: 20, active: false });
+    instrumental.currentTime = 1;
+    engine.play();
+    expect(a.take.play).toHaveBeenCalledTimes(1);
+    expect(b.take.play).not.toHaveBeenCalled();
+    instrumental.currentTime = 21;
+    runFrame();
+    expect(a.take.pause).toHaveBeenCalled();
+    expect(b.take.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("re-aims every playing take that has drifted", async () => {
+    const { engine, instrumental, vocals } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 50, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 50, start: 0, active: false });
+    instrumental.currentTime = 10;
+    vocals.currentTime = 10;
+    engine.play();
+    a.take.currentTime = 10.5;
+    b.take.currentTime = 9.4;
+    runFrame(300);
+    expect(a.take.setTime).toHaveBeenCalledWith(10);
+    expect(b.take.setTime).toHaveBeenCalledWith(10);
+  });
+
+  it("destroys a take that was removed while it was still decoding", async () => {
+    const { engine } = await loadedEngine();
+    ws.config.autoReady = false;
+    const loading = engine.loadTakeTrack("a", "/a.wav", container(), 0, 0, 0);
+    const pending = ws.instances[ws.instances.length - 1];
+    engine.removeTakeTrack("a");
+    pending.emit("ready");
+    await loading;
+    expect(pending.destroy).toHaveBeenCalled();
+    expect(engine.take).toBeNull();
+  });
+
+  it("loading the same take again replaces it", async () => {
+    const { engine } = await loadedEngine();
+    const first = await withTake(engine, { id: "a", duration: 20, start: 0 });
+    await withTake(engine, { id: "a", duration: 20, start: 0 });
+    expect(first.take.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it("sample reads follow the active take", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    const a = await withTake(engine, { id: "a", duration: 50, start: 0 });
+    const b = await withTake(engine, { id: "b", duration: 50, start: 10, active: false });
+    const buf = (offset: number) => ({
+      numberOfChannels: 1,
+      sampleRate: 1,
+      getChannelData: () => Float32Array.from({ length: 100 }, (_, i) => i + offset),
+    });
+    a.take.decoded = buf(0);
+    b.take.decoded = buf(1000);
+    instrumental.currentTime = 20;
+    expect(engine.getTrackSamples("take", 2)!.samples[0]).toBeLessThan(1000);
+    engine.setActiveTakeTrack("b");
+    expect(engine.getTrackSamples("take", 2)!.samples[0]).toBeGreaterThan(1000);
   });
 });
 
