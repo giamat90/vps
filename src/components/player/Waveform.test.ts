@@ -201,6 +201,40 @@ describe("take lanes", () => {
     expect(html).toContain("The main take mute and solo above still come first");
   });
 
+  const stateLabels = (html: string) => [...html.matchAll(/waveform__take-state[^>]*>([^<]*)</g)].map((m) => m[1]);
+
+  it("marks the selected lane and only that lane, whatever the mode", () => {
+    h.state.shownTakeIds = ["a", "b", "c"];
+    h.state.activeTakeId = "b";
+    expect(stateLabels(render())).toEqual(["Selected"]);
+    h.state.takePlayback = "selected";
+    expect(stateLabels(render())).toEqual(["\u25B6 Playing"]);
+  });
+
+  it("keeps the selection visible when the selected take is muted in selected-only mode", () => {
+    h.state.shownTakeIds = ["a", "b"];
+    h.state.activeTakeId = "b";
+    h.state.takePlayback = "selected";
+    h.state.mutedTakeIds = ["b"];
+    const html = render();
+    expect(stateLabels(html)).toEqual(["Selected \u00B7 muted"]);
+    expect(html).toContain("waveform__take-state--silent");
+    expect(lanes(html)).toEqual(["waveform__track--silent", "waveform__track--active waveform__track--silent"]);
+  });
+
+  it("says why the selected take is silent: main mute, recording, another solo", () => {
+    h.state.shownTakeIds = ["a", "b"];
+    h.state.activeTakeId = "b";
+    h.state.mutedTracks = { vocals: false, instrumental: false, take: true };
+    expect(stateLabels(render())).toEqual(["Selected \u00B7 takes muted"]);
+    h.state.mutedTracks = { vocals: false, instrumental: false, take: false };
+    h.state.isRecording = true;
+    expect(stateLabels(render())).toEqual(["Selected \u00B7 silent while recording"]);
+    h.state.isRecording = false;
+    h.state.soloedTakeId = "a";
+    expect(stateLabels(render())).toEqual(["Selected \u00B7 another take soloed"]);
+  });
+
   it("has a hide button on every lane", () => {
     h.state.shownTakeIds = ["a", "b"];
     h.state.activeTakeId = "b";

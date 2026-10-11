@@ -184,6 +184,14 @@ def f0_at(track: dict, t: float) -> float | None:
     return f0 if track["voiced"][i] and f0 > 0 else None
 
 
+NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+
+
+def note_name(freq: float) -> str:
+    midi = int(round(69 + 12 * np.log2(freq / 440.0)))
+    return f"{NOTE_NAMES[midi % 12]}{midi // 12 - 1}"
+
+
 def loudest_time(audio: np.ndarray, sr: int) -> float:
     rms = librosa.feature.rms(y=audio, frame_length=FFT_SIZE, hop_length=FFT_SIZE // 4)[0]
     return float(librosa.frames_to_time(int(np.argmax(rms)), sr=sr, hop_length=FFT_SIZE // 4))
@@ -275,7 +283,7 @@ class SpectrumPlot:
 
         for row, track in enumerate(self.pitch_tracks):
             f0 = f0_at(track, t)
-            text = f"{track['label']}  " + (f"F0 {f0:.1f} Hz" if f0 else "unvoiced")
+            text = f"{track['label']}  " + (f"F0 {f0:.1f} Hz {note_name(f0)}" if f0 else "unvoiced")
             self.dynamic.append(self.ax.text(
                 0.01, 0.97 - 0.045 * row, text, color=track["color"], ha="left", va="top",
                 fontsize=9, family="monospace", transform=self.ax.transAxes, zorder=6))
