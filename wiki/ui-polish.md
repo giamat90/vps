@@ -18,3 +18,7 @@ Branch `ui/polish`. Visual/UX refinement without layout changes.
 ## Not touched
 
 `MonitorButton`, `DualTuner` and the short-term-spectrum panels were mid-edit on `master` when this branch was cut, so they are styled through CSS only.
+
+## App icon
+
+VPS's icon (`src-tauri/icons/`) is a dark navy rounded square with five waveform bars, the centre bar in the coral accent (2026-10-12). It is a sibling of SPS's icon (stem bars in amber): same base, only the accent differs. Designed in Claude Design, exported at 1024 px and expanded with `npx tauri icon <png> -o src-tauri/icons`; delete the generated `android/`, `ios/` and `64x64.png` (the bundle config lists only `32x32`, `128x128`, `128x128@2x`, `icon.icns`, `icon.ico`). Before this both apps shipped the identical default Tauri logo.

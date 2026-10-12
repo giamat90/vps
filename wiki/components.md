@@ -167,6 +167,10 @@ See [Architecture: Auto-Update](architecture.md#auto-update) for the endpoint/si
 
 **Drop logic (`handleDragEnd` in `LibraryPage`):** a single store action, `moveSongs(folderId, orderedSongIds)`, covers both a same-folder reorder and a cross-folder move-at-position — a drag-and-drop UI naturally yields "the final ordered id list of the destination container" for either case, so there's no need for separate reorder vs. move code paths. Folder-drag (`activeId` starts with `folder:`) is handled separately via `reorderFolders(orderedIds)`.
 
+
+### Library search
+
+A search box in the Library toolbar (`LibraryPage.tsx`) filters songs as you type; Escape clears it. `filterSongs` in `src/lib/librarySearch.ts` (ported from SPS, 2026-10-12) matches when **every** word of the query appears in the title, artist, detected key, tempo (`93 bpm`), the folder's name or the word `instrument` for instrument tracks; case and accents are ignored. While a query is active the folder/drag-and-drop view is replaced by a flat result list in library order (root songs, then each folder's), each result tagged with its folder; there is no reordering during a search. Not shared through `mps-core`: SPS's `Song` has no `artist` or `kind`, so the haystacks differ.
 ### TransportControls
 
 Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
