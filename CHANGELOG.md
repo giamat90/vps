@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.80] - 2026-10-12
+
+### Changed
+- **Waveforms shrink to a strip, as in a DAW.** The arrow at the start of the Vocals / Instrumental header shrinks that track to its strip (name, M, S, volume): **^** shrinks it, **∨** brings the waveform back. It keeps playing, and M, S and the volume still apply. This replaces the old **×**, which hid the waveform completely; the Panels menu tick for a track is the same setting. With both tracks shrunk the ruler and the strips stay.
+
 ## [0.0.79] - 2026-10-12
 
 ### Fixed
