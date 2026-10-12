@@ -10,9 +10,11 @@ import VibratoCard from "../components/analysis/VibratoCard";
 import MicSelector from "../components/recording/MicSelector";
 import MonitorButton from "../components/recording/MonitorButton";
 import ExerciseTakeList from "../components/recording/ExerciseTakeList";
+import PanelMenu from "../components/panels/PanelMenu";
 import { AUDIO_EXTENSIONS } from "../components/upload/DropZone";
 import { usePlayerStore } from "../stores/player";
 import { useExerciseStore } from "../stores/exercise";
+import { EXERCISE_PANELS, EXERCISE_ANALYSIS_PANELS, useExercisePanels } from "../stores/exercisePanels";
 
 interface ExercisePageProps {
   onBack: () => void;
@@ -43,6 +45,7 @@ function ExercisePage({ onBack }: ExercisePageProps) {
   const clearLoadedTrack       = useExerciseStore((s) => s.clearLoadedTrack);
   const importExerciseFile     = useExerciseStore((s) => s.importExerciseFile);
 
+  const visible = useExercisePanels((s) => s.visible);
   const [recError, setRecError] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
   const trackContainerRef = useRef<HTMLDivElement>(null);
@@ -100,6 +103,7 @@ function ExercisePage({ onBack }: ExercisePageProps) {
   const trackLoaded = loadedTrackId !== null;
   const disableRecord = trackLoaded || isImporting || isSavingTake;
   const disableLoadOrImport = isRecording || isImporting || isSavingTake;
+  const showAnalysis = EXERCISE_ANALYSIS_PANELS.some((id) => visible[id]);
 
   return (
     <div className="exercise-page">
@@ -111,18 +115,25 @@ function ExercisePage({ onBack }: ExercisePageProps) {
         <span className={`exercise-page__timer${isRecording || isMonitoring || trackLoaded ? " exercise-page__timer--active" : ""}`}>
           {formatElapsed(currentTime)}
         </span>
+        <PanelMenu store={useExercisePanels} panels={EXERCISE_PANELS} movable={false} />
       </header>
 
       <LivePitchFeed />
 
-      <div className="exercise-page__keyboard">
-        <PianoKeyboard />
-      </div>
+      {visible.keyboard && (
+        <div className="exercise-page__keyboard">
+          <PianoKeyboard />
+        </div>
+      )}
 
       {/* Always rendered (not conditionally) so it has real dimensions
           before loadExerciseTrack() creates a WaveSurfer instance against it —
-          a hidden/zero-size container would size the waveform canvas to 0. */}
-      <div ref={trackContainerRef} className="exercise-page__track-strip" />
+          a hidden/zero-size container would size the waveform canvas to 0.
+          When the user hides it, it is collapsed in height only, which keeps its width. */}
+      <div
+        ref={trackContainerRef}
+        className={`exercise-page__track-strip${visible.track ? "" : " exercise-page__track-strip--collapsed"}`}
+      />
 
       {trackLoaded && (
         <div className="exercise-page__transport">
@@ -133,25 +144,35 @@ function ExercisePage({ onBack }: ExercisePageProps) {
         </div>
       )}
 
-      <div className="exercise-page__analysis">
-        <div className="exercise-page__roll">
-          <PianoRoll />
-        </div>
+      {showAnalysis && (
+        <div className="exercise-page__analysis">
+          {visible.pianoRoll && (
+            <div className="exercise-page__roll">
+              <PianoRoll />
+            </div>
+          )}
 
-        <div className="exercise-page__spectro">
-          <SpectrogramPanel />
-        </div>
+          {visible.spectrogram && (
+            <div className="exercise-page__spectro">
+              <SpectrogramPanel />
+            </div>
+          )}
 
-        <div className="exercise-page__spectro">
-          <ShortTermSpectrumPanel />
-        </div>
+          {visible.spectrum && (
+            <div className="exercise-page__spectro">
+              <ShortTermSpectrumPanel />
+            </div>
+          )}
 
-        <div className="exercise-page__dynamics">
-          <DynamicsCurve />
-        </div>
+          {visible.dynamics && (
+            <div className="exercise-page__dynamics">
+              <DynamicsCurve />
+            </div>
+          )}
 
-        <VibratoCard />
-      </div>
+          {visible.vibrato && <VibratoCard />}
+        </div>
+      )}
 
       <div className="exercise-page__controls">
         <MicSelector />
@@ -176,10 +197,12 @@ function ExercisePage({ onBack }: ExercisePageProps) {
         {importError && <span className="exercise-page__error">{importError}</span>}
       </div>
 
-      <div className="exercise-page__takes">
-        <h2 className="exercise-page__takes-title">Recordings</h2>
-        <ExerciseTakeList trackContainerRef={trackContainerRef} />
-      </div>
+      {visible.recordings && (
+        <div className="exercise-page__takes">
+          <h2 className="exercise-page__takes-title">Recordings</h2>
+          <ExerciseTakeList trackContainerRef={trackContainerRef} />
+        </div>
+      )}
     </div>
   );
 }

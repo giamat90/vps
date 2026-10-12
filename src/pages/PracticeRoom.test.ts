@@ -11,7 +11,10 @@ const h = vi.hoisted(() => {
     stub,
     detached: {} as Record<string, boolean>,
     library: { songs: [] as unknown[], renameSong: () => {} },
-    player: { cleanup: () => {}, takes: [] as unknown[], activeTakeId: null as string | null },
+    player: {
+      cleanup: () => {}, takes: [] as { id: string }[], activeTakeId: null as string | null,
+      shownTakeIds: [] as string[], mutedTracks: {} as Record<string, boolean>, soloedTrack: null as string | null,
+    },
     analysis: {
       loadSongAnalysis: () => {}, loadTakeAnalysis: () => {}, clearTakeAnalysis: () => {}, clear: () => {},
       isLoaded: true,
@@ -57,8 +60,18 @@ vi.mock("../stores/detached", () => ({
 vi.mock("../components/panels/PanelMenu", async () => {
   const { createElement: el } = await import("react");
   return {
-    default: ({ panels }: { panels: { id: string }[] }) =>
-      el("div", { "data-c": "panelMenu", "data-ids": panels.map((p) => p.id).join(",") }),
+    default: ({
+      panels, fixed,
+    }: {
+      panels: { id: string }[];
+      fixed?: { items: { id: string; parts?: { id: string }[] }[]; tags?: Record<string, string> };
+    }) =>
+      el("div", {
+        "data-c": "panelMenu",
+        "data-ids": panels.map((p) => p.id).join(","),
+        "data-fixed": fixed?.items.flatMap((i) => [i.id, ...(i.parts ?? []).map((p) => p.id)]).join(","),
+        "data-tags": JSON.stringify(fixed?.tags ?? {}),
+      }),
   };
 });
 
@@ -67,8 +80,9 @@ import { PRACTICE_PANELS } from "../stores/panels";
 // zustand renders the server snapshot (the store's initial state) under
 // react-dom/server, so choices are seeded through storage and the page is
 // imported fresh for every render.
-async function render(overrides: Record<string, boolean> = {}, order?: string[]) {
+async function render(overrides: Record<string, boolean> = {}, order?: string[], waveforms: Record<string, boolean> = {}) {
   localStorage.setItem("vps_panels", JSON.stringify({ overrides, order }));
+  localStorage.setItem("vps_waveforms", JSON.stringify({ overrides: waveforms }));
   vi.resetModules();
   const { default: PracticeRoom } = await import("./PracticeRoom");
   return renderToStaticMarkup(createElement(PracticeRoom, { songId: "s1", onBack: () => {} }));
@@ -86,6 +100,9 @@ beforeEach(() => {
   h.analysis.isLoaded = true;
   h.player.takes = [];
   h.player.activeTakeId = null;
+  h.player.shownTakeIds = [];
+  h.player.mutedTracks = {};
+  h.player.soloedTrack = null;
   h.detached = {};
 });
 
@@ -276,5 +293,62 @@ describe("PracticeRoom panels", () => {
     h.player.activeTakeId = "t1";
     h.player.takes = [{ id: "t1" }];
     expect(await render()).not.toContain("analysis-tab");
+  });
+});
+
+describe("PracticeRoom waveform area", () => {
+  const COLLAPSED = "practice-room__waveforms--collapsed";
+
+  it("shows the waveforms by default", async () => {
+    const html = await render();
+    expect(html).toContain('class="practice-room__waveforms"');
+    expect(html).not.toContain(COLLAPSED);
+  });
+
+  it("collapses the area when it is switched off, and still mounts it so the audio keeps loading", async () => {
+    const html = await render({}, undefined, { waveforms: false });
+    expect(html).toContain(COLLAPSED);
+    expect(shown(html)).toContain("waveform");
+  });
+
+  it("collapses the area when every track is hidden and no take is shown", async () => {
+    expect(await render({}, undefined, { vocals: false, instrumental: false })).toContain(COLLAPSED);
+  });
+
+  it("keeps the area while one track is left, or a take is shown", async () => {
+    expect(await render({}, undefined, { vocals: false })).not.toContain(COLLAPSED);
+    h.player.takes = [{ id: "t1" }];
+    h.player.shownTakeIds = ["t1"];
+    expect(await render({}, undefined, { vocals: false, instrumental: false })).not.toContain(COLLAPSED);
+  });
+
+  it("does not count a shown take that no longer exists", async () => {
+    h.player.shownTakeIds = ["gone"];
+    expect(await render({}, undefined, { vocals: false, instrumental: false })).toContain(COLLAPSED);
+  });
+
+  it("has nothing left to show on an instrument track once its one lane is hidden", async () => {
+    h.library.songs = [song({ kind: "instrument" })];
+    expect(await render({}, undefined, { vocals: false })).toContain(COLLAPSED);
+    expect(await render({}, undefined, { instrumental: false })).not.toContain(COLLAPSED);
+  });
+
+  it("is not affected by the other panels being hidden", async () => {
+    expect(await render(all(false))).not.toContain(COLLAPSED);
+  });
+
+  it("lists the waveforms first in the Panels menu, with their tracks", async () => {
+    const fixed = (html: string) => /data-fixed="([^"]*)"/.exec(html)?.[1];
+    expect(fixed(await render())).toBe("waveforms,vocals,instrumental");
+    h.library.songs = [song({ kind: "instrument" })];
+    expect(fixed(await render())).toBe("waveforms,vocals");
+  });
+
+  it("tells the menu which hidden track is muted or soloed", async () => {
+    const tags = (html: string) => JSON.parse((/data-tags="([^"]*)"/.exec(html)?.[1] ?? "{}").replace(/&quot;/g, '"'));
+    h.player.mutedTracks = { instrumental: true };
+    expect(tags(await render({}, undefined, { instrumental: false }))).toEqual({ instrumental: "muted" });
+    h.player.soloedTrack = "vocals";
+    expect(tags(await render({}, undefined, { vocals: false }))).toEqual({ vocals: "solo" });
   });
 });

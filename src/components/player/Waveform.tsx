@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent } from "react";
 import { usePlayerStore, getEngine, takesSilenced, type TrackKey } from "../../stores/player";
 import { useAnalysisStore } from "../../stores/analysis";
+import { useWaveformPanels } from "../../stores/waveforms";
 import TimeRuler from "./TimeRuler";
 import type { Song, Take } from "../../lib/types";
 import { computeZoomToCursor, computePan, wheelDeltaPixels, clamp } from "@giamat90/mps-core/zoomPan";
@@ -44,9 +45,12 @@ interface TrackControlsProps {
   track: TrackKey;
   volume: number;
   onVolumeChange: (v: number) => void;
+  /** Hides the track's waveform; what is heard does not change. */
+  onHide?: () => void;
+  hideLabel?: string;
 }
 
-function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
+function TrackControls({ track, volume, onVolumeChange, onHide, hideLabel }: TrackControlsProps) {
   const muted       = usePlayerStore((s) => s.mutedTracks[track]);
   const soloed      = usePlayerStore((s) => s.soloedTrack === track);
   const toggleMute  = usePlayerStore((s) => s.toggleMute);
@@ -94,6 +98,17 @@ function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
         onChange={(e) => onVolumeChange(Number(e.target.value))}
         className="waveform__volume"
       />
+      {onHide && (
+        <button
+          type="button"
+          className="waveform__track-hide"
+          onClick={onHide}
+          title="Hide this waveform. It keeps playing, and M, S and the volume still apply. Bring it back from the Panels menu."
+          aria-label={`Hide ${hideLabel ?? track}`}
+        >
+          &times;
+        </button>
+      )}
     </div>
   );
 }
@@ -269,6 +284,8 @@ function Waveform({ song }: WaveformProps) {
   const takes            = usePlayerStore((s) => s.takes);
   const vocalsVolume       = usePlayerStore((s) => s.vocalsVolume);
   const instrumentalVolume = usePlayerStore((s) => s.instrumentalVolume);
+  const showVocals         = useWaveformPanels((s) => s.visible.vocals);
+  const showInstrumental   = useWaveformPanels((s) => s.visible.instrumental);
   const takeVolume         = usePlayerStore((s) => s.takeVolume);
   const setVocalsVolume       = usePlayerStore((s) => s.setVocalsVolume);
   const setInstrumentalVolume = usePlayerStore((s) => s.setInstrumentalVolume);
@@ -297,6 +314,8 @@ function Waveform({ song }: WaveformProps) {
   const loadedTakes      = useRef(new Map<string, HTMLElement>());
   const [loadError, setLoadError] = useState<string | null>(null);
   const isInstrument = song.kind === "instrument";
+  const hideTrack = (id: "vocals" | "instrumental") => useWaveformPanels.getState().setVisible(id, false);
+  const melodyLabel = isInstrument ? "Melody" : "Vocals";
   const handleDeleteAll = async () => {
     setDeletingAll(true);
     try {
@@ -429,10 +448,16 @@ function Waveform({ song }: WaveformProps) {
       <div className="waveform__timeline" ref={timelineRef}>
         <TimeRuler />
 
-        <div className="waveform__track">
+        <div className={`waveform__track${showVocals ? "" : " waveform__track--collapsed"}`}>
           <div className="waveform__track-header">
-            <span className="waveform__label">{isInstrument ? "Melody" : "Vocals"}</span>
-            <TrackControls track="vocals" volume={vocalsVolume} onVolumeChange={setVocalsVolume} />
+            <span className="waveform__label">{melodyLabel}</span>
+            <TrackControls
+              track="vocals"
+              volume={vocalsVolume}
+              onVolumeChange={setVocalsVolume}
+              onHide={() => hideTrack("vocals")}
+              hideLabel={`${melodyLabel} waveform`}
+            />
           </div>
           <div className="waveform__track-body">
             <div className="waveform__container" ref={vocalsRef} />
@@ -444,10 +469,18 @@ function Waveform({ song }: WaveformProps) {
             for instrument-kind songs (where it's a silent duplicate of the
             melody track, muted in player.ts) - keep it in the DOM but hide
             its chrome so the user isn't shown a redundant waveform. */}
-        <div className={`waveform__track${isInstrument ? " waveform__track--hidden" : ""}`}>
+        <div
+          className={`waveform__track${isInstrument ? " waveform__track--hidden" : ""}${showInstrumental ? "" : " waveform__track--collapsed"}`}
+        >
           <div className="waveform__track-header">
             <span className="waveform__label">Instrumental</span>
-            <TrackControls track="instrumental" volume={instrumentalVolume} onVolumeChange={setInstrumentalVolume} />
+            <TrackControls
+              track="instrumental"
+              volume={instrumentalVolume}
+              onVolumeChange={setInstrumentalVolume}
+              onHide={() => hideTrack("instrumental")}
+              hideLabel="Instrumental waveform"
+            />
           </div>
           <div className="waveform__track-body">
             <div className="waveform__container" ref={instrumentalRef} />
