@@ -6,6 +6,14 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.77] - 2026-10-12
+
+### Added
+- **Move the panels.** Every panel in the practice room (lyrics, takes, piano roll, spectrum comparison, dynamics, vibrato, timing, coach) can be dragged above or below the others with the ↕ grip in its corner (or focus the grip, press space, move with the arrows, press space). The order is remembered, the Panels menu lists panels in that order, and **Reset** puts visibility and order back to the defaults. A panel in its own window returns to its place when docked.
+
+### Changed
+- The practice room is one ordered column: the separate analysis and feedback groups are gone, so any panel can sit between any others.
+
 ## [0.1.76] - 2026-10-12
 
 ### Changed
