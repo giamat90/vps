@@ -6,6 +6,12 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.78] - 2026-10-12
+
+### Added
+- **Hide the waveforms.** The **Waveforms** entry at the top of the Panels menu hides the whole waveform area, and each track (Vocals, Instrumental) can be hidden on its own, from the menu or with the **×** on its header. Hiding only removes the picture: the track keeps playing, and M, S and the volume still apply. A hidden track that is muted or soloed is tagged in the menu.
+- **Free Exercise** has a Panels menu too: piano keyboard, loaded track, piano roll, spectrogram, spectrum, dynamics, vibrato and recordings can each be hidden.
+
 ## [0.0.77] - 2026-10-12
 
 ### Added
