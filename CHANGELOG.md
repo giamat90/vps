@@ -6,6 +6,14 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.75] - 2026-10-12
+
+### Added
+- **Search** box in the library: title, artist, key, tempo or folder name, several words allowed. The folder view returns when it is cleared (Escape).
+
+### Changed
+- **New app icon**: waveform bars instead of the default Tauri logo, so VPS and SPS are easy to tell apart in the taskbar.
+
 ## [0.1.74] - 2026-10-12
 
 ### Added
