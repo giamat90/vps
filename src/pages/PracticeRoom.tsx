@@ -30,7 +30,7 @@ import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
 import { useDetachedStore } from "../stores/detached";
 import { availablePracticePanels, usePracticePanels, type PracticePanelId } from "../stores/panels";
-import { hiddenTrackTags, useWaveformPanels, waveformMenuItems, waveformsOnScreen } from "../stores/waveforms";
+import { hiddenTrackTags, useWaveformPanels, waveformMenuItems } from "../stores/waveforms";
 import type { DetachablePanel } from "../windows/protocol";
 import { useMainBridge } from "../windows/useMainBridge";
 
@@ -85,7 +85,6 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const cleanup = usePlayerStore((s) => s.cleanup);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
-  const shownTakeIds = usePlayerStore((s) => s.shownTakeIds);
   const mutedTracks = usePlayerStore((s) => s.mutedTracks);
   const soloedTrack = usePlayerStore((s) => s.soloedTrack);
   const song = songs.find((s) => s.id === songId);
@@ -123,10 +122,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const docked = (id: DetachablePanel) => visible[id] && !detached[id];
 
   // The waveform area is collapsed, not removed: it owns what the audio engine draws into.
-  const waveformsShown = waveformsOnScreen(waveformVisible, {
-    isInstrument,
-    shownTakes: shownTakeIds.filter((id) => takes.some((t) => t.id === id)).length,
-  });
+  const waveformsShown = waveformVisible.waveforms;
 
   // The page draws what is wanted, here, and possible, in the user's order.
   const onScreen = order.filter(

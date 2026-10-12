@@ -311,26 +311,13 @@ describe("PracticeRoom waveform area", () => {
     expect(shown(html)).toContain("waveform");
   });
 
-  it("collapses the area when every track is hidden and no take is shown", async () => {
-    expect(await render({}, undefined, { vocals: false, instrumental: false })).toContain(COLLAPSED);
-  });
-
-  it("keeps the area while one track is left, or a take is shown", async () => {
-    expect(await render({}, undefined, { vocals: false })).not.toContain(COLLAPSED);
-    h.player.takes = [{ id: "t1" }];
-    h.player.shownTakeIds = ["t1"];
+  it("keeps the area, and so the strips, when every track is minimized", async () => {
     expect(await render({}, undefined, { vocals: false, instrumental: false })).not.toContain(COLLAPSED);
   });
 
-  it("does not count a shown take that no longer exists", async () => {
-    h.player.shownTakeIds = ["gone"];
-    expect(await render({}, undefined, { vocals: false, instrumental: false })).toContain(COLLAPSED);
-  });
-
-  it("has nothing left to show on an instrument track once its one lane is hidden", async () => {
+  it("keeps the area for an instrument track whose melody is minimized", async () => {
     h.library.songs = [song({ kind: "instrument" })];
-    expect(await render({}, undefined, { vocals: false })).toContain(COLLAPSED);
-    expect(await render({}, undefined, { instrumental: false })).not.toContain(COLLAPSED);
+    expect(await render({}, undefined, { vocals: false })).not.toContain(COLLAPSED);
   });
 
   it("is not affected by the other panels being hidden", async () => {

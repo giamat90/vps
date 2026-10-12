@@ -261,7 +261,7 @@ describe("take lanes", () => {
   });
 });
 
-describe("hiding a track's waveform", () => {
+describe("minimizing a track's waveform to a strip", () => {
   // zustand renders the store's initial state under react-dom/server, so what the
   // user chose is seeded through storage and the component is imported again.
   async function renderWith(hidden: string[] = [], kind = "song") {
@@ -274,35 +274,46 @@ describe("hiding a track's waveform", () => {
     return renderToStaticMarkup(createElement(Fresh, { song: { id: "s1", title: "Song", kind } as never }));
   }
   const tracks = (html: string) =>
-    [...html.matchAll(/<div class="(waveform__track[^"]*)"><div class="waveform__track-header"><span class="waveform__label">([^<]*)</g)].map(
-      (m) => [m[2], m[1].replace("waveform__track", "").trim()],
-    );
+    [
+      ...html.matchAll(
+        /<div class="(waveform__track[^"]*)"><div class="waveform__track-header"><div class="waveform__track-title"><button.*?<\/button><span class="waveform__label">([^<]*)</g,
+      ),
+    ].map((m) => [m[2], m[1].replace("waveform__track", "").trim()]);
 
-  it("offers a hide button on the vocals and on the instrumental, and none on the takes bar", async () => {
+  it("offers an arrow on the vocals and on the instrumental, and none on the takes bar", async () => {
     h.state.shownTakeIds = ["a"];
     h.state.activeTakeId = "a";
     const html = await renderWith();
-    expect(html).toContain('aria-label="Hide Vocals waveform"');
-    expect(html).toContain('aria-label="Hide Instrumental waveform"');
-    expect(html.match(/waveform__track-hide/g)).toHaveLength(2);
+    expect(html).toContain('aria-label="Minimize Vocals waveform"');
+    expect(html).toContain('aria-label="Minimize Instrumental waveform"');
+    expect(html.match(/waveform__track-toggle"/g)).toHaveLength(2);
+  });
+
+  it("turns the arrow into an expand button on a minimized track, and says which state it is in", async () => {
+    const html = await renderWith(["vocals"]);
+    expect(html).toContain('aria-label="Expand Vocals waveform"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain("waveform__track-toggle--minimized");
+    expect(html).toContain('aria-label="Minimize Instrumental waveform"');
+    expect(html).toContain('aria-expanded="true"');
   });
 
   it("shows both tracks until the user hides one", async () => {
     expect(tracks(await renderWith())).toEqual([["Vocals", ""], ["Instrumental", ""]]);
   });
 
-  it("collapses only the track that was hidden", async () => {
+  it("minimizes only the track that was chosen", async () => {
     expect(tracks(await renderWith(["vocals"]))).toEqual([["Vocals", "waveform__track--collapsed"], ["Instrumental", ""]]);
     expect(tracks(await renderWith(["instrumental"]))).toEqual([["Vocals", ""], ["Instrumental", "waveform__track--collapsed"]]);
   });
 
-  it("keeps a hidden track's waveform container and controls in the page, so the audio engine still has it", async () => {
+  it("keeps a minimized track's waveform container and controls in the page, so the audio engine still has it and M, S and the volume stay on the strip", async () => {
     const html = await renderWith(["vocals", "instrumental"]);
     expect(html.match(/class="waveform__container"/g)).toHaveLength(2);
     expect(html).toContain('class="waveform__mute"');
   });
 
-  it("keeps the take lanes when both tracks are hidden", async () => {
+  it("keeps the take lanes when both tracks are minimized", async () => {
     h.state.shownTakeIds = ["a"];
     h.state.activeTakeId = "a";
     expect(lanes(await renderWith(["vocals", "instrumental"]))).toEqual(["waveform__track--active"]);
@@ -310,7 +321,7 @@ describe("hiding a track's waveform", () => {
 
   it("calls the vocals track the melody on an instrument track, which has no instrumental to hide", async () => {
     const html = await renderWith([], "instrument");
-    expect(html).toContain('aria-label="Hide Melody waveform"');
+    expect(html).toContain('aria-label="Minimize Melody waveform"');
     expect(tracks(html)[1]).toEqual(["Instrumental", "waveform__track--hidden"]);
   });
 });

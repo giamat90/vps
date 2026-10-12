@@ -4,7 +4,9 @@ import { createPanelStore } from "@giamat90/mps-core/panels";
 // panels are unmounted when hidden and can be moved or detached, whereas the
 // waveform area owns the audio engine's containers, so hiding it only collapses
 // it and the audio is never affected. `waveforms` is the whole area; the other
-// ids are its tracks (recorded takes have their own show/hide in the take list).
+// ids are its tracks, where "not visible" means shrunk to the strip with the
+// name, M, S and volume (the arrow on the strip, or the Panels menu). Recorded
+// takes have their own show/hide in the take list.
 export const WAVEFORM_PANELS = [
   { id: "waveforms", label: "Waveforms", defaultVisible: true },
   { id: "vocals", label: "Vocals", defaultVisible: true },
@@ -32,16 +34,7 @@ export function waveformMenuItems({ isInstrument }: { isInstrument: boolean }): 
   return [{ id: "waveforms", label: "Waveforms", parts }];
 }
 
-/** Whether the area has anything to draw: switched on, and at least one lane that is not hidden. */
-export function waveformsOnScreen(
-  visible: Readonly<Record<WaveformPanelId, boolean>>,
-  { isInstrument, shownTakes }: { isInstrument: boolean; shownTakes: number },
-): boolean {
-  if (!visible.waveforms) return false;
-  return visible.vocals || (!isInstrument && visible.instrumental) || shownTakes > 0;
-}
-
-/** Why a hidden track may be silent or alone: its waveform is gone but its mute and solo still apply. */
+/** Why a minimized track may be silent or alone: its waveform is shrunk to a strip but its mute and solo still apply. */
 export function hiddenTrackTags(
   visible: Readonly<Record<WaveformPanelId, boolean>>,
   { muted, soloed }: { muted: Readonly<Partial<Record<string, boolean>>>; soloed: string | null },
