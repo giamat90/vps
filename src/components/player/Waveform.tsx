@@ -45,12 +45,9 @@ interface TrackControlsProps {
   track: TrackKey;
   volume: number;
   onVolumeChange: (v: number) => void;
-  /** Hides the track's waveform; what is heard does not change. */
-  onHide?: () => void;
-  hideLabel?: string;
 }
 
-function TrackControls({ track, volume, onVolumeChange, onHide, hideLabel }: TrackControlsProps) {
+function TrackControls({ track, volume, onVolumeChange }: TrackControlsProps) {
   const muted       = usePlayerStore((s) => s.mutedTracks[track]);
   const soloed      = usePlayerStore((s) => s.soloedTrack === track);
   const toggleMute  = usePlayerStore((s) => s.toggleMute);
@@ -98,17 +95,38 @@ function TrackControls({ track, volume, onVolumeChange, onHide, hideLabel }: Tra
         onChange={(e) => onVolumeChange(Number(e.target.value))}
         className="waveform__volume"
       />
-      {onHide && (
-        <button
-          type="button"
-          className="waveform__track-hide"
-          onClick={onHide}
-          title="Hide this waveform. It keeps playing, and M, S and the volume still apply. Bring it back from the Panels menu."
-          aria-label={`Hide ${hideLabel ?? track}`}
-        >
-          &times;
-        </button>
-      )}
+    </div>
+  );
+}
+
+interface TrackTitleProps {
+  label: string;
+  /** The waveform is shrunk to this strip; what is heard does not change. */
+  minimized: boolean;
+  onToggle: () => void;
+}
+
+/** The track's name with the arrow that shrinks its waveform to the strip and back, as in a DAW. */
+function TrackTitle({ label, minimized, onToggle }: TrackTitleProps) {
+  return (
+    <div className="waveform__track-title">
+      <button
+        type="button"
+        className={`waveform__track-toggle${minimized ? " waveform__track-toggle--minimized" : ""}`}
+        onClick={onToggle}
+        aria-expanded={!minimized}
+        aria-label={`${minimized ? "Expand" : "Minimize"} ${label} waveform`}
+        title={
+          minimized
+            ? "Show this waveform again"
+            : "Shrink this waveform to a strip. It keeps playing, and M, S and the volume still apply."
+        }
+      >
+        <svg viewBox="0 0 10 6" aria-hidden="true">
+          <polyline points="1,5 5,1 9,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <span className="waveform__label">{label}</span>
     </div>
   );
 }
@@ -314,7 +332,7 @@ function Waveform({ song }: WaveformProps) {
   const loadedTakes      = useRef(new Map<string, HTMLElement>());
   const [loadError, setLoadError] = useState<string | null>(null);
   const isInstrument = song.kind === "instrument";
-  const hideTrack = (id: "vocals" | "instrumental") => useWaveformPanels.getState().setVisible(id, false);
+  const toggleTrack = (id: "vocals" | "instrumental") => useWaveformPanels.getState().toggle(id);
   const melodyLabel = isInstrument ? "Melody" : "Vocals";
   const handleDeleteAll = async () => {
     setDeletingAll(true);
@@ -450,14 +468,8 @@ function Waveform({ song }: WaveformProps) {
 
         <div className={`waveform__track${showVocals ? "" : " waveform__track--collapsed"}`}>
           <div className="waveform__track-header">
-            <span className="waveform__label">{melodyLabel}</span>
-            <TrackControls
-              track="vocals"
-              volume={vocalsVolume}
-              onVolumeChange={setVocalsVolume}
-              onHide={() => hideTrack("vocals")}
-              hideLabel={`${melodyLabel} waveform`}
-            />
+            <TrackTitle label={melodyLabel} minimized={!showVocals} onToggle={() => toggleTrack("vocals")} />
+            <TrackControls track="vocals" volume={vocalsVolume} onVolumeChange={setVocalsVolume} />
           </div>
           <div className="waveform__track-body">
             <div className="waveform__container" ref={vocalsRef} />
@@ -473,14 +485,8 @@ function Waveform({ song }: WaveformProps) {
           className={`waveform__track${isInstrument ? " waveform__track--hidden" : ""}${showInstrumental ? "" : " waveform__track--collapsed"}`}
         >
           <div className="waveform__track-header">
-            <span className="waveform__label">Instrumental</span>
-            <TrackControls
-              track="instrumental"
-              volume={instrumentalVolume}
-              onVolumeChange={setInstrumentalVolume}
-              onHide={() => hideTrack("instrumental")}
-              hideLabel="Instrumental waveform"
-            />
+            <TrackTitle label="Instrumental" minimized={!showInstrumental} onToggle={() => toggleTrack("instrumental")} />
+            <TrackControls track="instrumental" volume={instrumentalVolume} onVolumeChange={setInstrumentalVolume} />
           </div>
           <div className="waveform__track-body">
             <div className="waveform__container" ref={instrumentalRef} />

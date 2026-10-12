@@ -149,7 +149,7 @@ VPS/
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
 │   │   ├── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
 │   │   ├── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
-│   │   ├── waveforms.ts       whether the waveform area and each of its tracks are shown (`vps_waveforms`); hidden = collapsed, never unmounted
+│   │   ├── waveforms.ts       whether the waveform area is shown and whether each track is expanded or shrunk to its strip (`vps_waveforms`); hidden = collapsed, never unmounted
 │   │   └── exercisePanels.ts  which Free Exercise panels are visible (`vps_exercise_panels`)
 │   ├── windows/           detachable panels (spike): VPS-specific state, commands and streams on top of `@giamat90/mps-core/windows` — see wiki/detachable-panels.md
 │   ├── pages/

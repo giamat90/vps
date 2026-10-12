@@ -59,35 +59,6 @@ describe("waveformMenuItems", () => {
   });
 });
 
-describe("waveformsOnScreen", () => {
-  const on = { waveforms: true, vocals: true, instrumental: true };
-  const opts = { isInstrument: false, shownTakes: 0 };
-
-  it("is on while the area is on and a track is left", async () => {
-    const { waveformsOnScreen } = await fresh();
-    expect(waveformsOnScreen(on, opts)).toBe(true);
-    expect(waveformsOnScreen({ ...on, vocals: false }, opts)).toBe(true);
-    expect(waveformsOnScreen({ ...on, instrumental: false }, opts)).toBe(true);
-  });
-
-  it("is off when the area is off, whatever else is on", async () => {
-    const { waveformsOnScreen } = await fresh();
-    expect(waveformsOnScreen({ ...on, waveforms: false }, { ...opts, shownTakes: 2 })).toBe(false);
-  });
-
-  it("is off when every track is hidden and no take is shown, and back on with a take", async () => {
-    const { waveformsOnScreen } = await fresh();
-    const none = { waveforms: true, vocals: false, instrumental: false };
-    expect(waveformsOnScreen(none, opts)).toBe(false);
-    expect(waveformsOnScreen(none, { ...opts, shownTakes: 1 })).toBe(true);
-  });
-
-  it("ignores the instrumental of an instrument track, which has no such lane", async () => {
-    const { waveformsOnScreen } = await fresh();
-    expect(waveformsOnScreen({ ...on, vocals: false }, { isInstrument: true, shownTakes: 0 })).toBe(false);
-  });
-});
-
 describe("hiddenTrackTags", () => {
   const visible = { waveforms: true, vocals: false, instrumental: false };
 

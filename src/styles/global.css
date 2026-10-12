@@ -959,8 +959,8 @@ body,
   flex-direction: column;
 }
 
-/* The waveform area switched off, or with every lane hidden. Collapsed rather
-   than unmounted: it owns the containers the audio engine draws into. */
+/* The waveform area switched off in the Panels menu. Collapsed rather than
+   unmounted: it owns the containers the audio engine draws into. */
 .practice-room__waveforms--collapsed {
   height: 0;
   overflow: hidden;
@@ -1019,15 +1019,50 @@ body,
   pointer-events: none;
 }
 
-/* A track the user hid. It stays in the layout at full width (WaveSurfer keeps
-   measuring a real container and the audio is untouched) but takes no height;
-   the negative margin takes back the flex gap it would otherwise leave. */
-.waveform__track--collapsed {
+/* A track the user shrank to its strip (name, M, S, volume), as in a DAW. The
+   waveform stays in the layout at full width (WaveSurfer keeps measuring a real
+   container and the audio is untouched) but takes no height; the negative margin
+   takes back the gap between the strip and the body. */
+.waveform__track--collapsed > .waveform__track-body {
   height: 0;
   overflow: hidden;
   visibility: hidden;
   pointer-events: none;
-  margin-bottom: calc(var(--lane-gap) * -1);
+  margin-top: -0.25rem;
+}
+
+.waveform__track-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.waveform__track-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--bg-surface);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  padding: 0.15rem 0.3rem;
+  cursor: pointer;
+}
+
+.waveform__track-toggle svg {
+  width: 0.7rem;
+  height: 0.45rem;
+  transition: transform 0.15s;
+}
+
+.waveform__track-toggle--minimized svg {
+  transform: rotate(180deg);
+}
+
+.waveform__track-toggle:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .waveform__track-header {
@@ -1179,8 +1214,7 @@ button.waveform__take-name {
   gap: 0.4rem;
 }
 
-.waveform__take-hide,
-.waveform__track-hide {
+.waveform__take-hide {
   background: transparent;
   border: 1px solid var(--bg-surface);
   border-radius: 4px;
@@ -1191,8 +1225,7 @@ button.waveform__take-name {
   cursor: pointer;
 }
 
-.waveform__take-hide:hover,
-.waveform__track-hide:hover {
+.waveform__take-hide:hover {
   border-color: var(--accent);
   color: var(--text-primary);
 }
