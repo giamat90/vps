@@ -462,21 +462,23 @@ Song practice page. Requires a processed song.
 ├─ practice-room__body → practice-room__main (one column)┤
 │  Waveform (vocals + instrumental + take,              │
 │            mute/solo/volume per track row)            │
-│  LyricsPanel            (panel `lyrics`, non-instrument)│
-│  practice-room__takes   (panel `takes`: TakeList)     │
-│  practice-room__analysis (when isAnalysisLoaded):     │
-│    PianoKeyboard · PianoRoll   (panel `pianoRoll`)    │
-│    ShortTermSpectrumComparisonPanel (`spectrum`)      │
-│    DynamicsCurve               (`dynamics`)           │
-│  practice-room__feedback                              │
+│  then the optional panels, one `sortable-panel` slot  │
+│  each, in the user's order (default as listed):       │
+│    LyricsPanel         (`lyrics`, non-instrument)     │
+│    TakeList            (`takes`, slot class           │
+│                         `practice-room__takes`)       │
+│    PianoKeyboard + PianoRoll (`pianoRoll`)*           │
+│    ShortTermSpectrumComparisonPanel (`spectrum`)*     │
+│    DynamicsCurve       (`dynamics`)*                  │
 │    VibratoCard · TimingChart · CoachPanel             │
-│    (panels `vibrato`, `timing`, `coach`)              │
+│    (`vibrato`, `timing`, `coach`)                     │
+│  * only once isAnalysisLoaded                         │
 └───────────────────────────────────────────────────────┘
 ```
 
 **Topbar:** `practice-room__topbar` sits between the header and the body — above `practice-room__main` — and consolidates every transport/recording control that used to be split across a controls row and a transport row inside the scrollable main column: `TransportControls` (play/stop/time), `TempoControl`, the Input/Output device pair (stacked in `practice-room__io-group`), `KeyTranspose`, `MonitorButton`, and `RecordButton`. It's `position: sticky; top: 0` so it stays visible while the column below it scrolls — though in practice `.practice-room` itself doesn't scroll (only `practice-room__main` does), so the sticky rule is a safety net rather than load-bearing.
 
-**Layout:** one vertical column (`practice-room__main`, `overflow-y: auto`) with no side widgets: waveforms, lyrics, takes (`practice-room__takes`, capped at `16rem` and scrollable), the analysis block, then the feedback cards (`practice-room__feedback`). Groups that have nothing switched on are not rendered, so hiding a panel always gives its space back. The `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__main`) for the scroll to engage.
+**Layout:** one vertical column (`practice-room__main`, `overflow-y: auto`) with no side widgets: the waveforms, then every optional panel in the order the user chose (see "Panel order" below; default lyrics, takes, piano roll, spectrum, dynamics, vibrato, timing, coach). The takes slot (`practice-room__takes`) is capped at `16rem` and scrollable. A panel that is hidden, detached or not yet possible is not rendered, so hiding a panel always gives its space back. The old `practice-room__analysis` and `practice-room__feedback` groups no longer exist: any panel can sit between any others. The `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__main`) for the scroll to engage.
 
 **Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on, `isRecording`, or `isMonitoring`. `showAnalysis` is set automatically when the user selects a take, **and on mount for `kind: "instrument"` songs** — an instrument practice track exists to be pitched against, so its piano-pitch ribbon + Pitch Monitor open without waiting for a take, and the tab drops the "(select take)" hint. `PianoKeyboard` renders `<DualTuner />` internally, so the tuner *is* present here (comparing the live mic against the song/piano pitch) — despite older revisions of this note claiming it was ExercisePage-only. For instrument songs the PianoRoll/PitchMonitor legend reads "Piano" instead of "Song".
 
@@ -591,8 +593,8 @@ The practice room has more on it than anyone wants at once, so everything option
 
 | Panel id | Shows | Default |
 |---|---|---|
-| `takes` | `TakeList` under the waveforms | on |
 | `lyrics` | `LyricsPanel` (never offered for instrument tracks) | on |
+| `takes` | `TakeList` | on |
 | `pianoRoll` | `PianoKeyboard` + `PianoRoll` | on |
 | `spectrum` | `ShortTermSpectrumComparisonPanel` | off |
 | `dynamics` | `DynamicsCurve` | off |
@@ -600,7 +602,15 @@ The practice room has more on it than anyone wants at once, so everything option
 | `timing` | `TimingChart` | off |
 | `coach` | `CoachPanel` | on |
 
-Always on: waveforms, transport, tempo, mic/output, transpose, monitor, record. The analysis block only appears once the song analysis has loaded; each group (takes, analysis, feedback) disappears when none of its panels is on. There is no side column: everything is one vertical stack.
+Always on: waveforms, transport, tempo, mic/output, transpose, monitor, record. The piano roll, spectrum and dynamics only appear once the song analysis has loaded. There is no side column: everything is one vertical stack. The table is the default order.
+
+### Panel order
+
+The user can move any docked panel up or down. Each panel's corner handle (`DetachHandle`) has a **↕ grip** next to the detach grip: drag it to put the panel in another place (or focus it, space to pick up, arrows, space to drop). `SortablePanels` (`src/components/panels/SortablePanels.tsx`, `@dnd-kit/sortable`, already used by the library) wraps each panel in a `sortable-panel` slot and moves nothing in the DOM until the drop. The order is `order` / `move` / `resetOrder` of the panel store (mps-core v0.6.0), persisted next to the visibility choices in `vps_panels`; the Panels menu lists panels in that order, and **Reset** restores default visibility *and* order.
+- The order covers every panel, including hidden and detached ones, so a panel docked again returns to its place; a panel added in a later version slots in after its default predecessor.
+- The waveforms/transport are not panels and do not move.
+- The detached window has no move grip (`MoveGrip` renders nothing outside `SortablePanels`).
+- Not hand-tested in a running app when this was written (vitest has no DOM here); the drag itself is dnd-kit's, the order logic and the page's use of it are tested.
 
 Rules for a panel:
 - **A hidden panel is not mounted.** It must be a pure view: nothing may depend on it being on screen. `TakeList` used to fetch the takes on mount; that moved into `loadSong` for exactly this reason. Anything a panel needs to keep running goes in a store or the page, not the panel.

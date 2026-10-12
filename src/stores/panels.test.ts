@@ -10,10 +10,10 @@ async function fresh() {
 }
 
 describe("practice-room panels", () => {
-  it("lists the optional panels in the order the menu shows them", async () => {
+  it("lists the optional panels in the order the page draws them by default", async () => {
     const { PRACTICE_PANELS } = await fresh();
     expect(PRACTICE_PANELS.map((p) => p.id)).toEqual([
-      "takes", "lyrics", "pianoRoll", "spectrum", "dynamics", "vibrato", "timing", "coach",
+      "lyrics", "takes", "pianoRoll", "spectrum", "dynamics", "vibrato", "timing", "coach",
     ]);
   });
 

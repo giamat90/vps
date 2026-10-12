@@ -865,17 +865,6 @@ body,
   overflow-y: auto;
 }
 
-.practice-room__feedback {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.practice-room__feedback > * {
-  margin-top: 0;
-}
-
 .practice-room__back {
   background: none;
   border: 1px solid var(--bg-surface);
@@ -2086,6 +2075,12 @@ button.waveform__take-name {
   cursor: pointer;
 }
 
+.panel-menu__hint {
+  margin: 0.4rem 0 0;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
 .panel-menu__actions {
   display: flex;
   gap: 0.4rem;
@@ -2111,13 +2106,6 @@ button.waveform__take-name {
   color: var(--text-primary);
 }
 
-/* Analysis block (the piano roll, spectrum and dynamics the user switched on) */
-.practice-room__analysis {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
 .analysis-tab {
   background: var(--bg-secondary);
   border: 1px solid var(--bg-surface);
@@ -2139,12 +2127,6 @@ button.waveform__take-name {
   background: var(--bg-surface);
   border-color: var(--accent);
   color: var(--text-primary);
-}
-
-.practice-room__analysis-body {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
 }
 
 /* Analysis Panel (PianoRoll / DynamicsCurve) */
@@ -3487,6 +3469,7 @@ button.waveform__take-name {
   opacity: 1;
 }
 
+.detach-handle__move,
 .detach-handle__grip,
 .detach-handle__pop {
   background: var(--bg-secondary);
@@ -3500,9 +3483,16 @@ button.waveform__take-name {
   cursor: pointer;
 }
 
-.detach-handle__grip {
+.detach-handle__grip,
+.detach-handle__move {
   cursor: grab;
   touch-action: none;
+}
+
+.detach-handle__move--dragging {
+  cursor: grabbing;
+  border-color: var(--accent);
+  color: var(--text-primary);
 }
 
 .detach-handle--dragging .detach-handle__grip {
@@ -3512,6 +3502,7 @@ button.waveform__take-name {
 }
 
 .detach-handle__pop:hover,
+.detach-handle__move:hover,
 .detach-handle__grip:hover {
   border-color: var(--accent);
   color: var(--text-primary);
@@ -3524,6 +3515,21 @@ button.waveform__take-name {
   border-radius: 4px;
   padding: 0.15rem 0.4rem;
   white-space: nowrap;
+}
+
+/* A panel in the stack the user can reorder; the one being dragged floats above the rest. */
+.sortable-panel {
+  position: relative;
+}
+
+.sortable-panel--dragging {
+  z-index: 20;
+  opacity: 0.9;
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.45);
+}
+
+.sortable-panel--dragging .detach-handle {
+  opacity: 1;
 }
 
 .detached-host {
