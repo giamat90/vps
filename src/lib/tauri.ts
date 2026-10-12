@@ -63,6 +63,11 @@ export async function setSongLoopsApi(songId: string, loops: NamedLoop[]): Promi
   return invoke<Song>("set_song_loops", { songId, loops });
 }
 
+/** Abandon the lyrics sync that is running; its sync call then fails with "Cancelled." */
+export async function cancelLyricsSync(): Promise<void> {
+  return invoke("cancel_lyrics_sync");
+}
+
 /** Rename a song's library title. Empty/whitespace is rejected. */
 export async function renameSongApi(songId: string, title: string): Promise<Song> {
   return invoke<Song>("rename_song", { songId, title });

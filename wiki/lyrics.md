@@ -120,5 +120,5 @@ Needs the weights in `~/.vps/models/` (or `~/.cache/torch/hub/checkpoints/`, or 
 
 - The frozen (PyInstaller) sidecar has not been built with this change; `build.py` gained `--hidden-import=torchaudio.pipelines`. Build and smoke-test a release candidate before shipping.
 - The model is not bundled; the first sync needs internet.
-- No cancel button: a sync runs to completion, and other sidecar commands wait for it.
+- **Cancel**: the panel's Cancel button calls `cancel_lyrics_sync`, which sets a flag the running `sync_lyrics` polls every 200 ms (`lyrics::wait_cancellable`). A running alignment cannot be interrupted in Python, so the sidecar process is stopped and starts again on its next use; the model download is atomic (`.part` then rename), so a cancelled download leaves nothing half-written. The sync call fails with "Cancelled." Other sidecar commands still wait while a sync runs.
 - One lyric track per song; no manual per-line timing edits.
