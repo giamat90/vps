@@ -300,6 +300,7 @@ interface PitchPoint {       // frontend-internal representation
 | `set_take_manual_offset(songId, takeId, offset)` | `Take` | `0` resets to the auto-detected position |
 | `load_lyrics(songId)` / `delete_lyrics(songId)` | `Lyrics` or `null` / `void` | `lyrics.json` of the song |
 | `sync_lyrics(songId, text, source?)` | `Lyrics` | aligns the text to `vocals.wav` via sidecar `align_lyrics`, persists, emits `lyrics-progress`; see wiki/lyrics.md |
+| `cancel_lyrics_sync()` | `void` | abandons the running `sync_lyrics`, which then fails with "Cancelled."; the sidecar is stopped and restarts on its next use |
 | `find_lyrics(songId)` | `FoundLyrics` | LRCLIB lookup via sidecar, nothing saved |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
 | `import_exercise_file(filePath, duration)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |

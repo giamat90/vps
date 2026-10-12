@@ -6,6 +6,7 @@ use crate::library;
 use crate::sidecar::{SidecarManager, SidecarMessage};
 use crate::storage;
 use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 const FORMAT_VERSION: u32 = 1;
@@ -160,6 +161,67 @@ pub fn sync_impl(
     source: &str,
     on_progress: &mut dyn FnMut(f32, &str),
 ) -> Result<Lyrics, String> {
+    sync_cancellable(state, song_id, text, source, &AtomicBool::new(false), on_progress)
+}
+
+/// What a caller sees when the user cancelled the sync.
+pub const CANCELLED_MESSAGE: &str = "Cancelled.";
+
+const CANCEL_POLL: Duration = Duration::from_millis(200);
+
+#[derive(Debug)]
+pub(crate) enum WaitError {
+    Cancelled,
+    Failed(String),
+}
+
+/// Waits for the final reply of the command already sent, looking at `cancel`
+/// between `slice`s so a job the sidecar cannot be interrupted in can still be
+/// abandoned. `timeout` is the longest silence tolerated.
+pub(crate) fn wait_cancellable(
+    mut next: impl FnMut(Duration) -> Result<Option<SidecarMessage>, String>,
+    cancel: &AtomicBool,
+    slice: Duration,
+    timeout: Duration,
+    mut on_progress: impl FnMut(f32, String),
+) -> Result<serde_json::Value, WaitError> {
+    let mut silent = Duration::ZERO;
+    loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(WaitError::Cancelled);
+        }
+        match next(slice).map_err(WaitError::Failed)? {
+            None => {
+                silent += slice;
+                if silent >= timeout {
+                    return Err(WaitError::Failed("recv: timed out waiting for the sidecar".to_string()));
+                }
+            }
+            Some(SidecarMessage::Progress { value, stage, .. }) => {
+                silent = Duration::ZERO;
+                on_progress(value, stage);
+            }
+            Some(SidecarMessage::Result { data, .. }) => return Ok(data),
+            Some(SidecarMessage::Error { message, traceback, .. }) => {
+                log::error!("Lyrics sync failed: {message}\n{}", traceback.unwrap_or_default());
+                return Err(WaitError::Failed(message));
+            }
+            Some(_) => {}
+        }
+    }
+}
+
+/// `sync_impl` that the user can cancel: setting `cancel` abandons the job and
+/// stops the sidecar, which a running alignment cannot be interrupted in. The
+/// sidecar starts again on its next use.
+pub fn sync_cancellable(
+    state: &SidecarState,
+    song_id: &str,
+    text: &str,
+    source: &str,
+    cancel: &AtomicBool,
+    on_progress: &mut dyn FnMut(f32, &str),
+) -> Result<Lyrics, String> {
     if text.trim().is_empty() {
         return Err("Paste the lyrics first.".to_string());
     }
@@ -178,23 +240,35 @@ pub fn sync_impl(
         "lyrics": text,
         "modelsDir": storage::app_data_dir().join("models").to_string_lossy(),
     });
-    let guard = ensure_sidecar(state)?;
+    let mut guard = state.0.lock().map_err(|e| format!("lock: {e}"))?;
+    if cancel.load(Ordering::SeqCst) {
+        return Err(CANCELLED_MESSAGE.to_string());
+    }
+    if guard.is_none() {
+        log::info!("Spawning sidecar for lyrics");
+        *guard = Some(SidecarManager::spawn()?);
+    }
     let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
     sidecar.send_command(&cmd)?;
 
-    loop {
-        match sidecar.recv_timeout(SIDECAR_TIMEOUT)? {
-            SidecarMessage::Progress { value, stage, .. } => on_progress(value, &stage),
-            SidecarMessage::Result { data, .. } => {
-                let lyrics = from_alignment(source, text, &data, chrono::Utc::now().to_rfc3339())?;
-                save(song_id, &lyrics)?;
-                return Ok(lyrics);
-            }
-            SidecarMessage::Error { message, traceback, .. } => {
-                log::error!("Lyrics sync failed: {message}\n{}", traceback.unwrap_or_default());
-                return Err(message);
-            }
-            _ => {}
+    let outcome = wait_cancellable(
+        |slice| sidecar.recv_slice(slice),
+        cancel,
+        CANCEL_POLL,
+        SIDECAR_TIMEOUT,
+        |value, stage| on_progress(value, &stage),
+    );
+    match outcome {
+        Ok(data) => {
+            let lyrics = from_alignment(source, text, &data, chrono::Utc::now().to_rfc3339())?;
+            save(song_id, &lyrics)?;
+            Ok(lyrics)
+        }
+        Err(WaitError::Failed(message)) => Err(message),
+        Err(WaitError::Cancelled) => {
+            log::info!("Lyrics sync cancelled: stopping the sidecar");
+            *guard = None;
+            Err(CANCELLED_MESSAGE.to_string())
         }
     }
 }
@@ -370,6 +444,127 @@ mod tests {
         let err = sync_impl(&state, "s1", "  \n ", "paste", &mut |_, _| {}).unwrap_err();
         assert!(err.contains("Paste the lyrics"));
         assert!(!spawned(&state));
+    }
+
+    fn script(
+        steps: Vec<Result<Option<SidecarMessage>, String>>,
+    ) -> impl FnMut(Duration) -> Result<Option<SidecarMessage>, String> {
+        let mut steps = steps.into_iter();
+        move |_| steps.next().unwrap_or(Ok(None))
+    }
+
+    fn progress(value: f32) -> SidecarMessage {
+        SidecarMessage::Progress { cmd: None, value, stage: "s".into() }
+    }
+
+    #[test]
+    fn a_cancellable_wait_returns_the_result_and_reports_progress() {
+        let cancel = AtomicBool::new(false);
+        let mut seen = vec![];
+        let out = wait_cancellable(
+            script(vec![
+                Ok(None),
+                Ok(Some(progress(0.5))),
+                Ok(Some(SidecarMessage::Result { cmd: "x".into(), data: json!({"ok": 1}) })),
+            ]),
+            &cancel,
+            Duration::from_millis(10),
+            Duration::from_secs(5),
+            |v, _| seen.push(v),
+        );
+        assert_eq!(out.unwrap(), json!({"ok": 1}));
+        assert_eq!(seen, vec![0.5]);
+    }
+
+    #[test]
+    fn a_cancellable_wait_stops_when_cancel_is_set_between_slices() {
+        let cancel = AtomicBool::new(false);
+        let mut calls = 0;
+        let out = wait_cancellable(
+            |_| {
+                calls += 1;
+                if calls == 2 {
+                    cancel.store(true, Ordering::SeqCst);
+                }
+                Ok(None)
+            },
+            &cancel,
+            Duration::from_millis(10),
+            Duration::from_secs(5),
+            |_, _| {},
+        );
+        assert!(matches!(out, Err(WaitError::Cancelled)));
+        assert_eq!(calls, 2, "no more waiting once cancelled");
+    }
+
+    #[test]
+    fn a_cancellable_wait_gives_up_after_the_silence_timeout() {
+        let cancel = AtomicBool::new(false);
+        let out = wait_cancellable(|_| Ok(None), &cancel, Duration::from_millis(10), Duration::from_millis(35), |_, _| {});
+        match out {
+            Err(WaitError::Failed(m)) => assert!(m.contains("timed out"), "{m}"),
+            other => panic!("expected a timeout, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn progress_resets_the_silence_clock() {
+        let cancel = AtomicBool::new(false);
+        let mut n = 0;
+        let out = wait_cancellable(
+            move |_| {
+                n += 1;
+                match n {
+                    1 | 2 => Ok(None),
+                    3 => Ok(Some(progress(0.3))),
+                    4 | 5 => Ok(None),
+                    6 => Ok(Some(progress(0.6))),
+                    7 | 8 => Ok(None),
+                    _ => Ok(Some(SidecarMessage::Result { cmd: "x".into(), data: json!(1) })),
+                }
+            },
+            &cancel,
+            Duration::from_millis(10),
+            Duration::from_millis(30),
+            |_, _| {},
+        );
+        assert!(out.is_ok(), "{out:?}");
+    }
+
+    #[test]
+    fn a_sidecar_error_or_a_dead_channel_fails_the_wait() {
+        let cancel = AtomicBool::new(false);
+        let err = wait_cancellable(
+            script(vec![Ok(Some(SidecarMessage::Error { cmd: None, message: "boom".into(), traceback: None }))]),
+            &cancel,
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            |_, _| {},
+        );
+        assert!(matches!(err, Err(WaitError::Failed(ref m)) if m == "boom"));
+        let dead = wait_cancellable(
+            script(vec![Err("recv: disconnected".into())]),
+            &cancel,
+            Duration::from_millis(10),
+            Duration::from_secs(1),
+            |_, _| {},
+        );
+        assert!(matches!(dead, Err(WaitError::Failed(ref m)) if m.contains("disconnected")));
+    }
+
+    #[test]
+    fn a_cancelled_sync_stops_before_the_sidecar_and_saves_nothing() {
+        let _home = TestHome::new();
+        library::add(song("s1", "vocal")).unwrap();
+        let dir = storage::song_dir("s1");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("vocals.wav"), b"x").unwrap();
+        let state = offline_state();
+        let cancel = AtomicBool::new(true);
+        let err = sync_cancellable(&state, "s1", "la la", "paste", &cancel, &mut |_, _| {}).unwrap_err();
+        assert_eq!(err, CANCELLED_MESSAGE);
+        assert!(!spawned(&state));
+        assert!(load("s1").unwrap().is_none(), "no lyrics were saved");
     }
 
     #[test]

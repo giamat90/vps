@@ -46,6 +46,7 @@ pub fn run() {
             commands::load_analysis,
             commands::load_lyrics,
             commands::sync_lyrics,
+            commands::cancel_lyrics_sync,
             commands::find_lyrics,
             commands::delete_lyrics,
             commands::save_exercise_take,

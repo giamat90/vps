@@ -718,6 +718,17 @@ pub async fn load_lyrics(song_id: String) -> Result<Option<crate::lyrics::Lyrics
     crate::lyrics::load(&song_id)
 }
 
+/// Set by `cancel_lyrics_sync`, read by the sync that is running.
+static LYRICS_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Abandon the lyrics sync that is running (if any); its `sync_lyrics` call
+/// fails with "Cancelled." and the sidecar is stopped.
+#[tauri::command]
+pub async fn cancel_lyrics_sync() -> Result<(), String> {
+    LYRICS_CANCEL.store(true, std::sync::atomic::Ordering::SeqCst);
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn sync_lyrics(
     app: AppHandle,
@@ -727,7 +738,8 @@ pub async fn sync_lyrics(
     source: Option<String>,
 ) -> Result<crate::lyrics::Lyrics, String> {
     let source = source.unwrap_or_else(|| "paste".to_string());
-    crate::lyrics::sync_impl(&state, &song_id, &text, &source, &mut |progress, stage| {
+    LYRICS_CANCEL.store(false, std::sync::atomic::Ordering::SeqCst);
+    crate::lyrics::sync_cancellable(&state, &song_id, &text, &source, &LYRICS_CANCEL, &mut |progress, stage| {
         let payload = LyricsProgress { song_id: song_id.clone(), progress, stage: stage.to_string() };
         if let Err(e) = app.emit("lyrics-progress", payload) {
             log::warn!("Could not emit lyrics-progress: {e}");
