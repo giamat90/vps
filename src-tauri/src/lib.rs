@@ -16,7 +16,12 @@ use commands::SidecarState;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(
+            tauri_plugin_updater::Builder::new()
+                // Versioning moved from 0.1.x to 0.0.x, which semver orders as older.
+                .default_version_comparator(|current, update| update.version != current)
+                .build(),
+        )
         .manage(SidecarState(std::sync::Mutex::new(None)))
         .manage(windows::WindowMemory::load())
         .invoke_handler(tauri::generate_handler![

@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.76] - 2026-10-12
+
+### Changed
+- **Version numbering** drops the minor: releases continue as `0.0.x` (next is `0.0.77`). This build is the bridge: the updater now installs any release whose version differs from the installed one, so 0.1.x installs move to 0.0.x despite semver ordering it lower. Existing `v0.1.x` tags and releases are left as history.
+
 ## [0.1.75] - 2026-10-12
 
 ### Added
