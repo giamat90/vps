@@ -23,7 +23,7 @@ const ws = vi.hoisted(() => {
     setPlaybackRate = vi.fn();
     setSinkId = vi.fn(async () => {});
     setOptions = vi.fn();
-    zoom = vi.fn();
+    zoom = vi.fn(() => { if (!this.decoded) throw new Error("No audio loaded"); });
     setScrollTime = vi.fn();
     getWidth = vi.fn(() => this.width);
     getDuration = vi.fn(() => this.duration);
@@ -49,6 +49,7 @@ const ws = vi.hoisted(() => {
     }
 
     emit(event: string, ...args: any[]) {
+      if (event === "ready") this.decoded = {};
       [...(this.handlers.get(event) ?? [])].forEach((cb) => cb(...args));
     }
   }
@@ -1017,7 +1018,8 @@ describe("getExerciseTrackSamples", () => {
 
 describe("getTrackSamples", () => {
   it("is null without decoded data", async () => {
-    const { engine } = await loadedEngine();
+    const { engine, vocals } = await loadedEngine();
+    vocals.decoded = null;
     expect(engine.getTrackSamples("vocals", 4)).toBeNull();
     expect(engine.getTrackSamples("take", 4)).toBeNull();
   });
@@ -1173,5 +1175,67 @@ describe("each take's own volume", () => {
     engine.setAudibleTakeTracks(["a"]);
     const again = await withTake(engine, { id: "a", duration: 10, start: 0, active: false });
     expect(again.take.setVolume).toHaveBeenLastCalledWith(1);
+  });
+});
+
+describe("zoom and scroll while an instance is still decoding", () => {
+  // WaveSurfer throws "No audio loaded" from zoom() until it has decoded the file, and a take
+  // lane is in the engine's map from the moment it is created. The timeline's resize observer
+  // calls zoomAll whenever a lane appears, so this used to throw and skip every other instance.
+  async function decodingTake(engine: AudioEngine) {
+    ws.config.autoReady = false;
+    ws.config.readyDuration = 10;
+    const loading = engine.loadTakeTrack("t1", "/t1.wav", container(), 2, 0, 0);
+    const take = ws.instances[ws.instances.length - 1];
+    return {
+      take,
+      el: container(),
+      finish: async () => {
+        take.emit("ready");
+        await loading;
+      },
+    };
+  }
+
+  it("zoomAll does not throw, and still zooms the instances that have audio", async () => {
+    const { engine, vocals, instrumental } = await loadedEngine();
+    const { take } = await decodingTake(engine);
+    expect(() => engine.zoomAll(15, 4)).not.toThrow();
+    for (const i of [vocals, instrumental]) expect(i.zoom).toHaveBeenCalledWith(15);
+    expect(take.zoom).not.toHaveBeenCalled();
+  });
+
+  it("setScrollAll skips it too", async () => {
+    const { engine, vocals, instrumental } = await loadedEngine();
+    const { take } = await decodingTake(engine);
+    engine.setScrollAll(9);
+    for (const i of [vocals, instrumental]) expect(i.setScrollTime).toHaveBeenCalledWith(9);
+    expect(take.setScrollTime).not.toHaveBeenCalled();
+  });
+
+  it("remembers the zoom, so a take that finishes later is sized at it", async () => {
+    const { engine } = await loadedEngine();
+    const { take, finish } = await decodingTake(engine);
+    engine.zoomAll(10, 5);
+    await finish();
+    expect(take.setOptions).toHaveBeenCalledWith({ width: 100 });
+  });
+
+  it("is driven by zoomAll again once it has audio", async () => {
+    const { engine } = await loadedEngine();
+    const { take, finish } = await decodingTake(engine);
+    await finish();
+    engine.zoomAll(12, 0);
+    expect(take.zoom).toHaveBeenCalledWith(12);
+  });
+
+  it("does not throw while the song itself is still loading", async () => {
+    ws.config.autoReady = false;
+    const engine = new AudioEngine();
+    const loading = engine.load("C:\\lib\\song", {} as HTMLElement, {} as HTMLElement);
+    expect(() => engine.zoomAll(8, 0)).not.toThrow();
+    expect(() => engine.setScrollAll(1)).not.toThrow();
+    ws.instances.slice(-2).forEach((i) => i.emit("ready"));
+    await loading;
   });
 });

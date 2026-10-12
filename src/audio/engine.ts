@@ -494,9 +494,15 @@ export class AudioEngine {
 
   // ─── Timeline zoom/pan ──────────────────────────────────────────────────
 
+  /**
+   * The instances zoom and scroll can be applied to. WaveSurfer throws "No audio
+   * loaded" from zoom() until a file is decoded, and a take lane is in the map
+   * from the moment it is created, so one that is still decoding is left out
+   * (it is sized at the current zoom when it is ready, see _resizeTakeTrack).
+   */
   private _allInstances(): WaveSurfer[] {
     const base = [this.vocals, this.instrumental].filter((ws): ws is WaveSurfer => ws !== null);
-    return [...base, ...[...this._takes.values()].map((t) => t.ws)];
+    return [...base, ...[...this._takes.values()].map((t) => t.ws)].filter((ws) => ws.getDecodedData() !== null);
   }
 
   // Dynamic lower zoom bound: the minPxPerSec at which the whole song
