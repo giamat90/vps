@@ -24,11 +24,12 @@ import LyricsPanel from "../components/lyrics/LyricsPanel";
 import LivePitchFeed from "../components/analysis/LivePitchFeed";
 import DetachHandle from "../components/panels/DetachHandle";
 import PanelMenu from "../components/panels/PanelMenu";
+import SortablePanels from "../components/panels/SortablePanels";
 import { useLibraryStore } from "../stores/library";
 import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
 import { useDetachedStore } from "../stores/detached";
-import { availablePracticePanels, usePracticePanels } from "../stores/panels";
+import { availablePracticePanels, usePracticePanels, type PracticePanelId } from "../stores/panels";
 import type { DetachablePanel } from "../windows/protocol";
 import { useMainBridge } from "../windows/useMainBridge";
 
@@ -41,6 +42,37 @@ function Detachable({ panel, children }: { panel: DetachablePanel; children: Rea
     </div>
   );
 }
+
+/** What each optional panel shows. */
+function PanelView({ id, songId }: { id: PracticePanelId; songId: string }) {
+  switch (id) {
+    case "lyrics":
+      return <LyricsPanel songId={songId} />;
+    case "takes":
+      return <TakeList />;
+    case "pianoRoll":
+      return (
+        <>
+          <PianoKeyboard />
+          <PianoRoll />
+        </>
+      );
+    case "spectrum":
+      return <ShortTermSpectrumComparisonPanel />;
+    case "dynamics":
+      return <DynamicsCurve />;
+    case "vibrato":
+      return <VibratoCard />;
+    case "timing":
+      return <TimingChart />;
+    case "coach":
+      return <CoachPanel />;
+  }
+}
+
+const NEEDS_ANALYSIS: readonly PracticePanelId[] = ["pianoRoll", "spectrum", "dynamics"];
+
+const slotClass = (id: PracticePanelId) => (id === "takes" ? "practice-room__takes" : undefined);
 
 interface PracticeRoomProps {
   songId: string;
@@ -77,12 +109,21 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const isAnalysisLoaded = useAnalysisStore((s) => s.isLoaded);
 
   const visible = usePracticePanels((s) => s.visible);
+  const order = usePracticePanels((s) => s.order);
   const detached = useDetachedStore((s) => s.detached);
 
   useMainBridge();
 
   // On screen in this window: wanted, and not living in a window of its own.
   const docked = (id: DetachablePanel) => visible[id] && !detached[id];
+
+  // The page draws what is wanted, here, and possible, in the user's order.
+  const onScreen = order.filter(
+    (id) =>
+      docked(id) &&
+      !(isInstrument && id === "lyrics") &&
+      !(NEEDS_ANALYSIS.includes(id) && !isAnalysisLoaded),
+  );
 
   useEffect(() => installPlayerShortcuts(() => usePlayerStore.getState()), []);
 
@@ -190,62 +231,13 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             <Waveform song={song} />
           </div>
 
-          {!isInstrument && docked("lyrics") && (
-            <Detachable panel="lyrics">
-              <LyricsPanel songId={songId} />
-            </Detachable>
-          )}
-
-          {docked("takes") && (
-            <div className="practice-room__takes">
-              <Detachable panel="takes">
-                <TakeList />
+          <SortablePanels store={usePracticePanels} ids={onScreen} className={slotClass}>
+            {(id) => (
+              <Detachable panel={id}>
+                <PanelView id={id} songId={songId} />
               </Detachable>
-            </div>
-          )}
-
-          {isAnalysisLoaded && (docked("pianoRoll") || docked("spectrum") || docked("dynamics")) && (
-            <div className="practice-room__analysis">
-              <div className="practice-room__analysis-body">
-                {docked("pianoRoll") && (
-                  <Detachable panel="pianoRoll">
-                    <PianoKeyboard />
-                    <PianoRoll />
-                  </Detachable>
-                )}
-                {docked("spectrum") && (
-                  <Detachable panel="spectrum">
-                    <ShortTermSpectrumComparisonPanel />
-                  </Detachable>
-                )}
-                {docked("dynamics") && (
-                  <Detachable panel="dynamics">
-                    <DynamicsCurve />
-                  </Detachable>
-                )}
-              </div>
-            </div>
-          )}
-
-          {(docked("vibrato") || docked("timing") || docked("coach")) && (
-            <div className="practice-room__feedback">
-              {docked("vibrato") && (
-                <Detachable panel="vibrato">
-                  <VibratoCard />
-                </Detachable>
-              )}
-              {docked("timing") && (
-                <Detachable panel="timing">
-                  <TimingChart />
-                </Detachable>
-              )}
-              {docked("coach") && (
-                <Detachable panel="coach">
-                  <CoachPanel />
-                </Detachable>
-              )}
-            </div>
-          )}
+            )}
+          </SortablePanels>
         </div>
       </div>
     </div>

@@ -67,8 +67,8 @@ import { PRACTICE_PANELS } from "../stores/panels";
 // zustand renders the server snapshot (the store's initial state) under
 // react-dom/server, so choices are seeded through storage and the page is
 // imported fresh for every render.
-async function render(overrides: Record<string, boolean> = {}) {
-  localStorage.setItem("vps_panels", JSON.stringify({ overrides }));
+async function render(overrides: Record<string, boolean> = {}, order?: string[]) {
+  localStorage.setItem("vps_panels", JSON.stringify({ overrides, order }));
   vi.resetModules();
   const { default: PracticeRoom } = await import("./PracticeRoom");
   return renderToStaticMarkup(createElement(PracticeRoom, { songId: "s1", onBack: () => {} }));
@@ -102,13 +102,12 @@ describe("PracticeRoom panels", () => {
     for (const c of ["spectrum", "dynamics", "timing"]) expect(ids).not.toContain(c);
   });
 
-  it("shows nothing optional once everything is hidden, and drops the empty groups", async () => {
+  it("shows nothing optional once everything is hidden, and leaves no empty slot", async () => {
     const html = await render(all(false));
     const optional = ["takes", "lyrics", "pianoRoll", "pianoKeyboard", "spectrum", "dynamics", "vibrato", "timing", "coach"];
     expect(shown(html).filter((c) => optional.includes(c))).toEqual([]);
-    for (const cls of ["practice-room__takes", "practice-room__feedback", "practice-room__analysis"]) {
-      expect(html).not.toContain(cls);
-    }
+    expect(html).not.toContain("sortable-panel");
+    expect(html).not.toContain("practice-room__takes");
   });
 
   it("is one vertical column: there is never a side widget, whatever is on", async () => {
@@ -141,12 +140,55 @@ describe("PracticeRoom panels", () => {
     expect(shown(await render({ [id]: true }))).toContain(id);
   });
 
-  it("keeps the feedback group while any of vibrato, timing or coach is on, and shows only those", async () => {
+  it("gives every panel on screen a slot of its own, and the takes slot keeps its sizing class", async () => {
+    const html = await render(all(true));
+    expect(html.match(/class="sortable-panel/g)).toHaveLength(8);
+    expect(html.match(/practice-room__takes/g)).toHaveLength(1);
+  });
+
+  it("shows only the panels that are on", async () => {
     const html = await render(only("coach"));
-    expect(html).toContain("practice-room__feedback");
     expect(shown(html)).toContain("coach");
     expect(shown(html)).not.toContain("takes");
     expect(html).not.toContain("practice-room__takes");
+    expect(html.match(/class="sortable-panel/g)).toHaveLength(1);
+  });
+
+  describe("in the order the user chose", () => {
+    const REVERSED = ["coach", "timing", "vibrato", "dynamics", "spectrum", "pianoRoll", "takes", "lyrics"];
+    const inPage = (html: string) => shown(html).filter((c) => REVERSED.includes(c));
+
+    it("draws the panels top to bottom as ordered, below the waveforms", async () => {
+      const html = await render(all(true), REVERSED);
+      expect(inPage(html)).toEqual(REVERSED);
+      expect(shown(html).indexOf("waveform")).toBeLessThan(shown(html).indexOf("coach"));
+    });
+
+    it("lets any panel sit between any others, not only inside its old group", async () => {
+      const html = await render(all(true), ["coach", "lyrics", "pianoRoll", "takes", "vibrato", "spectrum", "dynamics", "timing"]);
+      expect(inPage(html)).toEqual(["coach", "lyrics", "pianoRoll", "takes", "vibrato", "spectrum", "dynamics", "timing"]);
+    });
+
+    it("keeps a panel's keyboard strip with its piano roll", async () => {
+      const ids = shown(await render(only("pianoRoll", "coach"), ["coach", "pianoRoll"]));
+      expect(ids.filter((c) => ["coach", "pianoKeyboard", "pianoRoll"].includes(c))).toEqual([
+        "coach", "pianoKeyboard", "pianoRoll",
+      ]);
+    });
+
+    it("keeps the order of what is left when a panel is hidden or detached", async () => {
+      expect(inPage(await render({ ...all(true), takes: false }, REVERSED))).toEqual(REVERSED.filter((c) => c !== "takes"));
+      h.detached = { vibrato: true };
+      expect(inPage(await render(all(true), REVERSED))).toEqual(REVERSED.filter((c) => c !== "vibrato"));
+    });
+
+    it("puts a panel back in its place when it is docked again", async () => {
+      const order = ["coach", "takes", ...REVERSED.filter((c) => c !== "coach" && c !== "takes")];
+      h.detached = { takes: true };
+      expect(inPage(await render(all(true), order))).toEqual(order.filter((c) => c !== "takes"));
+      h.detached = {};
+      expect(inPage(await render(all(true), order))).toEqual(order);
+    });
   });
 
   it("has no analysis panels until the analysis has loaded, but still shows takes and lyrics", async () => {
@@ -198,23 +240,18 @@ describe("PracticeRoom panels", () => {
     expect(removed.sort()).toEqual([...gone].sort());
   });
 
-  it("frees the takes and feedback groups when every panel in them is detached", async () => {
+  it("frees the slot of a panel that is detached", async () => {
     h.detached = { takes: true, vibrato: true, timing: true, coach: true };
     const html = await render(all(true));
     expect(html).not.toContain("practice-room__takes");
-    expect(html).not.toContain("practice-room__feedback");
-  });
-
-  it("keeps the feedback group while one of its panels is still docked", async () => {
-    h.detached = { vibrato: true, timing: true };
-    expect(await render(all(true))).toContain("practice-room__feedback");
+    expect(html.match(/class="sortable-panel/g)).toHaveLength(4);
   });
 
   it("takes a detached piano roll out of the main window and frees its space", async () => {
     h.detached = { pianoRoll: true };
     const ids = shown(await render(only("pianoRoll")));
     for (const c of ["pianoRoll", "pianoKeyboard"]) expect(ids).not.toContain(c);
-    expect(await render(only("pianoRoll"))).not.toContain("practice-room__analysis");
+    expect(await render(only("pianoRoll"))).not.toContain("sortable-panel");
   });
 
   it("takes a detached lyrics panel out of the main window", async () => {

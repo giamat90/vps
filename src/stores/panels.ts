@@ -1,10 +1,11 @@
 import { createPanelStore } from "@giamat90/mps-core/panels";
 
-// Order is the order of the Panels menu. The practice room is crowded by
-// design, so the expert views start hidden; the user's choices are kept.
+// Order is the default order of the page and of the Panels menu; the user can
+// move panels (`order` in the store). The practice room is crowded by design,
+// so the expert views start hidden; the user's choices are kept.
 export const PRACTICE_PANELS = [
-  { id: "takes", label: "Takes", defaultVisible: true },
   { id: "lyrics", label: "Lyrics", defaultVisible: true },
+  { id: "takes", label: "Takes", defaultVisible: true },
   { id: "pianoRoll", label: "Piano roll", defaultVisible: true },
   { id: "spectrum", label: "Spectrum comparison", defaultVisible: false },
   { id: "dynamics", label: "Dynamics", defaultVisible: false },
