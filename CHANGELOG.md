@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.1.74] - 2026-10-12
+
+### Added
+- A **Cancel** button while lyrics are syncing. Nothing is changed; the next sidecar use starts it again.
+
 ## [0.1.73] - 2026-10-12
 
 ### Changed
