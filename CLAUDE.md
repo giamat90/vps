@@ -130,7 +130,7 @@ VPS/
 │   │   ├── lyrics/
 │   │   │   └── LyricsPanel.tsx     synced lyrics: paste/find online/sync, karaoke view, click-to-seek
 │   │   ├── panels/
-│   │   │   └── PanelMenu.tsx  Panels menu in the practice-room header: tick which optional panels are shown
+│   │   │   └── PanelMenu.tsx  Panels menu in the practice-room / Free Exercise header: tick which panels are shown; lists the waveform area and its tracks first
 │   │   ├── settings/
 │   │   │   └── YouTubeCookiesControl.tsx  optional cookies.txt picker for import_youtube, avoids the flaky live-browser cookie fallback
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
@@ -148,7 +148,9 @@ VPS/
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
 │   │   ├── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
-│   │   └── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
+│   │   ├── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
+│   │   ├── waveforms.ts       whether the waveform area and each of its tracks are shown (`vps_waveforms`); hidden = collapsed, never unmounted
+│   │   └── exercisePanels.ts  which Free Exercise panels are visible (`vps_exercise_panels`)
 │   ├── windows/           detachable panels (spike): VPS-specific state, commands and streams on top of `@giamat90/mps-core/windows` — see wiki/detachable-panels.md
 │   ├── pages/
 │   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)

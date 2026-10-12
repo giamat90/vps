@@ -851,10 +851,11 @@ body,
 }
 
 .practice-room__main {
+  --section-gap: 1rem;
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: var(--section-gap);
   min-width: 0;
   overflow-y: auto;
 }
@@ -958,6 +959,16 @@ body,
   flex-direction: column;
 }
 
+/* The waveform area switched off, or with every lane hidden. Collapsed rather
+   than unmounted: it owns the containers the audio engine draws into. */
+.practice-room__waveforms--collapsed {
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  margin-bottom: calc(var(--section-gap) * -1);
+}
+
 .practice-room__topbar {
   flex-shrink: 0;
   position: sticky;
@@ -1006,6 +1017,17 @@ body,
   overflow: hidden;
   visibility: hidden;
   pointer-events: none;
+}
+
+/* A track the user hid. It stays in the layout at full width (WaveSurfer keeps
+   measuring a real container and the audio is untouched) but takes no height;
+   the negative margin takes back the flex gap it would otherwise leave. */
+.waveform__track--collapsed {
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  margin-bottom: calc(var(--lane-gap) * -1);
 }
 
 .waveform__track-header {
@@ -1157,7 +1179,8 @@ button.waveform__take-name {
   gap: 0.4rem;
 }
 
-.waveform__take-hide {
+.waveform__take-hide,
+.waveform__track-hide {
   background: transparent;
   border: 1px solid var(--bg-surface);
   border-radius: 4px;
@@ -1168,7 +1191,8 @@ button.waveform__take-name {
   cursor: pointer;
 }
 
-.waveform__take-hide:hover {
+.waveform__take-hide:hover,
+.waveform__track-hide:hover {
   border-color: var(--accent);
   color: var(--text-primary);
 }
@@ -1338,9 +1362,10 @@ button.waveform__take-name {
 
 /* Wraps the ruler + track rows; ctrl/shift+wheel listener attaches here. */
 .waveform__timeline {
+  --lane-gap: 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: var(--lane-gap);
 }
 
 .waveform__container {
@@ -2073,6 +2098,22 @@ button.waveform__take-name {
   font-size: 0.82rem;
   color: var(--text-primary);
   cursor: pointer;
+}
+
+.panel-menu__parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-left: 1.4rem;
+}
+
+.panel-menu__item--part {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.panel-menu__item--part input:disabled + span {
+  opacity: 0.5;
 }
 
 .panel-menu__hint {
@@ -3095,6 +3136,19 @@ button.waveform__take-name {
   border-radius: 0.4rem;
   background: var(--bg-secondary);
   flex-shrink: 0;
+}
+
+/* Hidden by the user: no height, but still the full width WaveSurfer measures. */
+.exercise-page__track-strip--collapsed {
+  min-height: 0;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.exercise-page__header .panel-menu {
+  margin-left: auto;
 }
 
 .exercise-page__transport {

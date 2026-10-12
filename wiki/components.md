@@ -602,13 +602,13 @@ The practice room has more on it than anyone wants at once, so everything option
 | `timing` | `TimingChart` | off |
 | `coach` | `CoachPanel` | on |
 
-Always on: waveforms, transport, tempo, mic/output, transpose, monitor, record. The piano roll, spectrum and dynamics only appear once the song analysis has loaded. There is no side column: everything is one vertical stack. The table is the default order.
+Always on: transport, tempo, mic/output, transpose, monitor, record. The waveform area is also not in this list (see "Waveforms and single tracks" below). The piano roll, spectrum and dynamics only appear once the song analysis has loaded. There is no side column: everything is one vertical stack. The table is the default order.
 
 ### Panel order
 
 The user can move any docked panel up or down. Each panel's corner handle (`DetachHandle`) has a **↕ grip** next to the detach grip: drag it to put the panel in another place (or focus it, space to pick up, arrows, space to drop). `SortablePanels` (`src/components/panels/SortablePanels.tsx`, `@dnd-kit/sortable`, already used by the library) wraps each panel in a `sortable-panel` slot and moves nothing in the DOM until the drop. The order is `order` / `move` / `resetOrder` of the panel store (mps-core v0.6.0), persisted next to the visibility choices in `vps_panels`; the Panels menu lists panels in that order, and **Reset** restores default visibility *and* order.
 - The order covers every panel, including hidden and detached ones, so a panel docked again returns to its place; a panel added in a later version slots in after its default predecessor.
-- The waveforms/transport are not panels and do not move.
+- The waveform area and the transport are not movable panels: the waveforms stay above the stack, and the transport is in the topbar.
 - The detached window has no move grip (`MoveGrip` renders nothing outside `SortablePanels`).
 - Not hand-tested in a running app when this was written (vitest has no DOM here); the drag itself is dnd-kit's, the order logic and the page's use of it are tested.
 
@@ -619,6 +619,20 @@ Rules for a panel:
 - Add a panel by adding it to `PRACTICE_PANELS` (its default is a product decision), rendering it behind `visible.<id>` in `PracticeRoom`, and extending `PracticeRoom.test.ts`.
 - Known limit: hiding Lyrics while a sync is running unmounts the panel (its cleanup clears the lyrics store). The sync still finishes and is saved; showing the panel again loads the result.
 - The piano roll's ruler also sets the punch region; with it hidden, use the main timeline ruler.
+
+### Waveforms and single tracks
+
+The waveform area can be hidden as a whole, and the vocals / instrumental waveforms can be hidden one by one. State: `useWaveformPanels` in `src/stores/waveforms.ts` (also `createPanelStore`, persisted under `vps_waveforms`, **not** in `vps_panels`). Ids: `waveforms` (the area), `vocals`, `instrumental`. The Panels menu lists them first: **Waveforms**, with **Vocals** / **Instrumental** (**Melody** only, for an instrument track) indented under it and greyed while the area is off. Each track's header also has a **×** that hides that track; bring it back from the menu. The count on the menu button counts the area, not its tracks.
+
+- **Hidden means collapsed, never unmounted.** `Waveform` owns the containers the audio engine draws into (`loadSong`, the take rails), so it always stays mounted. A hidden track gets `waveform__track--collapsed` (height 0, `visibility: hidden`, a negative margin that takes back the flex gap) and a hidden area gets `practice-room__waveforms--collapsed`. Both keep the box at full width on purpose: WaveSurfer measures its container, and `getMinPxPerSec()` reads the width of the master track. Verified in Chromium that an instance created inside a collapsed lane measures and paints at full width and repaints when shown.
+- **Hiding a waveform does not change what is heard.** Mute, solo and volume still apply; a hidden track that is muted or the soloed one gets a "muted" / "solo" tag in the menu so a silent mix is explainable.
+- The area collapses by itself when it has nothing to draw: switched off, or both tracks hidden and no take shown (`waveformsOnScreen`). Showing a take brings the ruler and the take lanes back. Take lanes are not tracks of this store: each has its own show/hide (the list, or the × on the lane).
+- **Hide all** collapses the area but keeps the user's choice of tracks (they come back with it); **Show all** and **Reset** also show every track.
+- Adding a track: add it to `WAVEFORM_PANELS`, give its lane a hide button and the collapsed class, and extend `Waveform.test.ts` and `waveforms.test.ts`.
+
+### Free Exercise page
+
+The Free Exercise page has the same menu (`Panels n/8`), without the move hint. State: `useExercisePanels` in `src/stores/exercisePanels.ts`, persisted under `vps_exercise_panels`, everything on by default. Ids: `keyboard`, `track`, `pianoRoll`, `spectrogram`, `spectrum`, `dynamics`, `vibrato`, `recordings`. Everything is unmounted when hidden except `track`, the strip a loaded recording is drawn into, which is collapsed in height only (same reason as the waveforms). The analysis area disappears when all five views in it are hidden. These panels are not movable or detachable.
 
 ## Second voice in the PianoRoll (2026-10-11)
 

@@ -66,6 +66,7 @@ const render = () =>
 const lanes = (html: string) => [...html.matchAll(/waveform__track waveform__track--take([^"]*)"/g)].map((m) => m[1].trim());
 
 beforeEach(() => {
+  localStorage.clear();
   h.state.takes = [take("a"), take("b", "Verse"), take("c")];
   h.state.shownTakeIds = [];
   h.state.activeTakeId = null;
@@ -256,6 +257,60 @@ describe("take lanes", () => {
   it("has a hide button on every lane", () => {
     h.state.shownTakeIds = ["a", "b"];
     h.state.activeTakeId = "b";
-    expect(render().match(/aria-label="Hide /g)).toHaveLength(2);
+    expect(render().match(/aria-label="Hide (Take 1|Verse)"/g)).toHaveLength(2);
+  });
+});
+
+describe("hiding a track's waveform", () => {
+  // zustand renders the store's initial state under react-dom/server, so what the
+  // user chose is seeded through storage and the component is imported again.
+  async function renderWith(hidden: string[] = [], kind = "song") {
+    localStorage.setItem(
+      "vps_waveforms",
+      JSON.stringify({ overrides: Object.fromEntries(hidden.map((id) => [id, false])) }),
+    );
+    vi.resetModules();
+    const { default: Fresh } = await import("./Waveform");
+    return renderToStaticMarkup(createElement(Fresh, { song: { id: "s1", title: "Song", kind } as never }));
+  }
+  const tracks = (html: string) =>
+    [...html.matchAll(/<div class="(waveform__track[^"]*)"><div class="waveform__track-header"><span class="waveform__label">([^<]*)</g)].map(
+      (m) => [m[2], m[1].replace("waveform__track", "").trim()],
+    );
+
+  it("offers a hide button on the vocals and on the instrumental, and none on the takes bar", async () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    const html = await renderWith();
+    expect(html).toContain('aria-label="Hide Vocals waveform"');
+    expect(html).toContain('aria-label="Hide Instrumental waveform"');
+    expect(html.match(/waveform__track-hide/g)).toHaveLength(2);
+  });
+
+  it("shows both tracks until the user hides one", async () => {
+    expect(tracks(await renderWith())).toEqual([["Vocals", ""], ["Instrumental", ""]]);
+  });
+
+  it("collapses only the track that was hidden", async () => {
+    expect(tracks(await renderWith(["vocals"]))).toEqual([["Vocals", "waveform__track--collapsed"], ["Instrumental", ""]]);
+    expect(tracks(await renderWith(["instrumental"]))).toEqual([["Vocals", ""], ["Instrumental", "waveform__track--collapsed"]]);
+  });
+
+  it("keeps a hidden track's waveform container and controls in the page, so the audio engine still has it", async () => {
+    const html = await renderWith(["vocals", "instrumental"]);
+    expect(html.match(/class="waveform__container"/g)).toHaveLength(2);
+    expect(html).toContain('class="waveform__mute"');
+  });
+
+  it("keeps the take lanes when both tracks are hidden", async () => {
+    h.state.shownTakeIds = ["a"];
+    h.state.activeTakeId = "a";
+    expect(lanes(await renderWith(["vocals", "instrumental"]))).toEqual(["waveform__track--active"]);
+  });
+
+  it("calls the vocals track the melody on an instrument track, which has no instrumental to hide", async () => {
+    const html = await renderWith([], "instrument");
+    expect(html).toContain('aria-label="Hide Melody waveform"');
+    expect(tracks(html)[1]).toEqual(["Instrumental", "waveform__track--hidden"]);
   });
 });

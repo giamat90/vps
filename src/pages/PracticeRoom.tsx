@@ -30,6 +30,7 @@ import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
 import { useDetachedStore } from "../stores/detached";
 import { availablePracticePanels, usePracticePanels, type PracticePanelId } from "../stores/panels";
+import { hiddenTrackTags, useWaveformPanels, waveformMenuItems, waveformsOnScreen } from "../stores/waveforms";
 import type { DetachablePanel } from "../windows/protocol";
 import { useMainBridge } from "../windows/useMainBridge";
 
@@ -84,6 +85,9 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const cleanup = usePlayerStore((s) => s.cleanup);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
+  const shownTakeIds = usePlayerStore((s) => s.shownTakeIds);
+  const mutedTracks = usePlayerStore((s) => s.mutedTracks);
+  const soloedTrack = usePlayerStore((s) => s.soloedTrack);
   const song = songs.find((s) => s.id === songId);
   const isInstrument = song?.kind === "instrument";
   const renameSong = useLibraryStore((s) => s.renameSong);
@@ -110,12 +114,19 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
   const visible = usePracticePanels((s) => s.visible);
   const order = usePracticePanels((s) => s.order);
+  const waveformVisible = useWaveformPanels((s) => s.visible);
   const detached = useDetachedStore((s) => s.detached);
 
   useMainBridge();
 
   // On screen in this window: wanted, and not living in a window of its own.
   const docked = (id: DetachablePanel) => visible[id] && !detached[id];
+
+  // The waveform area is collapsed, not removed: it owns what the audio engine draws into.
+  const waveformsShown = waveformsOnScreen(waveformVisible, {
+    isInstrument,
+    shownTakes: shownTakeIds.filter((id) => takes.some((t) => t.id === id)).length,
+  });
 
   // The page draws what is wanted, here, and possible, in the user's order.
   const onScreen = order.filter(
@@ -204,7 +215,15 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
             {song.detectedKey && <span>{song.detectedKey}</span>}
           </div>
         </div>
-        <PanelMenu store={usePracticePanels} panels={availablePracticePanels({ isInstrument })} />
+        <PanelMenu
+          store={usePracticePanels}
+          panels={availablePracticePanels({ isInstrument })}
+          fixed={{
+            store: useWaveformPanels,
+            items: waveformMenuItems({ isInstrument }),
+            tags: hiddenTrackTags(waveformVisible, { muted: mutedTracks, soloed: soloedTrack }),
+          }}
+        />
         <DownloadAllButton song={song} />
         <ExportMixButton />
       </header>
@@ -227,7 +246,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
       <div className="practice-room__body">
         <div className="practice-room__main">
-          <div className="practice-room__waveforms">
+          <div className={`practice-room__waveforms${waveformsShown ? "" : " practice-room__waveforms--collapsed"}`}>
             <Waveform song={song} />
           </div>
 
