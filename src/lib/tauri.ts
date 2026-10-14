@@ -139,6 +139,16 @@ export async function importYoutube(
   return invoke<Song>("import_youtube", { url, highQuality, cookiesPath });
 }
 
+/** Open Google's sign-in in a private window; resolves with the saved cookies file's path once signed in */
+export async function signInYoutube(): Promise<string> {
+  return invoke<string>("sign_in_youtube");
+}
+
+/** Delete the cookies file written by signInYoutube (a file the user picked is never touched) */
+export async function signOutYoutube(): Promise<void> {
+  return invoke("sign_out_youtube");
+}
+
 /** Open a native Save As dialog and copy a stem WAV to user-chosen location */
 export async function exportStem(
   stemPath: string,
