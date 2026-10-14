@@ -6,6 +6,14 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.83] - 2026-10-14
+
+### Added
+- **The Short-Term Spectrum now marks the fundamental (F0).** Both spectrum panels draw a solid line at the sung pitch, labelled with its frequency and note (for example `F0 173 F3`), next to the dashed formant lines. For the song, a take and a loaded Free Exercise track it is the same pitch the piano roll shows, so the two always agree; with **Show multiple lines** on, the song's second voice gets its own lighter line. For the live microphone it is measured from the sound itself.
+
+### Changed
+- The pitch measured live from a window of audio is more accurate (about 8 cents less flat on a real vocal, and steadier from frame to frame).
+
 ## [0.0.82] - 2026-10-14
 
 ### Added
