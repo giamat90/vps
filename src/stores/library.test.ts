@@ -152,6 +152,8 @@ describe("importYoutube error mapping", () => {
     ["Connection reset (Errno 104)", /Network error/],
     ["socket timeout", /Network error/],
     ["ffprobe not found", /ffmpeg was not found/],
+    ["ERROR: [youtube] abc: The page needs to be reloaded.", /JavaScript runtime/],
+    ["Signature solving failed: Some formats may be missing", /JavaScript runtime/],
   ])("maps %j to a readable message", async (msg, expected) => {
     expect(await fail(msg)).toMatch(expected);
   });

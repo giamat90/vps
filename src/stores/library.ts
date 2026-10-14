@@ -48,6 +48,9 @@ function friendlyError(raw: unknown, context: "youtube" | "upload", hasCookiesFi
   if (msg.includes("known-good floor")) {
     return "The YouTube downloader (yt-dlp) is out of date and YouTube has changed something it can't handle. Update it: `pip install -U -r requirements.txt` in the sidecar venv (dev), or reinstall the app (installed build).";
   }
+  if (msg.includes("page needs to be reloaded") || msg.includes("signature solving failed")) {
+    return "YouTube could not be read: its challenge needs the JavaScript runtime (Deno) bundled with the app, which did not run. Retry once; if it keeps failing, reinstall the app (a build without the bundled Deno is broken).";
+  }
   if (msg.includes("sign in to confirm") || msg.includes("not a bot") || /\bbot\b/.test(msg)) {
     return hasCookiesFile
       ? "YouTube blocked the download even with your saved YouTube session (sign-in or cookies file) — it has likely expired. Sign in again in Settings → YouTube, then retry."

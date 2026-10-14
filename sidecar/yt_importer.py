@@ -29,6 +29,27 @@ def _yt_dlp_is_outdated() -> bool:
         return False
 
 
+def _js_runtime_opts() -> dict:
+    """yt-dlp needs a JavaScript runtime (Deno) to solve YouTube's signature and
+    n challenges; without one a signed-in extraction fails with "The page needs
+    to be reloaded". In a dev venv yt-dlp finds the `deno` wheel's executable by
+    itself. The frozen sidecar unpacks to a temp dir yt-dlp does not search, so
+    it is pointed at the copy build.py bundled there.
+    """
+    if not getattr(sys, "frozen", False):
+        return {}
+    name = "deno.exe" if os.name == "nt" else "deno"
+    path = os.path.join(getattr(sys, "_MEIPASS", os.path.dirname(sys.executable)), name)
+    if os.path.isfile(path):
+        return {"js_runtimes": {"deno": {"path": path}}}
+    print(
+        f"[yt_importer] the bundled Deno was not found at {path}: YouTube imports "
+        "that need a signed-in session will fail",
+        file=sys.stderr,
+    )
+    return {}
+
+
 def _raise_import_error(exc: Exception):
     if isinstance(exc, yt_dlp.utils.DownloadError) and _yt_dlp_is_outdated():
         raise RuntimeError(
@@ -76,6 +97,7 @@ def import_yt(
         "no_warnings": True,
         "noprogress": True,
         "progress_hooks": [ydl_hook],
+        **_js_runtime_opts(),
     }
 
     # A user-supplied cookies.txt (Netscape format, exported once via a
