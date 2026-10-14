@@ -10,7 +10,9 @@ yt-dlp's `cookiesfrombrowser` cannot decrypt Chrome/Edge 127+ (app-bound encrypt
 
 ## Flow
 
-1. UI calls `sign_in_youtube` (`src-tauri/src/youtube_signin.rs`).
+**Where the code lives:** the window, cookie reading, cookies-file writer, navigation allowlist and `may_invoke` are the `mps-youtube-signin` crate in mps-core (`rust/youtube-signin`, shared with SPS). `src-tauri/src/youtube_signin.rs` is only the two `#[tauri::command]`s binding it to `~/.vps`. The TypeScript half (`signInYoutube`, `signOutYoutube`, `cookiesSource`, `isSessionExpiredError`) is `@giamat90/mps-core/youtube`. Change the behaviour in mps-core and bump the pins (`package.json`, `requirements*.txt`, the `mps-youtube-signin` entry in `src-tauri/Cargo.toml`).
+
+1. UI calls `sign_in_youtube` (`src-tauri/src/youtube_signin.rs`, a wrapper).
 2. Rust opens a webview window labelled `youtube-signin`, **private mode** (`incognito(true)`), on `accounts.google.com/ServiceLogin?service=youtube&continue=https://www.youtube.com/`.
 3. A blocking task polls `window.cookies()` once a second. Signed in = `LOGIN_INFO` plus one of `SAPISID`/`__Secure-3PAPISID`/`__Secure-3PSID`/`SID`, **on youtube.com** (a Google session that has not reached YouTube yet does not count).
 4. After a 2 s settle, only `google.com`/`youtube.com` cookies are written to `~/.vps/youtube_cookies.txt` (Netscape format, atomic write) and the window is destroyed.
@@ -28,6 +30,10 @@ The window shows a remote page, which this app has not done before.
 - **Navigation allowlist.** `on_navigation` allows only `https` on google.com, youtube.com, gstatic.com, googleusercontent.com, googleapis.com, ggpht.com, ytimg.com. Google's country domains are accepted by shape (`accounts.google.it`, `google.co.uk`, `google.com.br`, same for youtube) because it redirects sign-in there; found on the first real run, when `accounts.google.it` was refused. A refused navigation is logged (host only). If a real sign-in path (country domain, SSO) turns out to be blocked, add the suffix in `NAVIGATION_SUFFIXES` and a test.
 - **Cookie minimisation.** Only google.com/youtube.com cookies are kept. A cookie with a tab/newline in any field is dropped instead of written (file-format injection).
 - The file holds a live Google session: it sits in the user's profile like the rest of `~/.vps`, the header says not to share it, values are never logged.
+
+## When the session expires
+
+An import that carried a cookies file and was turned down in a way a fresh sign-in can fix (bot check, 403, "cookies are no longer valid"; `isSessionExpiredError`) sets `sessionExpired` in the library store, and the error banner shows **Sign in again and retry**. One click opens the sign-in window, stores the new cookies path and repeats the same import with it (`signInAndRetryYoutube`). If the fresh session is turned down too, the message blames the network/VPN and no second offer is made. The window is never opened without a click (a window appearing by itself is surprising and can be missed behind the app); cancelling keeps the offer. Private or removed videos do not trigger it.
 
 ## Hand test checklist
 
