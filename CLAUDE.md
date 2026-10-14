@@ -132,7 +132,7 @@ VPS/
 │   │   ├── panels/
 │   │   │   └── PanelMenu.tsx  Panels menu in the practice-room / Free Exercise header: tick which panels are shown; lists the waveform area and its tracks first
 │   │   ├── settings/
-│   │   │   └── YouTubeCookiesControl.tsx  optional cookies.txt picker for import_youtube, avoids the flaky live-browser cookie fallback
+│   │   │   └── YouTubeCookiesControl.tsx  Sign in to YouTube (private window → cookies file, see wiki/youtube-signin.md) or pick a cookies.txt; avoids the flaky live-browser cookie fallback
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
 │   ├── lib/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
@@ -162,6 +162,7 @@ VPS/
 │   ├── pitch.rs       which pitch algorithm runs: the shipped default + the VPS_PITCH_ALGORITHM experiment override
 │   ├── library.rs     Song struct + library.json CRUD
 │   ├── lyrics.rs      lyrics.json persistence + sidecar round trip (commands are thin wrappers in commands.rs)
+│   ├── youtube_signin.rs  in-app Google sign-in window → ~/.vps/youtube_cookies.txt; also bars that window from the app's commands
 │   ├── storage.rs     Path helpers (~/.vps/)
 │   ├── sidecar.rs     Python sidecar process manager
 │   └── lib.rs         Tauri builder + invoke_handler registration
@@ -273,6 +274,7 @@ interface PitchPoint {       // frontend-internal representation
 │       ├── pitched/{n}/          pitch-shifted WAV cache (n = semitone steps)
 │       └── takes/
 │           └── {takeId}.wav      RMS-normalized take (raw .webm kept only if normalization failed)
+├── youtube_cookies.txt       in-app YouTube sign-in session (Netscape cookies, see wiki/youtube-signin.md)
 ├── models/
 │   └── wav2vec2_…960h.pth        lyrics-sync speech model, downloaded on first use
 └── exercises/
@@ -308,7 +310,8 @@ interface PitchPoint {       // frontend-internal representation
 | `import_exercise_file(filePath, duration)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) and, once per song, the second voice (`pitchData.f0Alt`) via `compute_second_voice` |
 | `pitch_shift_song(songDir, nSteps)` | `{vocalsPath, instrumentalPath}` | cached |
-| `import_youtube(url, highQuality?, cookiesPath?)` | `Song` | yt-dlp + Demucs; 15-min timeout; `cookiesPath` (Settings → YouTube cookies file) is tried before the live-browser cookie cascade |
+| `sign_in_youtube()` / `sign_out_youtube()` | `string` / `void` | Settings → YouTube account: opens a private Google sign-in window and writes `~/.vps/youtube_cookies.txt` (returns its path) / deletes that file only; see wiki/youtube-signin.md |
+| `import_youtube(url, highQuality?, cookiesPath?)` | `Song` | yt-dlp + Demucs; 15-min timeout; `cookiesPath` (Settings → YouTube account: sign-in or chosen file) is tried before the live-browser cookie cascade |
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
 | `export_all(entries, suggestedName)` | `void` | bundles vocals/instrumental + every take into one zip (`zip` crate) via a single native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |

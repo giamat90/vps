@@ -188,6 +188,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 │       ├── pitched/{n}/       pitch-shifted WAV cache (n = semitone steps)
 │       └── takes/
 │           └── {takeId}.wav   RMS-normalized take audio (raw {takeId}.webm kept only when normalization failed)
+├── youtube_cookies.txt        written by the in-app YouTube sign-in (Netscape format, a live Google session; see youtube-signin.md)
 ├── models/
 │   └── wav2vec2_fairseq_base_ls960_asr_ls960.pth   speech model for lyrics sync, downloaded on first use
 └── exercises/
@@ -202,6 +203,8 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 |---------|-----------|---------|
 | `process_song` | `filePath: string, highQuality?: boolean, trackKind?: "vocal"\|"instrument"` | `Song` |
 | `import_youtube` | `url: string, highQuality?: boolean, cookiesPath?: string` | `Song` |
+| `sign_in_youtube` | — | `string` (path of `~/.vps/youtube_cookies.txt`; opens a private Google sign-in window, resolves once signed in, rejects on cancel/timeout) |
+| `sign_out_youtube` | — | `void` (deletes the managed cookies file only) |
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
 | `set_song_loops` | `songId, loops: NamedLoop[]` | `Song` (replaces the saved loops; names trimmed, at most 100, 1-80 characters, regions at least 0.25 s, unique ids, stored in time order) |
