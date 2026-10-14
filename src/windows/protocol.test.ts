@@ -163,14 +163,16 @@ describe("message guards", () => {
   });
 
   it("accepts and rejects spectrum messages", () => {
-    const none = { f1: null, f2: null, f3: null };
-    const ok = { live: { sampleRate: 48000, bins: "AAEC" }, formants: { song: none, take: none, live: { f1: 500, f2: 1500, f3: 2500 } } };
+    const none = { f0: null, f1: null, f2: null, f3: null };
+    const ok = { live: { sampleRate: 48000, bins: "AAEC" }, formants: { song: none, take: none, live: { f0: 220, f1: 500, f2: 1500, f3: 2500 } } };
     expect(isSpectrumMessage(ok)).toBe(true);
     expect(isSpectrumMessage({ ...ok, live: null })).toBe(true);
     expect(isSpectrumMessage({ ...ok, live: { sampleRate: "48k", bins: "AAEC" } })).toBe(false);
     expect(isSpectrumMessage({ ...ok, live: { sampleRate: 48000, bins: 3 } })).toBe(false);
     expect(isSpectrumMessage({ ...ok, formants: { song: none, take: none } })).toBe(false);
-    expect(isSpectrumMessage({ ...ok, formants: { ...ok.formants, live: { f1: "x", f2: null, f3: null } } })).toBe(false);
+    expect(isSpectrumMessage({ ...ok, formants: { ...ok.formants, live: { f0: null, f1: "x", f2: null, f3: null } } })).toBe(false);
+    expect(isSpectrumMessage({ ...ok, formants: { ...ok.formants, live: { f0: "220", f1: null, f2: null, f3: null } } })).toBe(false);
+    expect(isSpectrumMessage({ ...ok, formants: { ...ok.formants, live: { f1: 500, f2: 1500, f3: 2500 } } })).toBe(false);
     expect(isSpectrumMessage(null)).toBe(false);
   });
 

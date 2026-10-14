@@ -4,7 +4,9 @@ import { useExerciseStore } from "../../stores/exercise";
 import { SPECTRO_COLORMAP, freqToX as freqToXShared, smoothSpectrumEnvelope, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
-import { estimateFormants, type FormantEstimate } from "../../lib/formants";
+import { estimateVoice, type VoiceEstimate } from "../../lib/formants";
+import { frequencyToNoteName, referenceF0 } from "../../audio/analysisUtils";
+import { useAnalysisStore } from "../../stores/analysis";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
@@ -21,6 +23,8 @@ const FREQ_DECADES    = [100, 1000, 10000];
 
 // One color per formant slot (F1/F2/F3) so overlapping lines stay distinguishable.
 const FORMANT_COLORS = ["#ffcf5c", "#5cffe0", "#ff5ca8"];
+// The fundamental is drawn solid, in a colour none of the formant slots use.
+const F0_COLOR = "#b48cff";
 
 // ─── frequency axis (shared log math, inverted for horizontal placement) ─────
 
@@ -51,7 +55,7 @@ export default function ShortTermSpectrumPanel() {
   const trackActive  = loadedTrackId !== null;
   const drawRef      = useRef<() => void>(() => {});
   const loggedRef    = useRef(false);
-  const prevFormant  = useRef<FormantEstimate>({ f1: null, f2: null, f3: null });
+  const prevFormant  = useRef<VoiceEstimate>({ f0: null, f1: null, f2: null, f3: null });
   const timeScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
 
   useEffect(() => {
@@ -230,31 +234,39 @@ export default function ShortTermSpectrumPanel() {
         ctx.stroke();
       }
 
-      // ── formant markers: one dashed vertical line + Hz label per detected
-      // formant (F1/F2/F3), same LPC estimator the spectrogram uses ──────────
+      // ── fundamental + formant markers: a solid line for F0 and a dashed one
+      // per detected formant (F1/F2/F3), each with its Hz label. All come from
+      // the same window, so F0 is the pitch whose harmonics the curve shows ──
       if (timeData) {
-        const formant = estimateFormants(timeData, sr!, prevFormant.current);
-        prevFormant.current = formant;
+        const voice = estimateVoice(timeData, sr!, prevFormant.current);
+        prevFormant.current = voice;
+        // A loaded track has its stored SRH pitch (the piano roll's line); the live mic has only the estimate.
+        const f0 = trackActive
+          ? referenceF0(useAnalysisStore.getState().takePitch, getEngine().getCurrentTime(), voice.f0)
+          : voice.f0;
 
         ctx.font         = `${11 * dpr}px monospace`;
         ctx.textAlign    = "center";
         ctx.textBaseline = "bottom";
-        [formant.f1, formant.f2, formant.f3].forEach((f, i) => {
+        [f0, voice.f1, voice.f2, voice.f3].forEach((f, slot) => {
           if (f === null || f > fMax) return;
+          const isF0 = slot === 0;
           const x = AXIS_W + freqToX(f, rollW, fMax);
-          const color = FORMANT_COLORS[i];
+          const color = isF0 ? F0_COLOR : FORMANT_COLORS[slot - 1];
 
           ctx.strokeStyle = color;
           ctx.lineWidth   = 1.5 * dpr;
-          ctx.setLineDash([4 * dpr, 3 * dpr]);
+          ctx.setLineDash(isF0 ? [] : [4 * dpr, 3 * dpr]);
           ctx.beginPath();
           ctx.moveTo(x, 0);
           ctx.lineTo(x, plotH);
           ctx.stroke();
           ctx.setLineDash([]);
 
-          const label = `F${i + 1} ${Math.round(f)}Hz`;
-          const labelY = plotH - 3 * dpr - i * 12 * dpr;
+          const label = isF0
+            ? `F0 ${Math.round(f)}Hz ${frequencyToNoteName(f).name}`
+            : `F${slot} ${Math.round(f)}Hz`;
+          const labelY = plotH - 3 * dpr - slot * 12 * dpr;
           ctx.lineJoin    = "round";
           ctx.lineWidth   = 3 * dpr;
           ctx.strokeStyle = "rgba(15, 15, 30, 0.9)";

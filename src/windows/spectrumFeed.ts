@@ -1,5 +1,6 @@
 import type { SpectrumSource } from "../audio/spectrumSource";
 import { NO_FORMANTS } from "../audio/spectrumSource";
+import type { VoiceEstimate } from "../lib/formants";
 import { encodeSpectrum } from "./spectrumCodec";
 import type { SpectrumMessage } from "./protocol";
 
@@ -13,6 +14,7 @@ export interface SpectrumFeedDeps {
 }
 
 const formantsKey = (m: SpectrumMessage) => JSON.stringify(m.formants);
+const isEmpty = (v: VoiceEstimate) => v.f0 === null && v.f1 === null && v.f2 === null && v.f3 === null;
 
 /**
  * Runs in the main window for a spectrum panel that lives elsewhere: asks the
@@ -51,7 +53,7 @@ export function createSpectrumFeed(deps: SpectrumFeedDeps): { read(): SpectrumMe
       formants: { song, take, live },
     };
 
-    const nothing = !message.live && !song.f1 && !take.f1 && !live.f1 && !song.f2 && !take.f2 && !live.f2 && !song.f3 && !take.f3 && !live.f3;
+    const nothing = !message.live && isEmpty(song) && isEmpty(take) && isEmpty(live);
     if (!message.live) {
       if (last === null ? nothing : last.live === null && formantsKey(last) === formantsKey(message)) return null;
     }

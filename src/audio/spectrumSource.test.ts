@@ -19,7 +19,7 @@ function local(overrides: Partial<Parameters<typeof createLocalSpectrumSource>[0
     samples: new Float32Array(n).fill(track === "vocals" ? 0.1 : 0.2),
     sampleRate: 48000,
   }));
-  const estimate = vi.fn((samples: Float32Array, _sampleRate: number, _previous: unknown) => ({ f1: samples[0] * 1000, f2: 1500, f3: 2500 }));
+  const estimate = vi.fn((samples: Float32Array, _sampleRate: number, _previous: unknown) => ({ f0: 220, f1: samples[0] * 1000, f2: 1500, f3: 2500 }));
   const source = createLocalSpectrumSource({
     getAnalyser: () => analyser as unknown as AnalyserNode,
     getTrackSamples,
@@ -109,10 +109,10 @@ describe("local spectrum source", () => {
 });
 
 describe("remote spectrum source", () => {
-  const none = { f1: null, f2: null, f3: null };
+  const none = { f0: null, f1: null, f2: null, f3: null };
   const message = (extra: Partial<SpectrumMessage> = {}): SpectrumMessage => ({
     live: { sampleRate: 48000, bins: encodeSpectrum(new Float32Array([-100, -50, 0])) },
-    formants: { song: { f1: 500, f2: 1500, f3: 2500 }, take: none, live: { f1: 700, f2: null, f3: null } },
+    formants: { song: { f0: 220, f1: 500, f2: 1500, f3: 2500 }, take: none, live: { f0: 330, f1: 700, f2: null, f3: null } },
     ...extra,
   });
 
@@ -132,6 +132,14 @@ describe("remote spectrum source", () => {
     for (const [kind, expected] of [["song", 500], ["live", 700]] as [FormantKind, number][]) {
       expect(remote.source.getFormants(kind, 0).f1).toBe(expected);
     }
+  });
+
+  it("serves the fundamental of each estimate with its formants", () => {
+    const remote = createRemoteSpectrumSource();
+    remote.apply(message());
+    expect(remote.source.getFormants("song", 0).f0).toBe(220);
+    expect(remote.source.getFormants("live", 0).f0).toBe(330);
+    expect(remote.source.getFormants("take", 0).f0).toBeNull();
   });
 
   it("stops serving a live spectrum once the main window says it is no longer live", () => {

@@ -1,9 +1,9 @@
-import { estimateFormants, type FormantEstimate } from "../lib/formants";
+import { estimateVoice, type VoiceEstimate } from "../lib/formants";
 import { decodeSpectrum } from "../windows/spectrumCodec";
 import type { SpectrumMessage } from "../windows/protocol";
 
 export const FORMANT_WINDOW = 8192;
-export const NO_FORMANTS: FormantEstimate = { f1: null, f2: null, f3: null };
+export const NO_FORMANTS: VoiceEstimate = { f0: null, f1: null, f2: null, f3: null };
 
 export type FormantKind = "song" | "take" | "live";
 
@@ -23,16 +23,17 @@ export interface SpectrumSource {
   /**
    * `timeKey` identifies the audio window for song and take estimates so an
    * unchanged window is not estimated again; NaN means never cache.
+   * Carries the window's fundamental (`f0`) alongside F1-F3.
    */
-  getFormants(kind: FormantKind, timeKey: number): FormantEstimate;
+  getFormants(kind: FormantKind, timeKey: number): VoiceEstimate;
   /** Forget cached estimates (the song or take changed). */
   reset(): void;
 }
 
 interface Tracker {
-  prev: FormantEstimate;
+  prev: VoiceEstimate;
   key: number;
-  est: FormantEstimate;
+  est: VoiceEstimate;
 }
 
 const newTracker = (): Tracker => ({ prev: NO_FORMANTS, key: Number.NaN, est: NO_FORMANTS });
@@ -43,12 +44,12 @@ export interface LocalSourceDeps {
     track: "vocals" | "take",
     windowSize: number,
   ) => { samples: Float32Array; sampleRate: number } | null;
-  estimate?: typeof estimateFormants;
+  estimate?: typeof estimateVoice;
 }
 
 /** The engine and the microphone in this window: what the panel always used. */
 export function createLocalSpectrumSource(deps: LocalSourceDeps): SpectrumSource {
-  const estimate = deps.estimate ?? estimateFormants;
+  const estimate = deps.estimate ?? estimateVoice;
   let trackers: Record<FormantKind, Tracker> = { song: newTracker(), take: newTracker(), live: newTracker() };
   let freqScratch: Float32Array<ArrayBuffer> | null = null;
   let timeScratch: Float32Array<ArrayBuffer> | null = null;
@@ -57,7 +58,7 @@ export function createLocalSpectrumSource(deps: LocalSourceDeps): SpectrumSource
     kind: FormantKind,
     key: number,
     getSamples: () => { samples: Float32Array; sampleRate: number } | null,
-  ): FormantEstimate => {
+  ): VoiceEstimate => {
     const tracker = trackers[kind];
     if (!Number.isNaN(key) && tracker.key === key) return tracker.est;
     const snapshot = getSamples();

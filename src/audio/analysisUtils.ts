@@ -21,6 +21,31 @@ export function pitchAtTime(
   return pitchData[lo];
 }
 
+/** A pitch point this close to the playhead (seconds) is "the pitch right now". */
+export const PITCH_NEAR_S = 0.06;
+export const PITCH_MIN_CONFIDENCE = 0.3;
+
+/** Mean Hz of the confident points around `time`, or null when the line is silent or unvoiced there. */
+export function currentPitchHz(points: PitchPoint[], time: number): number | null {
+  let sum = 0;
+  let count = 0;
+  for (const p of points) {
+    if (Math.abs(p.time - time) < PITCH_NEAR_S && p.confidence >= PITCH_MIN_CONFIDENCE && p.frequency > 0) {
+      sum += p.frequency;
+      count++;
+    }
+  }
+  return count > 0 ? sum / count : null;
+}
+
+/**
+ * The stored (SRH) pitch at `time` when the track has any, so a marker agrees with the piano roll and
+ * keyboard readout; `measured` only stands in when no pitch data exists at all, not for an unvoiced moment.
+ */
+export function referenceF0(points: PitchPoint[], time: number, measured: number | null): number | null {
+  return points.length > 0 ? currentPitchHz(points, time) : measured;
+}
+
 /** Find the nearest dynamics point at a given time. */
 export function dynamicsAtTime(
   dynamics: DynamicsPoint[],

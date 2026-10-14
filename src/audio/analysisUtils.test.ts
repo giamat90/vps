@@ -3,9 +3,11 @@ import {
   avgCentsDeviation,
   centsDeviation,
   computeTimingDeviations,
+  currentPitchHz,
   dynamicsAtTime,
   frequencyToNoteName,
   pitchAtTime,
+  referenceF0,
 } from "./analysisUtils";
 import type { DynamicsPoint, PitchPoint } from "../lib/types";
 
@@ -152,5 +154,39 @@ describe("frequencyToNoteName", () => {
   });
   it("stays well-formed below MIDI 0", () => {
     expect(frequencyToNoteName(5).name).toMatch(/^[A-G]#?-?\d+$/);
+  });
+});
+
+describe("currentPitchHz", () => {
+  const pt = (time: number, frequency: number, confidence = 1): PitchPoint => ({ time, frequency, confidence });
+
+  it("averages the confident points within 60 ms of the playhead", () => {
+    const points = [pt(1.0, 170), pt(1.03, 176), pt(1.5, 400)];
+    expect(currentPitchHz(points, 1.02)).toBeCloseTo(173, 6);
+  });
+
+  it("ignores low-confidence, zero-frequency and distant points", () => {
+    expect(currentPitchHz([pt(1.0, 200, 0.1), pt(1.0, 0), pt(2.0, 200)], 1.0)).toBeNull();
+  });
+
+  it("is null for an empty line", () => {
+    expect(currentPitchHz([], 1)).toBeNull();
+  });
+});
+
+describe("referenceF0", () => {
+  const stored: PitchPoint[] = [{ time: 1, frequency: 173.5, confidence: 0.9 }];
+
+  it("prefers the stored pitch over the measured one", () => {
+    expect(referenceF0(stored, 1, 169)).toBeCloseTo(173.5, 6);
+  });
+
+  it("shows nothing where the stored pitch is unvoiced, instead of a measurement the piano roll does not show", () => {
+    expect(referenceF0(stored, 5, 169)).toBeNull();
+  });
+
+  it("falls back to the measurement only when the track has no pitch data at all", () => {
+    expect(referenceF0([], 1, 169)).toBe(169);
+    expect(referenceF0([], 1, null)).toBeNull();
   });
 });

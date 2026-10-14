@@ -5,8 +5,10 @@ import { getPlaybackTime } from "../../windows/playbackClock";
 import { getSpectrumSource } from "../../windows/spectrumRegistry";
 import { freqToX, smoothSpectrumLight, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
-import { COLOR_SONG, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
-import type { FormantEstimate } from "../../lib/formants";
+import { COLOR_SONG, COLOR_SONG_ALT, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
+import type { VoiceEstimate } from "../../lib/formants";
+import { currentPitchHz, frequencyToNoteName, referenceF0 } from "../../audio/analysisUtils";
+import { useVoiceViewStore } from "../../stores/voiceView";
 
 // Deliberately decoupled from SpectrogramPanel's MIN_DB/MAX_DB (-85..-20,
 // tuned for the live waterfall's thermal LUT) — this panel needs the full
@@ -21,42 +23,54 @@ const FREQ_DECADES = [100, 1000, 10000];
 // The estimating itself (and its cache) lives in the SpectrumSource.
 const FORMANT_CACHE_STEP_S = 0.02;
 
-/** Dashed vertical line + "F1 520"-style label per formant, in the colour of the curve it belongs to.
- * Song labels stack down from the top and the singer's up from the bottom so the two sets don't collide. */
+/** Vertical line + label per marker, in the colour of the curve it belongs to: a solid "F0 220 A3" for the
+ * fundamental, then a dashed "F1 520"-style one per formant. Each marker has a fixed label slot, so a label
+ * does not jump when the one above it appears or disappears.
+ * Song labels stack down from the top and the singer's up from the bottom so the two sets don't collide.
+ * `secondF0` is the song's second voice: a solid line in the lighter song blue with the label slot below F3. */
 function drawFormants(
   ctx: CanvasRenderingContext2D,
-  formant: FormantEstimate,
+  voice: VoiceEstimate,
   color: string,
   rollW: number,
   fMax: number,
   plotH: number,
   dpr: number,
   anchor: "top" | "bottom",
+  secondF0: number | null = null,
 ): void {
   ctx.save();
   ctx.font = `${11 * dpr}px monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = anchor;
-  [formant.f1, formant.f2, formant.f3].forEach((hz, i) => {
+  const markers: { hz: number | null; slot: number; color: string; solid: boolean }[] = [
+    { hz: voice.f0, slot: 0, color, solid: true },
+    { hz: voice.f1, slot: 1, color, solid: false },
+    { hz: voice.f2, slot: 2, color, solid: false },
+    { hz: voice.f3, slot: 3, color, solid: false },
+    { hz: secondF0, slot: 4, color: COLOR_SONG_ALT, solid: true },
+  ];
+  markers.forEach(({ hz, slot, color: markerColor, solid }) => {
     if (hz === null || hz > fMax) return;
+    const isF0 = slot === 0 || slot === 4;
     const x = AXIS_W + freqToX(hz, rollW, F_MIN, fMax);
-    ctx.strokeStyle = color;
+    ctx.strokeStyle = markerColor;
     ctx.lineWidth = 1.5 * dpr;
-    ctx.setLineDash([4 * dpr, 3 * dpr]);
+    ctx.setLineDash(solid ? [] : [4 * dpr, 3 * dpr]);
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, plotH);
     ctx.stroke();
     ctx.setLineDash([]);
-    const y = anchor === "top" ? 3 * dpr + i * 12 * dpr : plotH - 3 * dpr - i * 12 * dpr;
-    const label = `F${i + 1} ${Math.round(hz)}`;
+    const y = anchor === "top" ? 3 * dpr + slot * 12 * dpr : plotH - 3 * dpr - slot * 12 * dpr;
+    const label = isF0 ? `F0 ${Math.round(hz)} ${frequencyToNoteName(hz).name}` : `F${slot} ${Math.round(hz)}`;
     // Dark outline keeps the label readable over the curves it sits on.
     ctx.lineJoin = "round";
     ctx.lineWidth = 3 * dpr;
     ctx.strokeStyle = "rgba(15, 15, 30, 0.9)";
     ctx.setLineDash([]);
     ctx.strokeText(label, x, y);
-    ctx.fillStyle = color;
+    ctx.fillStyle = markerColor;
     ctx.fillText(label, x, y);
   });
   ctx.restore();
@@ -259,14 +273,25 @@ export default function ShortTermSpectrumComparisonPanel() {
 
       const timeKey = Math.round(currentTime / FORMANT_CACHE_STEP_S);
 
+      // F0 of the song and the take is the stored SRH pitch, the line the piano roll draws, so the note
+      // names agree; the window estimate in voice.f0 only stands in when a track has no pitch data.
+      const { songPitch, songPitchAlt, takePitch } = useAnalysisStore.getState();
+      const secondVoice = useVoiceViewStore.getState().showMultipleLines
+        ? currentPitchHz(songPitchAlt, currentTime)
+        : null;
+
       if (songSTSpectrum) {
-        drawFormants(ctx, source.getFormants("song", timeKey), COLOR_SONG, rollW, fMax, plotH, dpr, "top");
+        const voice = source.getFormants("song", timeKey);
+        const f0 = referenceF0(songPitch, currentTime, voice.f0);
+        drawFormants(ctx, { ...voice, f0 }, COLOR_SONG, rollW, fMax, plotH, dpr, "top", secondVoice);
       }
 
       if (liveSpectrum) {
         drawFormants(ctx, source.getFormants("live", NaN), COLOR_LIVE, rollW, fMax, plotH, dpr, "bottom");
       } else if (takeSTSpectrum) {
-        drawFormants(ctx, source.getFormants("take", timeKey), COLOR_TAKE, rollW, fMax, plotH, dpr, "bottom");
+        const voice = source.getFormants("take", timeKey);
+        const f0 = referenceF0(takePitch, currentTime, voice.f0);
+        drawFormants(ctx, { ...voice, f0 }, COLOR_TAKE, rollW, fMax, plotH, dpr, "bottom");
       }
     };
 

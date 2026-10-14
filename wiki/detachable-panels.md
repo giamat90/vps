@@ -20,7 +20,7 @@ The main window stays the only owner of audio, the microphone, recording and the
 | `mps:hello` | detached → main | `{ panelId }` | once, after listening |
 | `mps:state` | main → detached | transport snapshot + shared state (song, duration, punch, monitoring flags, active take) | on change, seek, or 1 s heartbeat while playing |
 | `mps:live` | main → detached | live pitch points appended since the last message, plus the tuner reading | ≤ 30 Hz, only when something changed |
-| `mps:spectrum` | main → detached (spectrum window only) | the live dB spectrum, one byte per bin, and the song / take / live formants | ≤ 30 Hz while listening; otherwise only when the formants move |
+| `mps:spectrum` | main → detached (spectrum window only) | the live dB spectrum, one byte per bin, and the song / take / live formants plus the fundamental `f0` of each (the panel takes the song and take F0 from the stored pitch it loaded itself, so in practice only the live one travels) | ≤ 30 Hz while listening; otherwise only when the formants move |
 | `mps:command` | detached → main | `seek`, `setPunchIn`, `setPunchOut`, `clearPunch`, `toggleTake`, `deleteTake`, `renameTake` | on user action |
 | `mps:docked` | Rust → main | panel id, when its window is destroyed | once |
 

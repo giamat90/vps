@@ -238,7 +238,7 @@ describe("detached bridge: spectrum", () => {
   it("hands each spectrum message to the spectrum source", async () => {
     const t = setup("spectrum");
     await startDetachedBridge(t.deps);
-    const none = { f1: null, f2: null, f3: null };
+    const none = { f0: null, f1: null, f2: null, f3: null };
     const message: SpectrumMessage = { live: null, formants: { song: none, take: none, live: none } };
     t.deliver(EVT_SPECTRUM, message);
     expect(t.onSpectrum).toHaveBeenCalledWith(message);
