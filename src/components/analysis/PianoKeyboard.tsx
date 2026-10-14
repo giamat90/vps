@@ -2,6 +2,7 @@ import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { usePlayerStore } from "../../stores/player";
 import { useVoiceViewStore } from "../../stores/voiceView";
+import { currentPitchHz, PITCH_MIN_CONFIDENCE, PITCH_NEAR_S } from "../../audio/analysisUtils";
 import { getPlaybackTime } from "../../windows/playbackClock";
 import DualTuner from "./DualTuner";
 import { frequencyToMidi, NOTE_NAMES } from "@giamat90/mps-core/music";
@@ -14,7 +15,6 @@ import {
 import { startPreviewNote, startPreview, endPreview, getPreviewState, type PreviewVoice } from "../../audio/notePreview";
 import type { PitchPoint } from "../../lib/types";
 
-const CONF_MIN  = 0.3;
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);
 
 export const COLOR_SONG = "rgba(74, 158, 255, 0.88)";
@@ -77,7 +77,7 @@ function midiFromLayout(layout: KeyLayout, x: number): number | null {
 
 export function getCurrentMidi(points: PitchPoint[], currentTime: number): number | null {
   const near = points.filter(
-    (p) => Math.abs(p.time - currentTime) < 0.06 && p.confidence >= CONF_MIN && p.frequency > 0,
+    (p) => Math.abs(p.time - currentTime) < PITCH_NEAR_S && p.confidence >= PITCH_MIN_CONFIDENCE && p.frequency > 0,
   );
   if (near.length === 0) return null;
   const avg = near.reduce((s, p) => s + frequencyToMidi(p.frequency), 0) / near.length;
@@ -89,11 +89,8 @@ interface PitchInfo { note: string; hz: number }
 // Averages raw Hz directly (not via rounded MIDI) so the readout reflects
 // the actual detected pitch, e.g. a few cents sharp/flat of the nearest note.
 function getCurrentPitchInfo(points: PitchPoint[], currentTime: number): PitchInfo | null {
-  const near = points.filter(
-    (p) => Math.abs(p.time - currentTime) < 0.06 && p.confidence >= CONF_MIN && p.frequency > 0,
-  );
-  if (near.length === 0) return null;
-  const hz = near.reduce((s, p) => s + p.frequency, 0) / near.length;
+  const hz = currentPitchHz(points, currentTime);
+  if (hz === null) return null;
   const m = Math.round(frequencyToMidi(hz));
   const note = `${NOTE_NAMES[((m % 12) + 12) % 12]}${Math.floor(m / 12) - 1}`;
   return { note, hz };

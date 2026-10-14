@@ -3,8 +3,8 @@ import { createSpectrumFeed } from "./spectrumFeed";
 import { decodeSpectrum } from "./spectrumCodec";
 import type { SpectrumSource } from "../audio/spectrumSource";
 
-const NONE = { f1: null, f2: null, f3: null };
-const F = (f1: number) => ({ f1, f2: f1 * 3, f3: f1 * 5 });
+const NONE = { f0: null, f1: null, f2: null, f3: null };
+const F = (f1: number) => ({ f0: f1 / 2, f1, f2: f1 * 3, f3: f1 * 5 });
 
 function setup(player: Partial<{ isRecording: boolean; isMonitoring: boolean; currentTime: number }> = {}) {
   const state = { isRecording: false, isMonitoring: false, currentTime: 1, ...player };
@@ -75,6 +75,23 @@ describe("spectrum feed", () => {
     t.feed.read();
     (t.source.getFormants as ReturnType<typeof vi.fn>).mockImplementation((kind: string) => (kind === "song" ? F(520) : NONE));
     expect(t.feed.read()?.formants.song).toEqual(F(520));
+  });
+
+  it("counts a fundamental without any formant as something to say", () => {
+    const t = setup();
+    (t.source.getFormants as ReturnType<typeof vi.fn>).mockImplementation((kind: string) =>
+      kind === "song" ? { ...NONE, f0: 220 } : NONE,
+    );
+    expect(t.feed.read()?.formants.song).toEqual({ ...NONE, f0: 220 });
+  });
+
+  it("speaks again when only the fundamental moves", () => {
+    const t = setup();
+    t.feed.read();
+    (t.source.getFormants as ReturnType<typeof vi.fn>).mockImplementation((kind: string) =>
+      kind === "song" ? { ...F(500), f0: 262 } : NONE,
+    );
+    expect(t.feed.read()?.formants.song.f0).toBe(262);
   });
 
   it("sends a frame every time while listening, since the spectrum itself moves", () => {

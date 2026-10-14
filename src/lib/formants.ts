@@ -13,12 +13,21 @@
  * buffer or a loaded-track playback analyser buffer.
  */
 
-import { analyseHarmonics, envelopeAutocorrelation } from "./harmonicEnvelope";
+import { analyseHarmonics, envelopeAutocorrelation, type HarmonicAnalysis } from "./harmonicEnvelope";
+import { refineF0 } from "./pitchRefine";
 
 export interface FormantEstimate {
   f1: number | null;
   f2: number | null;
   f3: number | null;
+}
+
+/**
+ * The formants plus the fundamental of the very same window; f0 is null when the frame is not clearly pitched.
+ * f0 is the harmonic analysis refined by autocorrelation (pitchRefine.ts), which is what makes it fit to label with a note.
+ */
+export interface VoiceEstimate extends FormantEstimate {
+  f0: number | null;
 }
 
 const NULL_ESTIMATE: FormantEstimate = { f1: null, f2: null, f3: null };
@@ -278,10 +287,8 @@ function lpcOrderFor(sr: number): number {
 
 // Pitched voice: fit LPC to the envelope drawn through the harmonic peaks, so
 // poles can't lock onto individual harmonics (the failure mode of plain LPC
-// above ~300 Hz f0). Null when the frame has no usable harmonic structure.
-function harmonicCandidates(samples: Float32Array, sampleRate: number): number[] | null {
-  const harmonics = analyseHarmonics(samples, sampleRate);
-  if (!harmonics) return null;
+// above ~300 Hz f0).
+function harmonicCandidates(harmonics: HarmonicAnalysis): number[] | null {
   const order = lpcOrderFor(DECIMATED_SR);
   const r = envelopeAutocorrelation(harmonics, order, DECIMATED_SR / 2, PRE_EMPHASIS);
   const lpc = levinsonDurbin(r, order);
@@ -312,8 +319,16 @@ function plainLpcCandidates(samples: Float32Array, sampleRate: number): number[]
   return candidatesFromRoots(roots, sr);
 }
 
+/** Formants and the fundamental from one analysis of the window, so F0 always belongs to the same frame as F1-F3. */
+export function estimateVoice(samples: Float32Array, sampleRate: number, prevEstimate?: FormantEstimate): VoiceEstimate {
+  const harmonics = analyseHarmonics(samples, sampleRate);
+  const f0 = harmonics ? (refineF0(samples, sampleRate, harmonics.f0) ?? harmonics.f0) : null;
+  const candidates = (harmonics && harmonicCandidates(harmonics)) ?? plainLpcCandidates(samples, sampleRate);
+  if (!candidates) return { ...NULL_ESTIMATE, f0 };
+  return { ...assignWithContinuity(candidates.slice(0, 3), prevEstimate), f0 };
+}
+
 export function estimateFormants(samples: Float32Array, sampleRate: number, prevEstimate?: FormantEstimate): FormantEstimate {
-  const candidates = harmonicCandidates(samples, sampleRate) ?? plainLpcCandidates(samples, sampleRate);
-  if (!candidates) return NULL_ESTIMATE;
-  return assignWithContinuity(candidates.slice(0, 3), prevEstimate);
+  const { f1, f2, f3 } = estimateVoice(samples, sampleRate, prevEstimate);
+  return { f1, f2, f3 };
 }

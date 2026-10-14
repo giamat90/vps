@@ -82,6 +82,8 @@ export interface LiveMessage {
 }
 
 export interface FormantsPayload {
+  /** Fundamental of the same audio window as the formants. */
+  f0: number | null;
   f1: number | null;
   f2: number | null;
   f3: number | null;
@@ -106,7 +108,7 @@ export type Command =
 const NAME_MAX = 200;
 
 const isFormants = (v: unknown): boolean =>
-  isObject(v) && isNumberOrNull(v.f1) && isNumberOrNull(v.f2) && isNumberOrNull(v.f3);
+  isObject(v) && isNumberOrNull(v.f0) && isNumberOrNull(v.f1) && isNumberOrNull(v.f2) && isNumberOrNull(v.f3);
 
 /** Everything crossing the window boundary is treated as untrusted input. */
 export function parseCommand(value: unknown): Command | null {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { estimateFormants, type FormantEstimate } from "./formants";
+import { estimateFormants, estimateVoice, type FormantEstimate } from "./formants";
 import { VOWELS, synthVowel, whiteNoise, withinTolerance } from "./__fixtures__/synthVowel";
 
 const SEEDS = [1, 2, 3];
@@ -48,6 +48,30 @@ describe("estimateFormants accuracy on synthetic vowels with known formants", ()
     const rs = runPitch(200, 48000);
     expect(hitRate(rs, 1)).toBeGreaterThanOrEqual(0.9);
     expect(hitRate(rs, 2)).toBeGreaterThanOrEqual(0.9);
+  });
+});
+
+describe("estimateVoice fundamental", () => {
+  it.each([110, 160, 220, 330, 440, 660])("finds f0 within 1% (about 17 cents) on every vowel at %s Hz", (f0) => {
+    for (const truth of Object.values(VOWELS)) {
+      for (const seed of SEEDS) {
+        const est = estimateVoice(synthVowel(f0, truth, { seed }), 44100);
+        expect(est.f0, `${f0} Hz`).not.toBeNull();
+        expect(Math.abs((est.f0 as number) - f0) / f0).toBeLessThan(0.01);
+      }
+    }
+  });
+
+  it("reports the same formants as estimateFormants", () => {
+    const x = synthVowel(200, VOWELS.a);
+    const { f1, f2, f3 } = estimateVoice(x, 44100);
+    expect(estimateFormants(x, 44100)).toEqual({ f1, f2, f3 });
+  });
+
+  it("has no fundamental for silence, noise or a buffer too short to analyse", () => {
+    expect(estimateVoice(new Float32Array(8192), 44100).f0).toBeNull();
+    expect(estimateVoice(whiteNoise(8192), 44100).f0).toBeNull();
+    expect(estimateVoice(synthVowel(200, VOWELS.a, { length: 512 }), 44100).f0).toBeNull();
   });
 });
 
