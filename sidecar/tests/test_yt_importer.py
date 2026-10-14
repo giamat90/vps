@@ -153,7 +153,9 @@ class TestImportFlow:
     def test_a_missing_cookies_file_is_skipped_and_the_normal_path_continues(self, run, tmp_path, capsys):
         _, script, _, _ = run([INFO], cookies_path=str(tmp_path / "gone.txt"))
         assert "cookiefile" not in script.opts[0]
-        assert "cookies file not found" in capsys.readouterr().out
+        captured = capsys.readouterr()
+        assert "cookies file not found" in captured.err
+        assert captured.out == ""  # stdout carries the JSON-lines protocol
 
     def test_a_bot_check_walks_the_browser_cascade_in_order(self, run):
         _, script, _, _ = run([BOT, BOT, DownloadError("403"), INFO])

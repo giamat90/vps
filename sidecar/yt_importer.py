@@ -6,6 +6,7 @@ Requires ffmpeg on PATH for the WAV post-processing step.
 
 import os
 import re
+import sys
 import yt_dlp
 from processor import process
 from mps_core.version_check import MIN_YT_DLP_VERSION as _MIN_YT_DLP_VERSION
@@ -90,12 +91,12 @@ def import_yt(
     attempts = []
     if cookies_path:
         if os.path.isfile(cookies_path):
-            print(f"[yt_importer] trying cookies file: {cookies_path}")
+            print(f"[yt_importer] trying cookies file: {cookies_path}", file=sys.stderr)
             attempts.append({"cookiefile": cookies_path})
         else:
-            print(f"[yt_importer] cookies file not found, skipping: {cookies_path}")
+            print(f"[yt_importer] cookies file not found, skipping: {cookies_path}", file=sys.stderr)
     else:
-        print("[yt_importer] no cookiesPath configured")
+        print("[yt_importer] no cookiesPath configured", file=sys.stderr)
     attempts += [{}] + [{"cookiesfrombrowser": (b,)} for b in _BROWSERS]
     last_error: Exception | None = None
 
