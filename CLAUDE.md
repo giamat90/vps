@@ -162,7 +162,7 @@ VPS/
 │   ├── pitch.rs       which pitch algorithm runs: the shipped default + the VPS_PITCH_ALGORITHM experiment override
 │   ├── library.rs     Song struct + library.json CRUD
 │   ├── lyrics.rs      lyrics.json persistence + sidecar round trip (commands are thin wrappers in commands.rs)
-│   ├── youtube_signin.rs  in-app Google sign-in window → ~/.vps/youtube_cookies.txt; also bars that window from the app's commands
+│   ├── youtube_signin.rs  the two sign_in_youtube / sign_out_youtube commands, binding mps-core's `mps-youtube-signin` crate to ~/.vps (the window, cookies file and the guard that bars it from the app's commands live in the crate)
 │   ├── storage.rs     Path helpers (~/.vps/)
 │   ├── sidecar.rs     Python sidecar process manager
 │   └── lib.rs         Tauri builder + invoke_handler registration
@@ -184,7 +184,7 @@ VPS/
 
 ## Shared code (`@giamat90/mps-core`)
 
-Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), note/frequency maths (`music`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
+Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), note/frequency maths (`music`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
 
 ## Data model
 
