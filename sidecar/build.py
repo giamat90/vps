@@ -5,6 +5,8 @@ Output: dist/vps-sidecar-{platform}
 """
 
 import os
+import shutil
+import sysconfig
 import PyInstaller.__main__
 import platform
 
@@ -54,6 +56,9 @@ args = [
     # this is enough — no vendor/fetch step needed like the Demucs models.
     "--collect-data=torchcrepe",
     "--collect-all=yt_dlp",
+    # The JS challenge solver scripts (yt-dlp[default]); package data PyInstaller
+    # cannot see, and without them a signed-in YouTube extraction fails.
+    "--collect-all=yt_dlp_ejs",
     "--noconfirm",
     "--clean",
 ]
@@ -71,6 +76,16 @@ for tool in ("ffmpeg", "ffprobe"):
     else:
         print(f"WARNING: no vendored {tool} at {vendored_tool} — sidecar will "
               f"depend on {tool} being present on the end user's PATH.")
+
+# Deno runs those solver scripts. The `deno` wheel (yt-dlp[deno]) puts the
+# executable in the venv's scripts directory; a onefile exe unpacks it to
+# sys._MEIPASS, where yt_importer._js_runtime_opts points yt-dlp at it.
+deno_exe = shutil.which("deno", path=sysconfig.get_path("scripts")) or shutil.which("deno")
+if deno_exe:
+    args.append(f"--add-binary={deno_exe}{add_sep}.")
+else:
+    print("WARNING: no deno executable found (pip install 'yt-dlp[default,deno]') — "
+          "the sidecar will not be able to solve YouTube's challenges.")
 
 # htdemucs weights (see fetch_models.py) so the installed app doesn't need
 # internet access to download ~84MB on first use. htdemucs_ft (the

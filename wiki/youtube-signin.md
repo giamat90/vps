@@ -44,8 +44,8 @@ The window shows a remote page, which this app has not done before.
 - Not ported to SPS yet (wait for the hand test); not extracted to `core/` (Rust side has no shared crate yet).
 - No automatic re-prompt when the session expires: the import error text points at Settings → YouTube.
 
-## Known blocker: yt-dlp needs a JS runtime
+## yt-dlp needs a JS runtime (fixed in `feat/ytdlp-js-runtime`)
 
-Found on the first real run (2026-10-14). With the sign-in cookies, yt-dlp failed with `The page needs to be reloaded` while the same video worked **without** cookies. Verbose output: `JS runtimes: none`, `Signature solving failed`, `n challenge solving failed`. yt-dlp needs a JavaScript runtime plus the `yt-dlp-ejs` solver scripts to extract with a logged-in session; the venv has neither (`yt-dlp` is installed without `[default]`, and yt-dlp enables only Deno by default, not Node). The cookies are fine: with `yt-dlp-ejs` installed and `--js-runtimes node` the same file returned the metadata. An import without cookies only succeeded through the importer's no-cookies fallback. So the sign-in cannot help in a bot-blocked location until the sidecar can solve challenges.
+Found on the first real run (2026-10-14). With the sign-in cookies, yt-dlp failed with `The page needs to be reloaded` while the same video worked without cookies. Verbose output: `JS runtimes: none`, `Signature solving failed`, `n challenge solving failed`. yt-dlp needs a JavaScript runtime plus the `yt-dlp-ejs` solver scripts to extract with a logged-in session. The cookies were fine.
 
-Open decision: which runtime to ship (Deno is yt-dlp's default and one executable, large; QuickJS is tiny but slower; Node cannot be assumed on users' machines), plus `yt-dlp-ejs` in `requirements.txt`, `js_runtimes` in the importer, and PyInstaller packaging.
+Fix: Deno bundled with the sidecar (`yt-dlp[default,deno]`, `build.py`, `yt_importer._js_runtime_opts`); details in `python-sidecar.md`. Verified with the dev venv (`JS runtimes: deno-2.9.7`) and with a throwaway PyInstaller onefile build using the same flags, run against the real sign-in cookies. The full sidecar build in CI was not run locally.
