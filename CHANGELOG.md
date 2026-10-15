@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.84] - 2026-10-15
+
+### Changed
+- Internal: the live pitch reader now takes its autocorrelation from the shared mps-core package (v0.8.0), so a phone app can run the same algorithm. No change in what you see or hear.
+
 ## [0.0.83] - 2026-10-14
 
 ### Added
