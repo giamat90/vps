@@ -205,6 +205,8 @@ interface Song {
   directory: string;    // absolute path to ~/.vps/library/{id}/
   folderId?: string | null; // library folder this song belongs to; null/absent = root
   sortIndex: number;        // rank among sibling songs sharing the same folderId
+  officialTitle?: string;   // what online lookups search for; `title` is the user's to rename
+  officialArtist?: string;
 }
 
 interface Folder {          // flat, user-named grouping of songs (e.g. all songs by one band)
@@ -292,7 +294,8 @@ interface PitchPoint {       // frontend-internal representation
 | `process_song(filePath, kind?, highQuality?)` | `Song` | Demucs + pitch detection (algorithm from `pitch.rs`: SRH, `piano` for instruments); 10-min timeout; `kind: "instrument"` skips separation |
 | `list_songs()` | `Song[]` | reads library.json |
 | `delete_song(songId)` | `void` | deletes directory |
-| `rename_song(songId, title)` | `Song` | |
+| `rename_song(songId, title)` | `Song` | does not touch `officialTitle`; a song with none yet gets its old title copied into it first |
+| `set_song_identity(songId, officialTitle?, officialArtist?)` | `Song` | the title/artist online lookups use; blank clears and falls back to `title`/`artist` |
 | `set_song_loops(songId, loops)` | `Song` | replaces the song's saved named loops (`Song.loops`); names trimmed, region at least 0.25 s, at most 100, stored in time order |
 | `set_metronome_offset(songId, offset?)` | `Song` | persists the metronome's downbeat anchor (song time, seconds); `null` clears it back to song start |
 | `list_folders()` | `Folder[]` | reads library.json |
@@ -308,7 +311,8 @@ interface PitchPoint {       // frontend-internal representation
 | `load_lyrics(songId)` / `delete_lyrics(songId)` | `Lyrics` or `null` / `void` | `lyrics.json` of the song |
 | `sync_lyrics(songId, text, source?)` | `Lyrics` | aligns the text to `vocals.wav` via sidecar `align_lyrics`, persists, emits `lyrics-progress`; see wiki/lyrics.md |
 | `cancel_lyrics_sync()` | `void` | abandons the running `sync_lyrics`, which then fails with "Cancelled."; the sidecar is stopped and restarts on its next use |
-| `find_lyrics(songId)` | `FoundLyrics` | LRCLIB lookup via sidecar, nothing saved |
+| `find_lyrics(songId)` | `FoundLyrics` | LRCLIB lookup via sidecar under the song's official title/artist, nothing saved |
+| `search_lyrics(songId)` | `LyricsSearch` | same lookup, every usable result best first (wrong-length ones flagged), nothing saved |
 | `save_exercise_take` / `list_exercise_takes` / `delete_exercise_take` | | Free Exercise equivalents, stored under `~/.vps/exercises/` |
 | `import_exercise_file(filePath, duration)` | `ExerciseTake` | copies an external audio file into `~/.vps/exercises/takes/`, analyzes it like a recorded take |
 | `load_analysis(songId)` | `{pitchData, onsets, dynamics, stSpectrum…}` | reads analysis.json; backfills the song's short-term spectrum via sidecar `compute_st_spectrum` (same backfill for takes happens in `list_takes`) and, once per song, the second voice (`pitchData.f0Alt`) via `compute_second_voice` |
@@ -453,6 +457,7 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 | `mix_export` | render a single mixdown WAV from a list of `{path, gain, isTake, startPosition?, audioOffset?}` sources, trimmed to a `[startSec, endSec)` window; sums per-source gain, resamples/upmixes as needed, peak-safe scales | 120 s |
 | `align_lyrics` | CTC forced alignment of lyric text to a vocals stem (first use downloads ~360 MB of model weights) | 600 s per message |
 | `find_lyrics` | LRCLIB lookup by title/artist/duration | 60 s |
+| `search_lyrics` | same lookup, returns every usable result | 60 s |
 | `ping` / `quit` | health check / shutdown | — |
 
 ### Pitch detection choices

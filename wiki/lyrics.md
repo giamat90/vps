@@ -7,7 +7,7 @@ Shipped in `v0.1.62` (PR #3). Ported to SPS (`v0.0.40`); the engine now lives in
 ## User flow
 
 1. Open a (non-instrument) song → **Lyrics (add)** tab under the waveforms.
-2. Paste the lyrics, or press **Find online** (looks the song up on [LRCLIB](https://lrclib.net), a free community lyrics database; sends only the song title/artist/duration). The found text lands in the box for review, nothing is saved yet.
+2. Paste the lyrics, or press **Find online** (looks the song up on [LRCLIB](https://lrclib.net), a free community lyrics database; sends only the song's official title/artist and its duration). The best match lands in the box for review, nothing is saved yet. When there is more than one result they are listed under the box (title, artist, length, timed or plain) and clicking one puts its text in the box; a result of a different length than the song is flagged, so a live or acoustic version can still be picked. The line **Searches as: Artist – Title** shows what is sent and **Change** edits it (see below).
 3. Press **Sync lyrics**. Progress is streamed (first run also downloads a ~360 MB speech model once). Typical time on CPU: 10-25 s for a 3-5 minute song.
 4. The karaoke view shows every line; the line being sung is lit and centred, the sung words inside it are highlighted. Clicking a line seeks to it (0.3 s early so the first word is not clipped). **Edit and re-sync** and **Remove** are beside it.
 
@@ -36,8 +36,20 @@ vocals.wav ─▶ 16 kHz mono ─▶ wav2vec2 ─▶ log-probs per 20 ms frame �
 |---|---|---|
 | `align_lyrics` | `{vocalsPath, lyrics, modelsDir?}` + progress | `{aligner, lines[], meanScore, evidenceRatio, alignedWords, totalWords, warning}` |
 | `find_lyrics` | `{title, artist?, duration?}` | `{text, synced, title, artist, duration, source}` |
+| `search_lyrics` | `{title, artist?, duration?}` | `{query, candidates: [{text, synced, title, artist, duration, source, lengthMismatch}]}`, best first, wrong-length entries kept and flagged |
 
-Rust (`src-tauri/src/lyrics.rs`, thin wrappers in `commands.rs`): `load_lyrics`, `sync_lyrics`, `find_lyrics`, `delete_lyrics`; progress arrives on the `"lyrics-progress"` event (`{songId, progress, stage}`). The sidecar mutex is held for the duration, like `process_song`, so other sidecar work (takes, spectrum backfill) queues behind a running sync.
+Rust (`src-tauri/src/lyrics.rs`, thin wrappers in `commands.rs`): `load_lyrics`, `sync_lyrics`, `find_lyrics`, `search_lyrics`, `delete_lyrics`; progress arrives on the `"lyrics-progress"` event (`{songId, progress, stage}`). The sidecar mutex is held for the duration, like `process_song`, so other sidecar work (takes, spectrum backfill) queues behind a running sync.
+
+### Lookup identity (official title and artist)
+
+A song's `title` is the user's to rename, typically to tell versions apart (studio, live, acoustic). The online search must not follow it, so `Song` carries a second pair, `officialTitle` / `officialArtist`, and `Song::lookup_identity()` (`library.rs`) is what `find_lyrics` and `search_lyrics` send:
+
+- imports seed `officialTitle` with the imported title (`officialArtist` stays empty until set);
+- `rename_song` never changes them; renaming a song that has no `officialTitle` yet first copies the old title into it, so a library written before this existed keeps looking itself up under the name it had;
+- empty fields fall back to `title` / `artist`;
+- `set_song_identity(songId, officialTitle?, officialArtist?)` sets them (trimmed, blank clears). The lyrics panel's **Change** link is the only UI for it.
+
+The wrong-length results are kept because the duration filter (15 s) is a guess about the recording, not about the song: a live version rarely matches the studio length, and the user can see which entry is theirs. `find_lyrics` still drops them.
 
 ### Storage
 

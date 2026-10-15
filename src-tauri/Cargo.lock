@@ -88,7 +88,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app"
-version = "0.0.87"
+version = "0.0.88"
 dependencies = [
  "chrono",
  "dirs",
@@ -2198,7 +2198,7 @@ dependencies = [
 [[package]]
 name = "mps-youtube-signin"
 version = "0.7.0"
-source = "git+https://github.com/giamat90/mps-core?tag=v0.10.0#3bb9c04a2bb24d27d2123fb0f0a0c361373ce6b0"
+source = "git+https://github.com/giamat90/mps-core?tag=v0.11.0#c8ea6df4a2058b5b6c59f0e2d99afd70d1cb27bf"
 dependencies = [
  "log",
  "tauri",

@@ -217,6 +217,16 @@ Looks a song up on LRCLIB (`https://lrclib.net/api/search`, identified by a `Use
 
 Result: `{text, synced, title, artist, duration, source: "lrclib"}`.
 
+### `search_lyrics`
+
+Same lookup and arguments as `find_lyrics`, but returns every usable result instead of one, so the user can choose. Instrumentals and entries with no lyrics are dropped; entries more than 15 s off the song's length are kept and flagged.
+
+```json
+{"cmd": "search_lyrics", "title": "Song", "artist": "Band", "duration": 213.4}
+```
+
+Result: `{query, candidates: [{text, synced, title, artist, duration, source: "lrclib", lengthMismatch}]}`, best match first.
+
 ### `ping` / `quit`
 
 ```json

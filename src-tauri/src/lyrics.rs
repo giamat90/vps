@@ -84,6 +84,33 @@ pub struct FoundLyrics {
     pub source: String,
 }
 
+/// One online result with how its length compares with the song's.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsCandidate {
+    pub text: String,
+    #[serde(default)]
+    pub synced: bool,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub artist: String,
+    #[serde(default)]
+    pub source: String,
+    #[serde(default)]
+    pub duration: Option<f64>,
+    #[serde(default)]
+    pub length_mismatch: bool,
+}
+
+/// Every usable online result for a song, best match first.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LyricsSearch {
+    pub query: String,
+    pub candidates: Vec<LyricsCandidate>,
+}
+
 fn lyrics_path(song_id: &str) -> std::path::PathBuf {
     storage::song_dir(song_id).join(LYRICS_FILE)
 }
@@ -274,27 +301,38 @@ pub fn sync_cancellable(
 }
 
 /// Look the song's lyrics up online; the user reviews the text before syncing.
-pub fn find_impl(state: &SidecarState, song_id: &str) -> Result<FoundLyrics, String> {
+/// The sidecar's lookup command `cmd` for a song, under its official title and
+/// artist (the display title is the user's to rename).
+fn lookup(state: &SidecarState, song_id: &str, cmd: &str) -> Result<serde_json::Value, String> {
     let song = find_song(song_id)?;
-    let cmd = serde_json::json!({
-        "cmd": "find_lyrics",
-        "title": song.title,
-        "artist": song.artist,
+    let (title, artist) = song.lookup_identity();
+    let request = serde_json::json!({
+        "cmd": cmd,
+        "title": title,
+        "artist": artist,
         "duration": if song.duration > 0.0 { Some(song.duration) } else { None },
     });
     let guard = ensure_sidecar(state)?;
     let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
-    sidecar.send_command(&cmd)?;
+    sidecar.send_command(&request)?;
 
     loop {
         match sidecar.recv_timeout(Duration::from_secs(60))? {
-            SidecarMessage::Result { data, .. } => {
-                return serde_json::from_value(data).map_err(|e| format!("The sidecar returned malformed lyrics: {e}"));
-            }
+            SidecarMessage::Result { data, .. } => return Ok(data),
             SidecarMessage::Error { message, .. } => return Err(message),
             _ => {}
         }
     }
+}
+
+pub fn find_impl(state: &SidecarState, song_id: &str) -> Result<FoundLyrics, String> {
+    let data = lookup(state, song_id, "find_lyrics")?;
+    serde_json::from_value(data).map_err(|e| format!("The sidecar returned malformed lyrics: {e}"))
+}
+
+pub fn search_impl(state: &SidecarState, song_id: &str) -> Result<LyricsSearch, String> {
+    let data = lookup(state, song_id, "search_lyrics")?;
+    serde_json::from_value(data).map_err(|e| format!("The sidecar returned malformed lyrics: {e}"))
 }
 
 #[cfg(test)]
@@ -326,6 +364,8 @@ mod tests {
             folder_id: None,
             sort_index: 0,
             loops: vec![],
+            official_title: None,
+            official_artist: None,
         }
     }
 
@@ -594,6 +634,34 @@ mod tests {
         let err = sync_impl(&state, "s1", "la la", "paste", &mut |_, _| {}).unwrap_err();
         assert!(err.contains("no separated vocals"));
         assert!(!spawned(&state));
+    }
+
+    #[test]
+    fn searching_lyrics_for_an_unknown_song_is_reported() {
+        let _home = TestHome::new();
+        let state = offline_state();
+        assert!(search_impl(&state, "ghost").unwrap_err().contains("Song not found"));
+        assert!(!spawned(&state));
+    }
+
+    #[test]
+    fn a_search_reply_deserializes_with_the_length_flag() {
+        let s: LyricsSearch = serde_json::from_value(json!({
+            "query": "A Band A Song",
+            "candidates": [
+                {"text": "a b", "synced": true, "title": "T", "artist": "A", "duration": 200.0,
+                 "source": "lrclib", "lengthMismatch": false},
+                {"text": "c", "synced": false, "title": "T (Live)", "artist": "A", "duration": null,
+                 "source": "lrclib", "lengthMismatch": true}
+            ]
+        }))
+        .unwrap();
+        assert_eq!(s.query, "A Band A Song");
+        assert_eq!(s.candidates.len(), 2);
+        assert_eq!(s.candidates[0].duration, Some(200.0));
+        assert!(!s.candidates[0].length_mismatch);
+        assert_eq!(s.candidates[1].duration, None);
+        assert!(s.candidates[1].length_mismatch);
     }
 
     #[test]

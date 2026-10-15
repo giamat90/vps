@@ -218,6 +218,8 @@ fn lyrics_sync_goes_through_the_real_sidecar_and_is_persisted() {
         folder_id: None,
         sort_index: 0,
         loops: vec![],
+        official_title: None,
+        official_artist: None,
     })
     .unwrap();
 
