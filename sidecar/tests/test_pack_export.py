@@ -109,10 +109,18 @@ def test_missing_stems_and_bad_metadata_are_refused_cleanly(song, tmp_path):
     assert not out.exists()
 
 
-def test_progress_is_reported_in_order(song, tmp_path):
-    seen = []
-    build_practice_pack(str(song), str(tmp_path / "p.vppack"), META, on_progress=lambda s, v: seen.append(v), encode=fake_encode)
-    assert seen == sorted(seen) and seen[-1] == 1.0
+def test_progress_uses_the_sidecars_value_then_stage_order(song, tmp_path):
+    # Same shape as main.make_progress_callback: callback(value, stage) rounds
+    # the value, so a swapped order fails with "type str doesn't define __round__".
+    sent = []
+
+    def callback(value: float, stage: str):
+        sent.append({"stage": stage, "value": round(value, 3)})
+
+    build_practice_pack(str(song), str(tmp_path / "p.vppack"), META, on_progress=callback, encode=fake_encode)
+    values = [m["value"] for m in sent]
+    assert values == sorted(values) and values[-1] == 1.0
+    assert all(isinstance(m["stage"], str) and m["stage"] for m in sent)
 
 
 @needs_ffmpeg

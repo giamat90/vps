@@ -63,7 +63,7 @@ def build_practice_pack(
     song_dir: str,
     output_path: str,
     meta: dict,
-    on_progress: Optional[Callable[[str, float], None]] = None,
+    on_progress: Optional[Callable[[float, str], None]] = None,
     encode: Callable[..., Path] = pack.encode_aac,
 ) -> dict:
     """Write `output_path` (a .vppack) for the song in `song_dir`.
@@ -71,7 +71,9 @@ def build_practice_pack(
     `meta` carries what the shell knows: songId, title, artist, durationS, bpm,
     key, metronomeOffsetS, loops [{name,start,end}], createdAt, rev.
     """
-    progress = on_progress or (lambda stage, value: None)
+    # The sidecar's convention (processor.py, main.make_progress_callback) is
+    # on_progress(value, stage); the other order reached round() as a string.
+    progress = on_progress or (lambda value, stage: None)
     root = Path(song_dir)
     vocals_src = root / "vocals.wav"
     instrumental_src = root / "instrumental.wav"
@@ -86,14 +88,14 @@ def build_practice_pack(
     def tick(stage: str) -> None:
         nonlocal done
         done += 1
-        progress(stage, done / steps)
+        progress(done / steps, stage)
 
     work = Path(tempfile.mkdtemp(prefix="vps-pack-"))
     try:
         files: dict[str, object] = {}
         tracks = {"vocals": "vocals.m4a", "instrumental": "instrumental.m4a"}
 
-        progress("encoding vocals", 0.0)
+        progress(0.0, "encoding vocals")
         files["vocals.m4a"] = encode(vocals_src, work / "vocals.m4a", bitrate_kbps=VOCALS_KBPS, mono=True)
         tick("encoding instrumental")
         files["instrumental.m4a"] = encode(instrumental_src, work / "instrumental.m4a", bitrate_kbps=INSTRUMENTAL_KBPS)
