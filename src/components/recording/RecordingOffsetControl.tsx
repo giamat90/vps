@@ -1,34 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { usePlayerStore } from "../../stores/player";
-
-const N_COUNTIN = 4;
-const N_MEASURED = 8;
-const INTERVAL_S = 1.0;
-const FIRST_CLICK_S = 0.5; // gap before first click once recording starts
-
-// Confidence classification of the clap-spread MAD (median absolute deviation).
-const MAD_HIGH_CONFIDENCE_MS = 5;
-const MAD_MEDIUM_CONFIDENCE_MS = 15;
-// Sanity bounds — a measurement outside these is a detection failure, not a latency.
-const MIN_DETECTED_CLAPS = 5;
-const MAX_OFFSET_MS = 500; // matches the manual input's range
+import {
+  FIRST_CLICK_S,
+  INTERVAL_S,
+  MAX_OFFSET_MS,
+  MIN_DETECTED_CLAPS,
+  N_COUNTIN,
+  N_MEASURED,
+  confidenceOf,
+  detectClapLatency,
+  type ClapDetection,
+} from "../../lib/clapLatency";
 
 type CalibPhase = "idle" | "counting" | "measuring" | "analyzing" | "done" | "error";
-
-type Confidence = "high" | "medium" | "low";
-
-function confidenceOf(madMs: number): Confidence {
-  if (madMs <= MAD_HIGH_CONFIDENCE_MS) return "high";
-  if (madMs <= MAD_MEDIUM_CONFIDENCE_MS) return "medium";
-  return "low";
-}
-
-interface ClapDetection {
-  medianMs: number;
-  madMs: number;
-  detectedCount: number;
-  offsets: number[]; // raw per-clap offsets, kept for rejection diagnostics
-}
 
 function scheduleClick(ctx: AudioContext, atTime: number, isCountIn: boolean): void {
   const osc = ctx.createOscillator();
@@ -65,68 +49,8 @@ function pickLoudestChannel(buffer: AudioBuffer): Float32Array {
   return best;
 }
 
-// Returns the measured round-trip latency plus its spread and detection count,
-// or null when the recording contains no usable signal. Range/count validation
-// happens at the caller so rejections can surface diagnostics.
 function detectLatencyMs(buffer: AudioBuffer): ClapDetection | null {
-  const samples = pickLoudestChannel(buffer);
-  const sr = buffer.sampleRate;
-  // 1 ms hop, 5 ms RMS frame
-  const hop = Math.round(sr / 1000);
-  const frame = hop * 5;
-  const numFrames = Math.ceil(samples.length / hop);
-
-  const env = new Float32Array(numFrames);
-  for (let i = 0; i < numFrames; i++) {
-    const s = i * hop;
-    const e = Math.min(s + frame, samples.length);
-    let sum = 0;
-    for (let j = s; j < e; j++) sum += samples[j] * samples[j];
-    env[i] = Math.sqrt(sum / (e - s));
-  }
-
-  let maxVal = 0;
-  for (let i = 0; i < env.length; i++) if (env[i] > maxVal) maxVal = env[i];
-  if (maxVal < 0.005) return null;
-  const threshold = maxVal * 0.15;
-
-  // Onset (rising-edge) detection — first frame crossing above threshold,
-  // minimum 300 ms between onsets (1 frame = 1 ms). A strict local-maximum test
-  // misses low-frequency/slow-attack sources (e.g. bass) whose RMS envelope
-  // plateaus near its peak instead of spiking like a clap.
-  const peaks: number[] = [];
-  let above = false;
-  for (let i = 0; i < env.length; i++) {
-    if (env[i] > threshold) {
-      if (!above && (peaks.length === 0 || i - peaks[peaks.length - 1] > 300)) {
-        peaks.push(i);
-      }
-      above = true;
-    } else {
-      above = false;
-    }
-  }
-
-  // Expected click positions in the recording (ms): first click at FIRST_CLICK_S,
-  // then after N_COUNTIN count-in beats, N_MEASURED beats are the measurement targets.
-  const offsets: number[] = [];
-  for (let i = 0; i < N_MEASURED; i++) {
-    const expectedMs = Math.round((FIRST_CLICK_S + (N_COUNTIN + i) * INTERVAL_S) * 1000);
-    // Search window: -100 ms to +500 ms around expected position
-    const candidates = peaks.filter(p => p >= expectedMs - 100 && p <= expectedMs + 500);
-    if (candidates.length === 0) continue;
-    const closest = candidates.reduce((a, b) =>
-      Math.abs(a - expectedMs) < Math.abs(b - expectedMs) ? a : b,
-    );
-    offsets.push(closest - expectedMs);
-  }
-
-  if (offsets.length === 0) return null;
-  const sorted = [...offsets].sort((a, b) => a - b);
-  const medianMs = sorted[Math.floor(sorted.length / 2)];
-  const deviations = sorted.map((o) => Math.abs(o - medianMs)).sort((a, b) => a - b);
-  const madMs = deviations[Math.floor(deviations.length / 2)];
-  return { medianMs, madMs, detectedCount: offsets.length, offsets };
+  return detectClapLatency(pickLoudestChannel(buffer), buffer.sampleRate);
 }
 
 function RecordingOffsetControl() {

@@ -138,6 +138,7 @@ VPS/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
 │   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
 │   │   ├── constants.ts       piano window constants and follow logic (C0–C7); NOTE_NAMES/MIDI helpers are in @giamat90/mps-core/music
+│   │   ├── clapLatency.ts     click-clap latency detector on plain samples (RecordingOffsetControl's detection, unit tested)
 │   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
 │   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
 │   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic)
