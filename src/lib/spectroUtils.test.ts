@@ -16,6 +16,7 @@ import {
   quantizeFftToRows,
   smoothSpectrumEnvelope,
   smoothSpectrumLight,
+  stitchAboveNyquist,
   xToFreq,
   type SpectrumPoint,
 } from "./spectroUtils";
@@ -294,5 +295,31 @@ describe("buildSpectroCanvas", () => {
     expect(px(1, 0)).toEqual(lut(255));
     expect(px(0, 1)).toEqual(lut(128));
     expect(px(1, 1)).toEqual(lut(64));
+  });
+});
+
+describe("stitchAboveNyquist", () => {
+  const W = 1000;
+  const flat = (normalized: number) => Array.from({ length: W }, (_, px) => ({ x: px, y: 0, normalized }));
+
+  it("keeps the measured curve below 0.9 x Nyquist and takes the stored one above", () => {
+    const out = stitchAboveNyquist(flat(0.2), flat(0.8), 8000, W, 30, 20000);
+    const cut = out.findIndex((p) => p.normalized === 0.8);
+    expect(cut).toBeGreaterThan(0);
+    expect(out.slice(0, cut).every((p) => p.normalized === 0.2)).toBe(true);
+    expect(out.slice(cut).every((p) => p.normalized === 0.8)).toBe(true);
+    expect(xToFreq(cut, W, 30, 20000)).toBeGreaterThanOrEqual(3600);
+    expect(xToFreq(cut - 1, W, 30, 20000)).toBeLessThan(3600);
+  });
+
+  it("leaves the part above the band empty when there is no stored frame", () => {
+    const out = stitchAboveNyquist(flat(0.5), null, 8000, W, 30, 20000);
+    expect(out[W - 1].normalized).toBe(0);
+    expect(out[0].normalized).toBe(0.5);
+  });
+
+  it("returns the measured curve untouched when its band reaches the top of the axis", () => {
+    const measured = flat(0.3);
+    expect(stitchAboveNyquist(measured, flat(0.9), 48000, W, 30, 20000)).toBe(measured);
   });
 });

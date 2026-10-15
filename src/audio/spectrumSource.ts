@@ -1,11 +1,25 @@
 import { estimateVoice, type VoiceEstimate } from "../lib/formants";
+import { computeMagnitudeSpectrumDb } from "../lib/fft";
 import { decodeSpectrum } from "../windows/spectrumCodec";
 import type { SpectrumMessage } from "../windows/protocol";
 
 export const FORMANT_WINDOW = 8192;
+
+/** The analyser's window, in seconds: 8192 samples at 44.1 kHz. */
+const SPECTRUM_WINDOW_S = 0.186;
+
+/**
+ * FFT size giving the analyser's ~186 ms window at `sampleRate`. The engine's decoded buffers are not at the
+ * file's rate (WaveSurfer decodes at 8 kHz), where 8192 samples would be a full second of audio.
+ */
+export function spectrumFftSize(sampleRate: number): number {
+  const size = 2 ** Math.round(Math.log2(SPECTRUM_WINDOW_S * sampleRate));
+  return Math.max(256, Math.min(FORMANT_WINDOW, size));
+}
 export const NO_FORMANTS: VoiceEstimate = { f0: null, f1: null, f2: null, f3: null };
 
 export type FormantKind = "song" | "take" | "live";
+export type TrackKind = "song" | "take";
 
 export interface LiveSpectrum {
   /** Web Audio dB values, one per FFT bin. */
@@ -26,6 +40,12 @@ export interface SpectrumSource {
    * Carries the window's fundamental (`f0`) alongside F1-F3.
    */
   getFormants(kind: FormantKind, timeKey: number): VoiceEstimate;
+  /**
+   * The song's or the take's spectrum at the playhead, FFT-ed from the decoded audio with the
+   * analyser's window and scale, so it goes through exactly the path the live curve does. Null
+   * when there is nothing audible there. `timeKey` as for getFormants.
+   */
+  getTrackSpectrum(kind: TrackKind, timeKey: number): LiveSpectrum | null;
   /** Forget cached estimates (the song or take changed). */
   reset(): void;
 }
@@ -51,6 +71,11 @@ export interface LocalSourceDeps {
 export function createLocalSpectrumSource(deps: LocalSourceDeps): SpectrumSource {
   const estimate = deps.estimate ?? estimateVoice;
   let trackers: Record<FormantKind, Tracker> = { song: newTracker(), take: newTracker(), live: newTracker() };
+  const emptySpectra = (): Record<TrackKind, { key: number; value: LiveSpectrum | null }> => ({
+    song: { key: Number.NaN, value: null },
+    take: { key: Number.NaN, value: null },
+  });
+  let spectra = emptySpectra();
   let freqScratch: Float32Array<ArrayBuffer> | null = null;
   let timeScratch: Float32Array<ArrayBuffer> | null = null;
 
@@ -92,8 +117,28 @@ export function createLocalSpectrumSource(deps: LocalSourceDeps): SpectrumSource
       return tracked(kind, timeKey, () => deps.getTrackSamples(kind === "song" ? "vocals" : "take", FORMANT_WINDOW));
     },
 
+    getTrackSpectrum(kind, timeKey) {
+      const cached = spectra[kind];
+      if (!Number.isNaN(timeKey) && cached.key === timeKey) return cached.value;
+      const snapshot = deps.getTrackSamples(kind === "song" ? "vocals" : "take", FORMANT_WINDOW);
+      if (snapshot) {
+        // The window is centred on the playhead, so its middle `size` samples are the ones to use.
+        const size = Math.min(snapshot.samples.length, spectrumFftSize(snapshot.sampleRate));
+        const start = Math.floor((snapshot.samples.length - size) / 2);
+        cached.value = {
+          data: computeMagnitudeSpectrumDb(snapshot.samples.subarray(start, start + size), size),
+          sampleRate: snapshot.sampleRate,
+        };
+      } else {
+        cached.value = null;
+      }
+      cached.key = timeKey;
+      return cached.value;
+    },
+
     reset() {
       trackers = { song: newTracker(), take: newTracker(), live: newTracker() };
+      spectra = emptySpectra();
     },
   };
 }
@@ -101,8 +146,10 @@ export function createLocalSpectrumSource(deps: LocalSourceDeps): SpectrumSource
 /** What a detached window uses: the last thing the main window sent. */
 export function createRemoteSpectrumSource(): { source: SpectrumSource; apply(message: SpectrumMessage): void } {
   let live: LiveSpectrum | null = null;
+  let tracks: Record<TrackKind, LiveSpectrum | null> = { song: null, take: null };
   let formants: SpectrumMessage["formants"] | null = null;
   let scratch: Float32Array | undefined;
+  const trackScratch: Partial<Record<TrackKind, Float32Array>> = {};
 
   return {
     apply(message) {
@@ -116,13 +163,28 @@ export function createRemoteSpectrumSource(): { source: SpectrumSource; apply(me
           return;
         }
       }
+      const nextTracks: Record<TrackKind, LiveSpectrum | null> = { song: null, take: null };
+      for (const kind of ["song", "take"] as const) {
+        const encoded = message.tracks[kind];
+        if (!encoded) continue;
+        try {
+          const data = decodeSpectrum(encoded.bins, trackScratch[kind]);
+          trackScratch[kind] = data;
+          nextTracks[kind] = { data, sampleRate: encoded.sampleRate };
+        } catch (e) {
+          console.warn(`[detached] could not decode the ${kind} spectrum:`, e);
+          return;
+        }
+      }
       live = next;
+      tracks = nextTracks;
       formants = message.formants;
     },
 
     source: {
       getLiveSpectrum: () => live,
       getFormants: (kind) => formants?.[kind] ?? NO_FORMANTS,
+      getTrackSpectrum: (kind) => tracks[kind],
       reset: () => {},
     },
   };

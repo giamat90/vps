@@ -239,7 +239,7 @@ describe("detached bridge: spectrum", () => {
     const t = setup("spectrum");
     await startDetachedBridge(t.deps);
     const none = { f0: null, f1: null, f2: null, f3: null };
-    const message: SpectrumMessage = { live: null, formants: { song: none, take: none, live: none } };
+    const message: SpectrumMessage = { live: null, tracks: { song: null, take: null }, formants: { song: none, take: none, live: none } };
     t.deliver(EVT_SPECTRUM, message);
     expect(t.onSpectrum).toHaveBeenCalledWith(message);
   });

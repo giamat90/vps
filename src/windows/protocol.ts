@@ -89,10 +89,18 @@ export interface FormantsPayload {
   f3: number | null;
 }
 
+/** A dB spectrum quantised to one byte per bin (see spectrumCodec). */
+export interface EncodedSpectrum {
+  sampleRate: number;
+  bins: string;
+}
+
 /** The part of the spectrum comparison that needs the audio engine or the microphone. */
 export interface SpectrumMessage {
-  /** The live dB spectrum, quantised to one byte per bin (see spectrumCodec). */
-  live: { sampleRate: number; bins: string } | null;
+  /** The live dB spectrum. */
+  live: EncodedSpectrum | null;
+  /** The song's and the take's spectrum at the playhead, measured from the decoded audio. */
+  tracks: { song: EncodedSpectrum | null; take: EncodedSpectrum | null };
   formants: { song: FormantsPayload; take: FormantsPayload; live: FormantsPayload };
 }
 
@@ -155,12 +163,20 @@ export function isStateMessage(value: unknown): value is StateMessage {
   return isCoreStateMessage(value, isSharedState);
 }
 
+const isEncodedSpectrumOrNull = (v: unknown): boolean =>
+  v === null || (isObject(v) && isNumber(v.sampleRate) && typeof v.bins === "string");
+
 export function isSpectrumMessage(value: unknown): value is SpectrumMessage {
-  if (!isObject(value) || !isObject(value.formants)) return false;
-  const live = value.live;
-  const liveOk = live === null || (isObject(live) && isNumber(live.sampleRate) && typeof live.bins === "string");
+  if (!isObject(value) || !isObject(value.formants) || !isObject(value.tracks)) return false;
   const f = value.formants;
-  return liveOk && isFormants(f.song) && isFormants(f.take) && isFormants(f.live);
+  return (
+    isEncodedSpectrumOrNull(value.live) &&
+    isEncodedSpectrumOrNull(value.tracks.song) &&
+    isEncodedSpectrumOrNull(value.tracks.take) &&
+    isFormants(f.song) &&
+    isFormants(f.take) &&
+    isFormants(f.live)
+  );
 }
 
 export function isLiveMessage(value: unknown): value is LiveMessage {

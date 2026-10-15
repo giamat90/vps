@@ -134,4 +134,30 @@ describe("estimateFormants performance", () => {
     for (let i = 0; i < runs; i++) estimateFormants(x, 44100);
     expect((performance.now() - t0) / runs).toBeLessThan(8);
   });
+
+  it("the f0 refinement costs a fraction of the formant estimate, whatever the machine", () => {
+    const x = synthVowel(200, VOWELS.a);
+    const time = (fn: () => void) => {
+      fn();
+      const t0 = performance.now();
+      for (let i = 0; i < 60; i++) fn();
+      return performance.now() - t0;
+    };
+    const formants = time(() => estimateFormants(x, 44100));
+    const voice = time(() => estimateVoice(x, 44100));
+    expect(voice / formants).toBeLessThan(2);
+  });
+
+  it("estimateFormants does not pay for the refinement", () => {
+    const x = synthVowel(200, VOWELS.a);
+    const time = (fn: () => void) => {
+      fn();
+      const t0 = performance.now();
+      for (let i = 0; i < 60; i++) fn();
+      return performance.now() - t0;
+    };
+    const plain = time(() => estimateVoice(x, 44100, undefined, { refine: false }));
+    const formants = time(() => estimateFormants(x, 44100));
+    expect(formants / plain).toBeLessThan(1.5);
+  });
 });

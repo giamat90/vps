@@ -13,7 +13,7 @@ vi.mock("../stores/player", () => ({
 import { getLocalSpectrumSource, getSpectrumSource, installSpectrumSource } from "./spectrumRegistry";
 import type { SpectrumSource } from "../audio/spectrumSource";
 
-const fake = (): SpectrumSource => ({ getLiveSpectrum: () => null, getFormants: () => ({ f0: null, f1: 1, f2: null, f3: null }), reset: () => {} });
+const fake = (): SpectrumSource => ({ getLiveSpectrum: () => null, getFormants: () => ({ f0: null, f1: 1, f2: null, f3: null }), getTrackSpectrum: () => null, reset: () => {} });
 
 beforeEach(() => {
   h.getMicAnalyser.mockClear();

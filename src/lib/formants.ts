@@ -320,15 +320,22 @@ function plainLpcCandidates(samples: Float32Array, sampleRate: number): number[]
 }
 
 /** Formants and the fundamental from one analysis of the window, so F0 always belongs to the same frame as F1-F3. */
-export function estimateVoice(samples: Float32Array, sampleRate: number, prevEstimate?: FormantEstimate): VoiceEstimate {
+export function estimateVoice(
+  samples: Float32Array,
+  sampleRate: number,
+  prevEstimate?: FormantEstimate,
+  { refine = true }: { refine?: boolean } = {},
+): VoiceEstimate {
   const harmonics = analyseHarmonics(samples, sampleRate);
-  const f0 = harmonics ? (refineF0(samples, sampleRate, harmonics.f0) ?? harmonics.f0) : null;
+  // The autocorrelation refinement costs about as much again as the rest of the call; callers that only
+  // want the formants (estimateFormants, and so the spectrogram) skip it.
+  const f0 = harmonics ? ((refine ? refineF0(samples, sampleRate, harmonics.f0) : null) ?? harmonics.f0) : null;
   const candidates = (harmonics && harmonicCandidates(harmonics)) ?? plainLpcCandidates(samples, sampleRate);
   if (!candidates) return { ...NULL_ESTIMATE, f0 };
   return { ...assignWithContinuity(candidates.slice(0, 3), prevEstimate), f0 };
 }
 
 export function estimateFormants(samples: Float32Array, sampleRate: number, prevEstimate?: FormantEstimate): FormantEstimate {
-  const { f1, f2, f3 } = estimateVoice(samples, sampleRate, prevEstimate);
+  const { f1, f2, f3 } = estimateVoice(samples, sampleRate, prevEstimate, { refine: false });
   return { f1, f2, f3 };
 }
