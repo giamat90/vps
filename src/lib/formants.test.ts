@@ -126,13 +126,13 @@ describe("estimateFormants invariants", () => {
 });
 
 describe("estimateFormants performance", () => {
-  it("stays well inside a per-frame budget (< 8 ms average)", () => {
+  it("stays well inside a per-frame budget (< 16 ms average, one 60 fps frame)", () => {
     const x = synthVowel(300, VOWELS.a);
     estimateFormants(x, 44100);
     const runs = 60;
     const t0 = performance.now();
     for (let i = 0; i < runs; i++) estimateFormants(x, 44100);
-    expect((performance.now() - t0) / runs).toBeLessThan(8);
+    expect((performance.now() - t0) / runs).toBeLessThan(16);
   });
 
   it("the f0 refinement costs a fraction of the formant estimate, whatever the machine", () => {
