@@ -6,6 +6,14 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.86] - 2026-10-15
+
+### Added
+- **Send to phone.** The practice room has a new button that saves a practice pack (`.vppack`) of the song for the Vocal Practice Pocket phone app: the vocals and instrumental as compact AAC, any transpositions you have already made, the reference melody, the lyrics and your saved loops. A four-minute song becomes about 5 MB. Move the file to your phone and add it there.
+
+### Changed
+- The shared package moved to mps-core 0.10.0 (the pack format).
+
 ## [0.0.85] - 2026-10-15
 
 ### Fixed
