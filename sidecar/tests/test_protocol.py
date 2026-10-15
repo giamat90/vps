@@ -243,6 +243,42 @@ def test_non_ascii_paths_round_trip(sidecar, tmp_path):
     assert msg["data"]["path"] == str(folder / "salida.wav")
 
 
+def _song_dir(tmp_path, with_instrumental=True):
+    d = tmp_path / "song"
+    d.mkdir()
+    write_wav(d / "vocals.wav", harmonic_tone(220, SR, 2.0), SR)
+    if with_instrumental:
+        write_wav(d / "instrumental.wav", harmonic_tone(110, SR, 2.0), SR)
+    times = [i * 0.0232 for i in range(86)]
+    (d / "analysis.json").write_text(
+        json.dumps({"pitchData": {"times": times, "f0": [220.0] * 86, "voiced": [True] * 86, "confidence": [1.0] * 86}})
+    )
+    return d
+
+
+def test_build_pack_over_the_wire_reports_progress_and_a_result(sidecar, tmp_path):
+    song = _song_dir(tmp_path)
+    out = tmp_path / "out.vppack"
+    meta = {"songId": "wire-1", "title": "Wire", "artist": None, "durationS": 2.0, "bpm": None, "key": None,
+            "metronomeOffsetS": None, "loops": [], "createdAt": "2026-10-15T00:00:00Z"}
+    msg, progress = sidecar.call({"cmd": "build_pack", "songDir": str(song), "outputPath": str(out), "meta": meta}, timeout=120)
+    assert msg["type"] == "result" and msg["cmd"] == "build_pack", msg
+    assert msg["data"]["sizeBytes"] > 0 and msg["data"]["hasReference"] is True
+    assert out.exists()
+    # progress is what the Rust side forwards verbatim: a stage name and a number from 0 to 1
+    assert progress and all(isinstance(p["stage"], str) and 0 <= p["value"] <= 1 for p in progress)
+    assert [p["value"] for p in progress] == sorted(p["value"] for p in progress)
+
+
+def test_build_pack_names_what_is_missing(sidecar, tmp_path):
+    song = _song_dir(tmp_path, with_instrumental=False)
+    msg, _ = sidecar.call({"cmd": "build_pack", "songDir": str(song), "outputPath": str(tmp_path / "x.vppack"),
+                           "meta": {"songId": "w", "title": "W", "durationS": 2.0, "createdAt": "2026-10-15T00:00:00Z"}})
+    assert msg["type"] == "error" and msg["cmd"] == "build_pack"
+    assert "instrumental.wav" in msg["message"]
+    assert sidecar.call({"cmd": "ping"})[0]["type"] == "pong"
+
+
 def test_quit_says_bye_and_exits_cleanly(tmp_path_factory):
     sc = Sidecar(tmp_path_factory.mktemp("quit-home"))
     try:
