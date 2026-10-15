@@ -232,6 +232,7 @@ describe("main bridge: takes", () => {
 describe("main bridge: spectrum", () => {
   const frame: SpectrumMessage = {
     live: { sampleRate: 48000, bins: "AAEC" },
+    tracks: { song: { sampleRate: 44100, bins: "AAEC" }, take: null },
     formants: {
       song: { f0: 220, f1: 500, f2: 1500, f3: 2500 },
       take: { f0: null, f1: null, f2: null, f3: null },

@@ -176,6 +176,31 @@ export function analyserCurvePoints(
   return points;
 }
 
+/** Share of the Nyquist frequency up to which a measured curve is trusted; the resampler's roll-off sits above it. */
+export const MEASURED_BAND = 0.9;
+
+/**
+ * A measured curve with a stored one from the buffer's usable band upwards. The engine's decoded audio is
+ * 8 kHz, so above ~3.6 kHz there is nothing measured to draw (analyserCurvePoints would repeat the last bin
+ * as a flat line); the stored frame still carries the file's full range, at the same level. Without a stored
+ * frame the part above the band is left empty.
+ */
+export function stitchAboveNyquist(
+  measured: SpectrumPoint[],
+  stored: SpectrumPoint[] | null,
+  sampleRate: number,
+  rollW: number,
+  fMin: number,
+  fMax: number,
+): SpectrumPoint[] {
+  const limit = MEASURED_BAND * (sampleRate / 2);
+  if (limit >= fMax) return measured;
+  return measured.map((p, px) => {
+    if (xToFreq(px, rollW, fMin, fMax) < limit) return p;
+    return stored ? stored[px] : { ...p, normalized: 0 };
+  });
+}
+
 /**
  * Moving average with a window that widens with frequency — formants are
  * proportionally wider at high frequencies on a log axis. Shared by

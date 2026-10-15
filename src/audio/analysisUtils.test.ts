@@ -8,6 +8,7 @@ import {
   frequencyToNoteName,
   pitchAtTime,
   referenceF0,
+  windowPitchHz,
 } from "./analysisUtils";
 import type { DynamicsPoint, PitchPoint } from "../lib/types";
 
@@ -174,11 +175,42 @@ describe("currentPitchHz", () => {
   });
 });
 
+describe("windowPitchHz", () => {
+  const pt = (time: number, frequency: number, confidence = 0.9): PitchPoint => ({ time, frequency, confidence });
+
+  it("is the median of the voiced points within the window", () => {
+    const points = [pt(1.0, 417), pt(1.05, 418), pt(1.1, 416), pt(1.15, 1398), pt(1.2, 417)];
+    expect(windowPitchHz(points, 1.1, 0.12)).toBe(417);
+  });
+
+  it("does not drop points for low confidence, which SRH normalises to the loudest frame", () => {
+    const points = [pt(1.0, 417, 0.21), pt(1.05, 418, 0.24), pt(1.1, 416, 0.27)];
+    expect(windowPitchHz(points, 1.05, 0.12)).toBe(417);
+    expect(currentPitchHz(points, 1.05)).toBeNull();
+  });
+
+  it("only looks inside the window, in both directions", () => {
+    const points = [pt(0.5, 200), pt(1.0, 300), pt(1.5, 400)];
+    expect(windowPitchHz(points, 1.0, 0.12)).toBe(300);
+    expect(windowPitchHz(points, 1.3, 0.12)).toBeNull();
+    expect(windowPitchHz(points, 0.45, 0.12)).toBe(200);
+  });
+
+  it("is null for an empty line and ignores zero frequencies", () => {
+    expect(windowPitchHz([], 1)).toBeNull();
+    expect(windowPitchHz([pt(1, 0)], 1)).toBeNull();
+  });
+});
+
 describe("referenceF0", () => {
   const stored: PitchPoint[] = [{ time: 1, frequency: 173.5, confidence: 0.9 }];
 
   it("prefers the stored pitch over the measured one", () => {
     expect(referenceF0(stored, 1, 169)).toBeCloseTo(173.5, 6);
+  });
+
+  it("keeps the line across the short gaps between voiced frames, which the spectrum window spans", () => {
+    expect(referenceF0(stored, 1.1, 169)).toBeCloseTo(173.5, 6);
   });
 
   it("shows nothing where the stored pitch is unvoiced, instead of a measurement the piano roll does not show", () => {

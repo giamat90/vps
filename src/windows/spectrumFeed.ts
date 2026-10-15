@@ -1,8 +1,8 @@
-import type { SpectrumSource } from "../audio/spectrumSource";
+import type { LiveSpectrum, SpectrumSource } from "../audio/spectrumSource";
 import { NO_FORMANTS } from "../audio/spectrumSource";
 import type { VoiceEstimate } from "../lib/formants";
 import { encodeSpectrum } from "./spectrumCodec";
-import type { SpectrumMessage } from "./protocol";
+import type { EncodedSpectrum, SpectrumMessage } from "./protocol";
 
 /** Song and take estimates only need redoing when the playhead has moved this far. */
 const FORMANT_CACHE_STEP_S = 0.02;
@@ -14,6 +14,7 @@ export interface SpectrumFeedDeps {
 }
 
 const formantsKey = (m: SpectrumMessage) => JSON.stringify(m.formants);
+const encode = (s: LiveSpectrum): EncodedSpectrum => ({ sampleRate: s.sampleRate, bins: encodeSpectrum(s.data) });
 const isEmpty = (v: VoiceEstimate) => v.f0 === null && v.f1 === null && v.f2 === null && v.f3 === null;
 
 /**
@@ -48,14 +49,25 @@ export function createSpectrumFeed(deps: SpectrumFeedDeps): { read(): SpectrumMe
     if (liveSpectrum) live = deps.source.getFormants("live", Number.NaN);
     else if (analysis.takeSTSpectrum) take = deps.source.getFormants("take", timeKey);
 
+    // The take's curve is hidden while listening (live takes its place), as are its formants.
+    const songTrack = analysis.songSTSpectrum ? deps.source.getTrackSpectrum("song", timeKey) : null;
+    const takeTrack = !liveSpectrum && analysis.takeSTSpectrum ? deps.source.getTrackSpectrum("take", timeKey) : null;
+
     const message: SpectrumMessage = {
-      live: liveSpectrum ? { sampleRate: liveSpectrum.sampleRate, bins: encodeSpectrum(liveSpectrum.data) } : null,
+      live: liveSpectrum ? encode(liveSpectrum) : null,
+      tracks: { song: songTrack ? encode(songTrack) : null, take: takeTrack ? encode(takeTrack) : null },
       formants: { song, take, live },
     };
 
-    const nothing = !message.live && isEmpty(song) && isEmpty(take) && isEmpty(live);
+    const nothing = !message.live && !songTrack && !takeTrack && isEmpty(song) && isEmpty(take) && isEmpty(live);
     if (!message.live) {
-      if (last === null ? nothing : last.live === null && formantsKey(last) === formantsKey(message)) return null;
+      const unchanged =
+        last !== null &&
+        last.live === null &&
+        formantsKey(last) === formantsKey(message) &&
+        last.tracks.song?.bins === message.tracks.song?.bins &&
+        last.tracks.take?.bins === message.tracks.take?.bins;
+      if (last === null ? nothing : unchanged) return null;
     }
     last = message;
     return message;

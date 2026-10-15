@@ -14,6 +14,7 @@ function setup(player: Partial<{ isRecording: boolean; isMonitoring: boolean; cu
   const source: SpectrumSource = {
     getLiveSpectrum: vi.fn(() => (listening ? live : null)),
     getFormants: vi.fn((kind) => (kind === "song" ? F(500) : kind === "take" ? F(600) : F(700))),
+    getTrackSpectrum: vi.fn((kind) => ({ data: new Float32Array(kind === "song" ? [-90, -60, -30] : [-80, -40, -20]), sampleRate: 44100 })),
     reset: vi.fn(),
   };
   const feed = createSpectrumFeed({
@@ -33,7 +34,54 @@ function setup(player: Partial<{ isRecording: boolean; isMonitoring: boolean; cu
 describe("spectrum feed", () => {
   it("sends the song's formants when only the song has a spectrum", () => {
     const t = setup();
-    expect(t.feed.read()).toEqual({ live: null, formants: { song: F(500), take: NONE, live: NONE } });
+    expect(t.feed.read()).toEqual({
+      live: null,
+      tracks: { song: { sampleRate: 44100, bins: expect.any(String) }, take: null },
+      formants: { song: F(500), take: NONE, live: NONE },
+    });
+  });
+
+  it("sends the song's and the take's measured spectrum, quantised, when a take is selected", () => {
+    const t = setup();
+    t.analysis.takeSTSpectrum = {};
+    const m = t.feed.read();
+    expect(Array.from(decodeSpectrum(m?.tracks.song?.bins ?? ""))).toEqual([-90, -60, -30].map((v) => expect.closeTo(v, 0)));
+    expect(Array.from(decodeSpectrum(m?.tracks.take?.bins ?? ""))).toEqual([-80, -40, -20].map((v) => expect.closeTo(v, 0)));
+  });
+
+  it("does not measure the take while listening, since the live curve takes its place", () => {
+    const t = setup();
+    t.analysis.takeSTSpectrum = {};
+    t.setLive(true);
+    const m = t.feed.read();
+    expect(m?.tracks.take).toBeNull();
+    expect(t.source.getTrackSpectrum).not.toHaveBeenCalledWith("take", expect.anything());
+  });
+
+  it("measures nothing for a song without a stored spectrum", () => {
+    const t = setup();
+    t.analysis.songSTSpectrum = null;
+    t.analysis.takeSTSpectrum = {};
+    expect(t.feed.read()?.tracks.song).toBeNull();
+  });
+
+  it("keys the measured spectra to the playhead like the formants", () => {
+    const t = setup({ currentTime: 1.0 });
+    t.analysis.takeSTSpectrum = {};
+    t.feed.read();
+    expect(t.source.getTrackSpectrum).toHaveBeenCalledWith("song", 50);
+    expect(t.source.getTrackSpectrum).toHaveBeenCalledWith("take", 50);
+  });
+
+  it("speaks again when only the measured spectrum moves with the playhead", () => {
+    const t = setup();
+    t.feed.read();
+    expect(t.feed.read()).toBeNull();
+    (t.source.getTrackSpectrum as ReturnType<typeof vi.fn>).mockImplementation(() => ({
+      data: new Float32Array([-70, -50, -10]),
+      sampleRate: 44100,
+    }));
+    expect(t.feed.read()).not.toBeNull();
   });
 
   it("sends the take's formants when a take has a spectrum and nobody is listening", () => {

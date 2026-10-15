@@ -3,7 +3,7 @@ import { useAnalysisStore, type STSpectrum } from "../../stores/analysis";
 import { usePlayerStore } from "../../stores/player";
 import { getPlaybackTime } from "../../windows/playbackClock";
 import { getSpectrumSource } from "../../windows/spectrumRegistry";
-import { freqToX, smoothSpectrumLight, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H, type SpectrumPoint } from "../../lib/spectroUtils";
+import { freqToX, stitchAboveNyquist, smoothSpectrumLight, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { COLOR_SONG, COLOR_SONG_ALT, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 import type { VoiceEstimate } from "../../lib/formants";
@@ -244,12 +244,21 @@ export default function ShortTermSpectrumComparisonPanel() {
       }
 
       const currentTime = getPlaybackTime();
+      const timeKey = Math.round(currentTime / FORMANT_CACHE_STEP_S);
 
+      // The song's and the take's curves are measured from the decoded audio at the playhead, through the
+      // same FFT and pixel mapping as the live curve, so the three are directly comparable and follow a
+      // key transpose. The stored frame (a 46 ms hop, resampled to log bins) is only the fallback for
+      // when there is nothing to measure.
       if (songSTSpectrum) {
+        const measured = source.getTrackSpectrum("song", timeKey);
         const frame = nearestFrame(songSTSpectrum, currentTime);
-        if (frame) {
-          const points = storedCurvePoints(frame, songSTSpectrum.minDb, songSTSpectrum.maxDb, rollW);
-          strokePoints(ctx, points, COLOR_SONG, plotH, dpr, false);
+        const stored = frame ? storedCurvePoints(frame, songSTSpectrum.minDb, songSTSpectrum.maxDb, rollW) : null;
+        if (measured) {
+          const points = analyserCurvePoints(measured.data, measured.sampleRate, rollW, F_MIN, fMax, AXIS_W);
+          strokePoints(ctx, stitchAboveNyquist(points, stored, measured.sampleRate, rollW, F_MIN, fMax), COLOR_SONG, plotH, dpr, false);
+        } else if (stored) {
+          strokePoints(ctx, stored, COLOR_SONG, plotH, dpr, false);
         }
       }
 
@@ -258,10 +267,14 @@ export default function ShortTermSpectrumComparisonPanel() {
         const points = analyserCurvePoints(liveSpectrum.data, liveSpectrum.sampleRate, rollW, F_MIN, fMax, AXIS_W);
         strokePoints(ctx, points, COLOR_LIVE, plotH, dpr, true);
       } else if (takeSTSpectrum) {
+        const measured = source.getTrackSpectrum("take", timeKey);
         const frame = nearestFrame(takeSTSpectrum, currentTime);
-        if (frame) {
-          const points = storedCurvePoints(frame, takeSTSpectrum.minDb, takeSTSpectrum.maxDb, rollW);
-          strokePoints(ctx, points, COLOR_TAKE, plotH, dpr, true);
+        const stored = frame ? storedCurvePoints(frame, takeSTSpectrum.minDb, takeSTSpectrum.maxDb, rollW) : null;
+        if (measured) {
+          const points = analyserCurvePoints(measured.data, measured.sampleRate, rollW, F_MIN, fMax, AXIS_W);
+          strokePoints(ctx, stitchAboveNyquist(points, stored, measured.sampleRate, rollW, F_MIN, fMax), COLOR_TAKE, plotH, dpr, true);
+        } else if (stored) {
+          strokePoints(ctx, stored, COLOR_TAKE, plotH, dpr, true);
         }
       } else {
         ctx.fillStyle = "#a0a0b060";
@@ -270,8 +283,6 @@ export default function ShortTermSpectrumComparisonPanel() {
         ctx.textBaseline = "bottom";
         ctx.fillText("No take selected", AXIS_W + rollW / 2, plotH - 6 * dpr);
       }
-
-      const timeKey = Math.round(currentTime / FORMANT_CACHE_STEP_S);
 
       // F0 of the song and the take is the stored SRH pitch, the line the piano roll draws, so the note
       // names agree; the window estimate in voice.f0 only stands in when a track has no pitch data.
