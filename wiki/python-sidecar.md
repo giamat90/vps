@@ -187,6 +187,16 @@ Renders a single mixdown WAV from a list of sources, honoring the frontend's liv
 
 Each source is loaded only over the `[startSec, endSec)` window; takes are aligned via `fileTime = projectTime - (startPosition + manualOffset) + audioOffset`. A take that begins *inside* the window is preceded by silence (before 2026-10-09 it slid to the window start whenever the window began before the take), and the first `audioOffset` seconds of its file (latency padding) are never played, matching live playback. Sources are resampled/upmixed to a common rate and channel count, summed with per-source gain, then peak-safe scaled before writing.
 
+### `build_pack`
+
+Builds the practice pack of one song for the phone app (`pack_export.py`, format and writer from `mps_core.pack`; see [Practice pack](practice-pack.md)). Progress stages: encoding vocals, instrumental, transpositions, writing the pack.
+
+```json
+{"cmd": "build_pack", "songDir": "/home/u/.vps/library/<id>", "outputPath": "/tmp/<uuid>.vppack", "meta": {"songId": "...", "title": "...", "artist": null, "durationS": 238.3, "bpm": 123.0, "key": "E minor", "metronomeOffsetS": null, "loops": [{"name": "Chorus", "start": 62.0, "end": 94.5}], "createdAt": "2026-10-15T12:00:00Z"}}
+```
+
+Result: `{path, sizeBytes, variants: [n...], hasReference, hasLyrics, loops}`. Errors (`PackError`) name what is missing: a stem, ffmpeg, a loop outside the song.
+
 ### `align_lyrics`
 
 Aligns lyric text to a song's vocals stem (`mps_core.lyrics` from the shared package, see [Lyrics Sync](lyrics.md)): CTC forced alignment over a wav2vec2 acoustic model, returning every line and word with start/end seconds. Streams `progress` (model download on first use, then the vocals being processed in 20 s windows). The model weights are fetched into `modelsDir` once; a file that fails to load is deleted so the next call re-downloads.

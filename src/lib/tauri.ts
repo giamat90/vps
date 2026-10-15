@@ -169,6 +169,24 @@ export async function exportTake(
   return invoke("export_take", { takePath, suggestedName });
 }
 
+export interface PackSummary {
+  path: string;
+  sizeBytes: number;
+  variants: number[];
+  hasReference: boolean;
+  hasLyrics: boolean;
+  loops: number;
+}
+
+/**
+ * Build the practice pack of a song for the phone app and save it where the
+ * user chooses. Resolves to what the pack holds, or null when the user
+ * cancelled the Save As dialog.
+ */
+export async function exportPack(songId: string, suggestedName: string): Promise<PackSummary | null> {
+  return invoke("export_pack", { songId, suggestedName });
+}
+
 export interface MixSource {
   path: string;
   gain: number;

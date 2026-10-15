@@ -15,6 +15,7 @@ repository's `wiki/`; this page records how VPS uses it.
 | `@giamat90/mps-core/updater` | `src/stores/updater.ts` |
 | `@giamat90/mps-core/panels` | new in v0.2.0: `src/stores/panels.ts` builds the practice-room store with `createPanelStore`; `PanelMenu` is this app's own |
 | `@giamat90/mps-core/lyrics` | lyric types in `types.ts`, the four lyrics wrappers and `onLyricsProgress` in `tauri.ts`, `src/lib/lyrics.ts`, `src/stores/lyrics.ts` |
+| `mps_core.pack` (Python) | new in v0.10.0: `sidecar/pack_export.py` builds the practice pack with it (format, validation, zip writer, AAC encode); see [Practice pack](practice-pack.md) |
 | `mps_core.lyrics`, `mps_core.version_check`, `mps_core.app` (Python) | `sidecar/lyrics.py`, `sidecar/version_check.py` and their tests |
 
 ## Wiring that lives here

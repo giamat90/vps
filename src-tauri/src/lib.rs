@@ -22,6 +22,7 @@ pub fn run() {
         commands::export_all,
         commands::export_take,
         commands::export_mix,
+        commands::export_pack,
         commands::pitch_shift_song,
         commands::list_songs,
         commands::delete_song,
