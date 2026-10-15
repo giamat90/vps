@@ -2198,7 +2198,7 @@ dependencies = [
 [[package]]
 name = "mps-youtube-signin"
 version = "0.7.0"
-source = "git+https://github.com/giamat90/mps-core?tag=v0.8.0#2fb5e10ab810c573b5a29ace82cfbc932d871a81"
+source = "git+https://github.com/giamat90/mps-core?tag=v0.10.0#3bb9c04a2bb24d27d2123fb0f0a0c361373ce6b0"
 dependencies = [
  "log",
  "tauri",
