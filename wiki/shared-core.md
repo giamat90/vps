@@ -35,7 +35,7 @@ repository's `wiki/`; this page records how VPS uses it.
 | Try a core change here before tagging | From `MPS/core`: `node scripts/push-to-app.mjs ../VPS --python ../VPS/sidecar/.venv/Scripts/python.exe`; `npm ci` restores the pinned copy. |
 | Bump the pin | Edit the tag in `package.json` and both requirements files, `npm install`, run `npm test`, `npx tsc --noEmit`, `cd sidecar; python -m pytest`, `cd src-tauri; cargo test --lib`. |
 | Bump the yt-dlp floor | In `mps-core` (`version_check.py`), then the two requirements files here and in SPS. |
-| Lyrics command changed | The wrappers are the contract: the Rust handlers `load_lyrics`, `sync_lyrics`, `find_lyrics`, `delete_lyrics` and the `lyrics-progress` event must match `ipc.ts`; the contract test fails otherwise. |
+| Lyrics command changed | The wrappers are the contract: the Rust handlers `load_lyrics`, `sync_lyrics`, `find_lyrics`, `search_lyrics`, `delete_lyrics` and the `lyrics-progress` event must match `ipc.ts`; the contract test fails otherwise. |
 
 ## What stayed behind, and why
 

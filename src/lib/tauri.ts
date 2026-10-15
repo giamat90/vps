@@ -73,6 +73,15 @@ export async function renameSongApi(songId: string, title: string): Promise<Song
   return invoke<Song>("rename_song", { songId, title });
 }
 
+/** Set the title and artist online lookups use for a song. Blank clears a field (the lookup falls back to the song's own title/artist). */
+export async function setSongIdentityApi(
+  songId: string,
+  officialTitle: string | null,
+  officialArtist: string | null,
+): Promise<Song> {
+  return invoke<Song>("set_song_identity", { songId, officialTitle, officialArtist });
+}
+
 /** List all folders in the library */
 export async function listFolders(): Promise<Folder[]> {
   return invoke<Folder[]>("list_folders");

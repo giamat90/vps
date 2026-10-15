@@ -14,6 +14,7 @@ import {
   renameFolder as renameFolderApi,
   renameSongApi,
   reorderFolders as reorderFoldersApi,
+  setSongIdentityApi,
 } from "../lib/tauri";
 import { useSettingsStore } from "./settings";
 
@@ -38,6 +39,8 @@ interface LibraryState {
   signInAndRetryYoutube: () => Promise<void>;
   deleteSong: (songId: string) => Promise<void>;
   renameSong: (songId: string, title: string) => Promise<void>;
+  /** Returns the saved song, or null when the backend refused (the reason is in `error`) */
+  setSongIdentity: (songId: string, officialTitle: string, officialArtist: string) => Promise<Song | null>;
   fetchFolders: () => Promise<void>;
   createFolder: (name: string) => Promise<void>;
   renameFolder: (folderId: string, name: string) => Promise<void>;
@@ -206,6 +209,20 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     } catch (e) {
       console.error("Failed to rename song:", e);
       set({ error: String(e) });
+    }
+  },
+
+  setSongIdentity: async (songId: string, officialTitle: string, officialArtist: string) => {
+    try {
+      const updated = await setSongIdentityApi(songId, officialTitle.trim() || null, officialArtist.trim() || null);
+      set((state) => ({
+        songs: state.songs.map((s) => (s.id === songId ? updated : s)),
+      }));
+      return updated;
+    } catch (e) {
+      console.error("Failed to set song identity:", e);
+      set({ error: String(e) });
+      return null;
     }
   },
 

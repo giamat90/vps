@@ -264,6 +264,8 @@ pub async fn process_song(
 
                 let song = Song {
                     id: song_id,
+                    official_title: Some(title.clone()),
+                    official_artist: None,
                     title,
                     artist: None,
                     duration,
@@ -393,6 +395,15 @@ pub async fn set_song_loops(song_id: String, loops: Vec<library::NamedLoop>) -> 
 #[tauri::command]
 pub async fn rename_song(song_id: String, title: String) -> Result<Song, String> {
     library::rename(&song_id, &title)
+}
+
+#[tauri::command]
+pub async fn set_song_identity(
+    song_id: String,
+    official_title: Option<String>,
+    official_artist: Option<String>,
+) -> Result<Song, String> {
+    library::set_identity(&song_id, official_title.as_deref(), official_artist.as_deref())
 }
 
 // --- Folder commands ---
@@ -756,6 +767,14 @@ pub async fn find_lyrics(
 }
 
 #[tauri::command]
+pub async fn search_lyrics(
+    state: State<'_, SidecarState>,
+    song_id: String,
+) -> Result<crate::lyrics::LyricsSearch, String> {
+    crate::lyrics::search_impl(&state, &song_id)
+}
+
+#[tauri::command]
 pub async fn delete_lyrics(song_id: String) -> Result<(), String> {
     crate::lyrics::delete(&song_id)
 }
@@ -1108,6 +1127,8 @@ pub async fn import_youtube(
 
                 let song = Song {
                     id: song_id,
+                    official_title: Some(title.clone()),
+                    official_artist: None,
                     title,
                     artist: None,
                     duration,
@@ -1514,6 +1535,8 @@ mod tests {
             folder_id: None,
             sort_index: 0,
             loops: vec![library::NamedLoop { id: "l1".into(), name: "Chorus".into(), start: 10.0, end: 20.0 }],
+            official_title: None,
+            official_artist: None,
         };
         let meta = pack_meta(&song, "2026-10-15T12:00:00Z");
         assert_eq!(meta["songId"], "s1");
@@ -1875,6 +1898,7 @@ mod tests {
             id: "a".into(), title: "A".into(), artist: None, duration: 1.0, detected_key: None, detected_bpm: None,
             processed_at: "x".into(), directory: storage::song_dir("a").to_string_lossy().to_string(),
             kind: "vocal".into(), metronome_offset: None, folder_id: None, sort_index: 0, loops: vec![],
+            official_title: None, official_artist: None,
         })
         .unwrap();
 

@@ -32,6 +32,8 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["setSongLoopsApi", () => api.setSongLoopsApi("s1", [{ id: "l", name: "V", start: 1, end: 2 }]), "set_song_loops",
       { songId: "s1", loops: [{ id: "l", name: "V", start: 1, end: 2 }] }],
     ["renameSongApi", () => api.renameSongApi("s1", "New"), "rename_song", { songId: "s1", title: "New" }],
+    ["setSongIdentityApi", () => api.setSongIdentityApi("s1", "Hallelujah", null), "set_song_identity",
+      { songId: "s1", officialTitle: "Hallelujah", officialArtist: null }],
     ["listFolders", () => api.listFolders(), "list_folders", undefined],
     ["createFolder", () => api.createFolder("Band"), "create_folder", { name: "Band" }],
     ["renameFolder", () => api.renameFolder("f1", "B"), "rename_folder", { folderId: "f1", name: "B" }],

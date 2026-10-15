@@ -20,6 +20,8 @@ interface Song {
   metronomeOffset?: number; // song time (s) where the metronome's beat 1 lands
   folderId?: string | null; // library folder this song belongs to; null/absent = root
   sortIndex: number;        // rank among sibling songs sharing the same folderId
+  officialTitle?: string;   // what online lookups search for; `title` is free for the user to rename
+  officialArtist?: string;
 }
 ```
 
@@ -208,7 +210,8 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `list_songs` | — | `Song[]` |
 | `delete_song` | `songId: string` | `void` |
 | `set_song_loops` | `songId, loops: NamedLoop[]` | `Song` (replaces the saved loops; names trimmed, at most 100, 1-80 characters, regions at least 0.25 s, unique ids, stored in time order) |
-| `rename_song` | `songId, title: string` | `Song` |
+| `rename_song` | `songId, title: string` | `Song` (leaves `officialTitle` alone; a song with none yet gets its old title copied into it first) |
+| `set_song_identity` | `songId, officialTitle: string \| null, officialArtist: string \| null` | `Song` (trimmed; blank clears, and the lookup then falls back to `title` / `artist`) |
 | `list_folders` | — | `Folder[]` |
 | `create_folder` | `name: string` | `Folder` (empty/whitespace name rejected) |
 | `rename_folder` | `folderId, name: string` | `Folder` (empty/whitespace name rejected) |
@@ -225,6 +228,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `load_lyrics` | `songId: string` | `Lyrics` or `null` |
 | `sync_lyrics` | `songId, text: string, source?: "paste"/"lrclib"` | `Lyrics` (aligns via sidecar `align_lyrics`, persists `lyrics.json`, emits `"lyrics-progress"`; errors for instrument songs / no vocals / empty text) |
 | `find_lyrics` | `songId: string` | `FoundLyrics` (sidecar `find_lyrics`; nothing is saved) |
+| `search_lyrics` | `songId: string` | `LyricsSearch` (sidecar `search_lyrics`: every usable result, best first; nothing is saved) |
 | `delete_lyrics` | `songId: string` | `void` (no error when there are none) |
 | `save_exercise_take` | `audioData: number[], duration: f64` | `ExerciseTake` |
 | `import_exercise_file` | `filePath: string, duration: f64` | `ExerciseTake` (copies an arbitrary external audio file into `~/.vps/exercises/takes/`, analyzes it identically to a recorded take — shares its analyze+persist logic with `save_exercise_take` via a private `analyze_and_persist_exercise_take` helper) |
