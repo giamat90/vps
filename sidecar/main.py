@@ -120,6 +120,16 @@ def main():
                 )
                 send({"type": "result", "cmd": "mix_export", "data": result})
 
+            elif cmd.get("cmd") == "build_pack":
+                from pack_export import build_practice_pack
+                result = build_practice_pack(
+                    cmd["songDir"],
+                    cmd["outputPath"],
+                    cmd["meta"],
+                    on_progress=make_progress_callback("build_pack"),
+                )
+                send({"type": "result", "cmd": "build_pack", "data": result})
+
             elif cmd.get("cmd") == "pitch_shift":
                 from processor import pitch_shift_song
                 result = pitch_shift_song(

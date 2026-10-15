@@ -234,6 +234,7 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `export_all` | `entries: {path, archiveName}[], suggestedName: string` | `void` (zips vocals/instrumental + every take into one archive via the `zip` crate, then a single native Save As dialog) |
 | `export_take` | `takePath, suggestedName: string` | `void` (always WAV; sidecar `convert_take` first) |
 | `export_mix` | `sources: MixSource[], startSec, endSec: f64, suggestedName: string` | `void` (sidecar `mix_export`, then Save As) |
+| `export_pack` | `songId: string, suggestedName: string` | `PackSummary` or `null` when the Save As dialog was cancelled (sidecar `build_pack`, then Save As; see [Practice pack](practice-pack.md)) |
 
 All commands are async and return a `Promise`. Errors are thrown as strings.
 

@@ -1397,6 +1397,86 @@ pub async fn export_mix(
     Ok(())
 }
 
+/// What the pack builder needs to know about a song that only the library holds.
+fn pack_meta(song: &Song, created_at: &str) -> serde_json::Value {
+    serde_json::json!({
+        "songId": song.id,
+        "title": song.title,
+        "artist": song.artist,
+        "durationS": song.duration,
+        "bpm": song.detected_bpm,
+        "key": song.detected_key,
+        "metronomeOffsetS": song.metronome_offset,
+        "loops": song.loops.iter().map(|l| serde_json::json!({
+            "name": l.name,
+            "start": l.start,
+            "end": l.end,
+        })).collect::<Vec<_>>(),
+        "createdAt": created_at,
+    })
+}
+
+/// Builds the practice pack for a song (see wiki/practice-pack.md) and saves it
+/// where the user chooses. Returns what the pack contains, or null when the
+/// user cancelled the dialog.
+#[tauri::command]
+pub async fn export_pack(
+    app: AppHandle,
+    state: State<'_, SidecarState>,
+    song_id: String,
+    suggested_name: String,
+) -> Result<serde_json::Value, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let song = library::load_songs()?
+        .into_iter()
+        .find(|s| s.id == song_id)
+        .ok_or_else(|| "Song not found".to_string())?;
+
+    let temp_path = std::env::temp_dir().join(format!("{}.vppack", uuid::Uuid::new_v4()));
+    let _temp_guard = TempFile(temp_path.clone());
+    let cmd = serde_json::json!({
+        "cmd": "build_pack",
+        "songDir": song.directory,
+        "outputPath": temp_path.to_string_lossy(),
+        "meta": pack_meta(&song, &chrono::Utc::now().to_rfc3339()),
+    });
+
+    let summary = {
+        let guard = ensure_sidecar(&state)?;
+        let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
+        sidecar.send_command(&cmd)?;
+
+        let timeout = Duration::from_secs(300);
+        loop {
+            match sidecar.recv_timeout(timeout)? {
+                SidecarMessage::Result { data, .. } => break data,
+                SidecarMessage::Error { message, .. } => return Err(message),
+                _ => {}
+            }
+        }
+    };
+
+    let dest = tauri::async_runtime::spawn_blocking({
+        let app = app.clone();
+        let suggested_name = suggested_name.clone();
+        move || {
+            app.dialog()
+                .file()
+                .set_file_name(&suggested_name)
+                .add_filter("Practice pack", &["vppack"])
+                .blocking_save_file()
+        }
+    })
+    .await
+    .map_err(|e| format!("Dialog task: {e}"))?;
+
+    let Some(dest) = dest else { return Ok(serde_json::Value::Null) };
+    std::fs::copy(&temp_path, dest.as_path().ok_or("Invalid path")?)
+        .map_err(|e| format!("Copy failed: {e}"))?;
+    Ok(summary)
+}
+
 /// Deletes the wrapped temp file when dropped.
 struct TempFile(std::path::PathBuf);
 
@@ -1416,6 +1496,32 @@ mod tests {
 
     fn run<F: std::future::Future>(f: F) -> F::Output {
         tauri::async_runtime::block_on(f)
+    }
+
+    #[test]
+    fn pack_meta_carries_what_only_the_library_knows() {
+        let song = Song {
+            id: "s1".into(),
+            title: "T".into(),
+            artist: Some("A".into()),
+            duration: 120.5,
+            detected_key: Some("C major".into()),
+            detected_bpm: Some(90.0),
+            processed_at: "2026-01-01T00:00:00Z".into(),
+            directory: "/x".into(),
+            kind: "vocal".into(),
+            metronome_offset: Some(0.25),
+            folder_id: None,
+            sort_index: 0,
+            loops: vec![library::NamedLoop { id: "l1".into(), name: "Chorus".into(), start: 10.0, end: 20.0 }],
+        };
+        let meta = pack_meta(&song, "2026-10-15T12:00:00Z");
+        assert_eq!(meta["songId"], "s1");
+        assert_eq!(meta["durationS"], 120.5);
+        assert_eq!(meta["bpm"], 90.0);
+        assert_eq!(meta["metronomeOffsetS"], 0.25);
+        assert_eq!(meta["loops"][0], json!({"name": "Chorus", "start": 10.0, "end": 20.0}));
+        assert_eq!(meta["createdAt"], "2026-10-15T12:00:00Z");
     }
 
     fn take(id: &str) -> Take {

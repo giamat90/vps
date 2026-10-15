@@ -101,6 +101,7 @@ VPS/
 │   │   │   ├── Waveform.tsx        3-track waveform display + take loading
 │   │   │   ├── ExportMixButton.tsx export current mix as WAV (rendered in PracticeRoom header)
 │   │   │   ├── DownloadAllButton.tsx  zip export of all tracks + takes (rendered in PracticeRoom header)
+│   │   │   ├── SendToPhoneButton.tsx  builds the practice pack for the phone app and saves it (PracticeRoom header)
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
 │   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
@@ -172,6 +173,7 @@ VPS/
 │   ├── main.py        JSON-lines dispatch loop (process, analyze, pitch_shift, import_yt, convert_take, mix_export, compute_st_spectrum, compute_second_voice, ping, quit)
 │   ├── processor.py   Demucs + SRH pitch + onsets + dynamics + BPM + key
 │   ├── analysis.py    Take analysis (SRH + onsets + dynamics + vibrato + spectrum), RMS loudness normalization, mixdown rendering
+│   ├── pack_export.py Practice pack for the phone app: AAC tracks, reference pitch, lyrics, loops (`build_pack`; format in mps-core, see wiki/practice-pack.md)
 │   ├── yt_importer.py yt-dlp + processor pipeline
 │   ├── fetch_models.py   vendors htdemucs weights into the frozen build at build time (not htdemucs_ft — that's an on-demand download, see the high_quality note in processor.py)
 │   ├── smoke_test.py     standalone sanity script, not part of the main.py dispatch loop

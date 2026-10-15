@@ -48,6 +48,7 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["exportTake", () => api.exportTake("/t.wav", "take.wav"), "export_take", { takePath: "/t.wav", suggestedName: "take.wav" }],
     ["exportMix", () => api.exportMix([{ path: "/p", gain: 1, isTake: false }], 1, 9, "mix.wav"), "export_mix",
       { sources: [{ path: "/p", gain: 1, isTake: false }], startSec: 1, endSec: 9, suggestedName: "mix.wav" }],
+    ["exportPack", () => api.exportPack("s1", "Song.vppack"), "export_pack", { songId: "s1", suggestedName: "Song.vppack" }],
     ["saveExerciseTake", () => api.saveExerciseTake([9], 4.5), "save_exercise_take",
       { audioData: [9], duration: 4.5 }],
     ["listExerciseTakes", () => api.listExerciseTakes(), "list_exercise_takes", undefined],

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import Waveform from "../components/player/Waveform";
 import DownloadAllButton from "../components/player/DownloadAllButton";
+import SendToPhoneButton from "../components/player/SendToPhoneButton";
 import ExportMixButton from "../components/player/ExportMixButton";
 import TransportControls from "../components/player/TransportControls";
 import LoopButton from "../components/player/LoopButton";
@@ -221,6 +222,7 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
           }}
         />
         <DownloadAllButton song={song} />
+        <SendToPhoneButton song={song} />
         <ExportMixButton />
       </header>
 
