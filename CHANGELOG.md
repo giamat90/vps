@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.85] - 2026-10-15
+
+### Fixed
+- **The recording-offset calibration no longer reads about 15 ms too high on a 44.1 kHz audio device**, and no longer reads about 4 ms early on any device. If you calibrated before, on a 44.1 kHz device, run the calibration again for the exact value.
+
 ## [0.0.84] - 2026-10-15
 
 ### Changed
