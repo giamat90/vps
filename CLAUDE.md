@@ -88,7 +88,7 @@ VPS/
 │   ├── audio/
 │   │   ├── engine.ts          AudioEngine class (WaveSurfer management)
 │   │   ├── analysisUtils.ts   pitchAtTime/frequency↔MIDI/note-name helpers shared by PianoRoll/DualTuner/timing
-│   │   ├── pitchDetector.ts   real-time autocorrelation pitch reader (frequency/note/cents) for DualTuner/live monitoring
+│   │   ├── pitchDetector.ts   real-time pitch reader (AnalyserNode wrapper around mps-core `pitch`; frequency/note/cents) for DualTuner/live monitoring
 │   │   ├── outputDevice.ts    pickHardwareOutput — picks the real hardware output for the selected mic (skips Default/Communications/Steam), shared by monitoring + both recording flows
 │   │   ├── notePreview.ts     click-to-preview synthesized tone when pressing a PianoKeyboard/PianoRoll key
 │   │   └── timeStretch.ts     dead stub (`export {}`, "TODO: implement in Session 5") — not imported anywhere; speed control is WaveSurfer's native setPlaybackRate, not this
@@ -184,7 +184,7 @@ VPS/
 
 ## Shared code (`@giamat90/mps-core`)
 
-Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), note/frequency maths (`music`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
+Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), note/frequency maths (`music`), autocorrelation pitch of one sample window (`pitch`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
 
 ## Data model
 
