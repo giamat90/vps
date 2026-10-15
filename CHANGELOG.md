@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.87] - 2026-10-15
+
+### Fixed
+- **Send to phone no longer fails** with "type str doesn't define __round__ method". Every pack failed in 0.0.86 because the progress report passed its arguments in the wrong order.
+
 ## [0.0.86] - 2026-10-15
 
 ### Added
