@@ -6,7 +6,7 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
-## [0.0.87] - 2026-10-15
+## [0.0.88] - 2026-10-15
 
 ### Added
 - **Lyrics search keeps the song's real name.** Renaming a song (for example to "Hallelujah (live)") no longer changes what **Find online** looks for. The lyrics panel shows **Searches as: Artist – Title** with a **Change** link to correct it.
@@ -14,6 +14,11 @@ Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
 ### Changed
 - The shared package moved to mps-core 0.11.0 (lyrics search results).
+
+## [0.0.87] - 2026-10-15
+
+### Fixed
+- **Send to phone no longer fails** with "type str doesn't define __round__ method". Every pack failed in 0.0.86 because the progress report passed its arguments in the wrong order.
 
 ## [0.0.86] - 2026-10-15
 
