@@ -267,6 +267,12 @@ fn a_song_is_built_by_the_real_sidecar_and_handed_over_the_network() {
     use std::net::TcpStream;
     use std::time::Duration;
 
+    // Same condition as sidecar/tests/test_pack_export.py: the pack's AAC tracks need ffmpeg.
+    if !std::process::Command::new("ffmpeg").arg("-version").output().is_ok_and(|o| o.status.success()) {
+        eprintln!("SKIPPED (ffmpeg is not installed)");
+        return;
+    }
+
     let home = TestHome::new();
     std::env::set_var("USERPROFILE", home.path());
     std::env::set_var("HOME", home.path());
