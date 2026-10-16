@@ -69,7 +69,7 @@ PowerShell has it automatically after a normal rustup install. Prefer PowerShell
 
 ### IPC
 - **Frontend → Rust:** `invoke()` from `@tauri-apps/api/core`. Bindings in `src/lib/tauri.ts`.
-- **Rust → Frontend:** `app.emit()` / `listen()`. Only event in use: `"processing-progress"`.
+- **Rust → Frontend:** `app.emit()` / `listen()`. Events in use: `"processing-progress"`, `"lyrics-progress"`, `"pack-share"` (the Send over Wi-Fi dialog: pack build progress, transfer progress, done, expired).
 - **Rust → Python:** JSON lines on stdin/stdout. Sidecar runs a synchronous dispatch loop (avoids GIL/numpy deadlocks on Windows). Manager in `src-tauri/src/sidecar.rs`.
 - **Audio files → WebView2:** Tauri asset protocol. `convertFileSrc(absolutePath)` → `tauri://localhost/...` URL used by WaveSurfer.
 
@@ -101,7 +101,9 @@ VPS/
 │   │   │   ├── Waveform.tsx        3-track waveform display + take loading
 │   │   │   ├── ExportMixButton.tsx export current mix as WAV (rendered in PracticeRoom header)
 │   │   │   ├── DownloadAllButton.tsx  zip export of all tracks + takes (rendered in PracticeRoom header)
-│   │   │   ├── SendToPhoneButton.tsx  builds the practice pack for the phone app and saves it (PracticeRoom header)
+│   │   │   ├── SendToPhoneButton.tsx  PracticeRoom header button; opens SendToPhoneDialog and shows the "Saved: …" note after a file save
+│   │   │   ├── SendToPhoneDialog.tsx  Send over Wi-Fi (QR code, progress, network picker) or save the practice pack as a file; see wiki/practice-pack.md
+│   │   │   ├── QrCode.tsx          SVG QR code (dark on white in every theme), drawn from `src/lib/qr.ts`
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
 │   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
@@ -164,6 +166,7 @@ VPS/
 │   ├── pitch.rs       which pitch algorithm runs: the shipped default + the VPS_PITCH_ALGORITHM experiment override
 │   ├── library.rs     Song struct + library.json CRUD
 │   ├── lyrics.rs      lyrics.json persistence + sidecar round trip (commands are thin wrappers in commands.rs)
+│   ├── pack_share.rs  Send over Wi-Fi: the one-shot LAN server that hands a practice pack to the phone, address choice, `start_pack_share` / `stop_pack_share` (wiki/practice-pack.md)
 │   ├── youtube_signin.rs  the two sign_in_youtube / sign_out_youtube commands, binding mps-core's `mps-youtube-signin` crate to ~/.vps (the window, cookies file and the guard that bars it from the app's commands live in the crate)
 │   ├── storage.rs     Path helpers (~/.vps/)
 │   ├── sidecar.rs     Python sidecar process manager
@@ -322,6 +325,9 @@ interface PitchPoint {       // frontend-internal representation
 | `export_stem(stemPath, suggestedName)` | `void` | native Save As dialog |
 | `export_all(entries, suggestedName)` | `void` | bundles vocals/instrumental + every take into one zip (`zip` crate) via a single native Save As dialog |
 | `export_take(takePath, suggestedName)` | `void` | always WAV; converts via sidecar `convert_take` first |
+| `export_pack(songId, suggestedName)` | `PackSummary` or `null` | builds the practice pack (sidecar `build_pack`) and saves it where the user chooses; `null` when the dialog was cancelled |
+| `start_pack_share(songId, address?)` | `PackShareInfo` | builds the pack (or reuses the one built for this dialog) and serves it once on the local network; returns the link the QR code carries and the networks to choose from |
+| `stop_pack_share()` | `void` | closes the server and deletes the pack from the temp folder; safe when nothing is shared |
 | `export_mix(sources, startSec, endSec, suggestedName)` | `void` | renders a mixdown WAV via sidecar `mix_export` honoring live mute/solo/volume + punch region, then native Save As dialog |
 
 ---

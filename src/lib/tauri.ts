@@ -196,6 +196,53 @@ export async function exportPack(songId: string, suggestedName: string): Promise
   return invoke("export_pack", { songId, suggestedName });
 }
 
+export interface LanAddress {
+  ip: string;
+  /** adapter name as Windows shows it, e.g. "Wi-Fi" */
+  name: string;
+  /** WSL, Hyper-V, VMware, Docker, VPN...: rarely the network the phone is on */
+  virtualAdapter: boolean;
+}
+
+export interface PackShareInfo {
+  /** what the QR code carries and the phone fetches */
+  url: string;
+  ip: string;
+  port: number;
+  expiresInS: number;
+  summary: PackSummary;
+  /** every network this computer could serve on, best first */
+  addresses: LanAddress[];
+}
+
+export type PackShareEvent =
+  | { kind: "building"; value: number; stage: string }
+  | { kind: "sending"; sent: number; total: number }
+  | { kind: "interrupted" }
+  | { kind: "done" }
+  | { kind: "expired" };
+
+/**
+ * Build the practice pack of a song and offer it on the local network for one
+ * download by the phone. `address` is one of `addresses` from an earlier call;
+ * omit it to use the best. Calling it again for the same song reuses the built
+ * pack and gives a new code.
+ */
+export async function startPackShare(songId: string, address?: string): Promise<PackShareInfo> {
+  return invoke<PackShareInfo>("start_pack_share", { songId, address: address ?? null });
+}
+
+/** Close the server and forget the pack. Safe when nothing is shared. */
+export async function stopPackShare(): Promise<void> {
+  return invoke("stop_pack_share");
+}
+
+export function onPackShare(callback: (event: PackShareEvent) => void): Promise<UnlistenFn> {
+  return listen<PackShareEvent>("pack-share", (event) => {
+    callback(event.payload);
+  });
+}
+
 export interface MixSource {
   path: string;
   gain: number;

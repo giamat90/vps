@@ -10,6 +10,7 @@ use crate::commands::{
 };
 use crate::library;
 use crate::lyrics;
+use crate::pack_share::{ShareEvent, ShareState};
 use crate::sidecar::SidecarManager;
 use crate::storage::{self, test_support::TestHome};
 use crate::test_util::{base64_decode, read_wav, rms_dbfs, sidecar_unavailable, tones, write_wav};
@@ -258,4 +259,100 @@ sing it out loud";
     lyrics::sync_impl(&state, "song-ly", "la la la", "paste", &mut |_, _| {}).expect("sync after a failure");
 
     std::env::remove_var("VPS_LYRICS_ENGINE");
+}
+
+#[test]
+fn a_song_is_built_by_the_real_sidecar_and_handed_over_the_network() {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+
+    let home = TestHome::new();
+    std::env::set_var("USERPROFILE", home.path());
+    std::env::set_var("HOME", home.path());
+
+    let state = SidecarState(Mutex::new(None));
+    match SidecarManager::spawn() {
+        Ok(m) => *state.0.lock().unwrap() = Some(m),
+        Err(e) => return sidecar_unavailable(&e),
+    }
+
+    let sr = 22050u32;
+    let song_dir = storage::song_dir("song-pk");
+    write_wav(&song_dir.join("vocals.wav"), &tones(&[(220.0, 0.3)], sr, 2.0), sr);
+    write_wav(&song_dir.join("instrumental.wav"), &tones(&[(110.0, 0.3)], sr, 2.0), sr);
+    let times: Vec<f64> = (0..86).map(|i| i as f64 * 0.0232).collect();
+    let analysis = json!({"pitchData": {"times": times, "f0": vec![220.0; 86], "voiced": vec![true; 86], "confidence": vec![1.0; 86]}});
+    std::fs::write(song_dir.join("analysis.json"), analysis.to_string()).unwrap();
+    library::add(library::Song {
+        id: "song-pk".into(),
+        title: "Pack Song".into(),
+        artist: Some("Someone".into()),
+        duration: 2.0,
+        detected_key: Some("A minor".into()),
+        detected_bpm: Some(100.0),
+        processed_at: "2026-01-01T00:00:00Z".into(),
+        directory: song_dir.to_string_lossy().to_string(),
+        kind: "vocal".into(),
+        metronome_offset: None,
+        folder_id: None,
+        sort_index: 0,
+        loops: vec![library::NamedLoop { id: "l1".into(), name: "Verse".into(), start: 0.2, end: 1.2 }],
+        official_title: None,
+        official_artist: None,
+    })
+    .unwrap();
+
+    let share = ShareState::default();
+    let events = std::sync::Arc::new(Mutex::new(Vec::<ShareEvent>::new()));
+    let started = share
+        .start(&state, "song-pk", "127.0.0.1".parse().unwrap(), Duration::from_secs(60), {
+            let events = events.clone();
+            move |e| events.lock().unwrap().push(e)
+        })
+        .expect("start_pack_share");
+    assert_eq!(started.summary["hasReference"], true);
+    assert_eq!(started.summary["loops"], 1);
+    let building: Vec<f32> = events
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|e| match e {
+            ShareEvent::Building { value, .. } => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert!(!building.is_empty(), "the dialog gets the sidecar's progress while the pack is built");
+    assert!(building.windows(2).all(|w| w[0] <= w[1]) && building.iter().all(|v| (0.0..=1.0).contains(v)), "{building:?}");
+
+    let target = started.url.split_once(&started.addr.to_string()).unwrap().1.to_string();
+    let mut s = TcpStream::connect(started.addr).unwrap();
+    s.set_read_timeout(Some(Duration::from_secs(30))).unwrap();
+    write!(s, "GET {target} HTTP/1.1\r\nHost: x\r\n\r\n").unwrap();
+    let mut raw = Vec::new();
+    s.read_to_end(&mut raw).unwrap();
+    drop(s);
+    let split = raw.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+    let (head, body) = (String::from_utf8_lossy(&raw[..split]).into_owned(), &raw[split..]);
+    assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
+    assert!(head.contains("filename=\"Pack Song.vppack\""), "{head}");
+
+    let mut zip = zip::ZipArchive::new(std::io::Cursor::new(body.to_vec())).expect("the body is a zip");
+    let mut manifest = String::new();
+    zip.by_name("manifest.json").expect("manifest").read_to_string(&mut manifest).unwrap();
+    let manifest: Value = serde_json::from_str(&manifest).unwrap();
+    assert_eq!(manifest["songId"], "song-pk");
+    assert_eq!(manifest["title"], "Pack Song");
+    assert_eq!(manifest["loops"][0]["name"], "Verse");
+    assert!(zip.by_name("vocals.m4a").is_ok() && zip.by_name("instrumental.m4a").is_ok());
+    assert!(zip.by_name("reference_pitch.json").is_ok());
+
+    for _ in 0..100 {
+        if events.lock().unwrap().contains(&ShareEvent::Done) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    assert!(events.lock().unwrap().contains(&ShareEvent::Done), "{:?}", events.lock().unwrap());
+    share.stop().unwrap();
 }

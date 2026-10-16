@@ -239,6 +239,8 @@ All data lives under `~/.vps/` (Windows: `C:\Users\{user}\.vps\`).
 | `export_take` | `takePath, suggestedName: string` | `void` (always WAV; sidecar `convert_take` first) |
 | `export_mix` | `sources: MixSource[], startSec, endSec: f64, suggestedName: string` | `void` (sidecar `mix_export`, then Save As) |
 | `export_pack` | `songId: string, suggestedName: string` | `PackSummary` or `null` when the Save As dialog was cancelled (sidecar `build_pack`, then Save As; see [Practice pack](practice-pack.md)) |
+| `start_pack_share` | `songId: string, address?: string` | `PackShareInfo` `{url, ip, port, expiresInS, summary, addresses[]}`; builds the pack and serves it once over the local network (see [Practice pack](practice-pack.md#wi-fi-transfer)) |
+| `stop_pack_share` | none | `void` |
 
 All commands are async and return a `Promise`. Errors are thrown as strings.
 
