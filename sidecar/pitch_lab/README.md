@@ -262,6 +262,50 @@ three to agree). Male rock vocals plus the author's own mic takes only: female a
 threshold it; only `voiced` and the F0 smoothing changed. Songs imported before the port keep their old
 pitch data until re-imported.
 
+## Ground truth: vocadito benchmark (2026-10-16)
+
+`benchmark_vocadito.py` scores every detector against [vocadito](https://zenodo.org/records/5557945)
+(Bittner et al., ISMIR 2021, CC-BY 4.0): 40 solo-vocal excerpts, seven languages, with hand-corrected
+frame-level f0. It is the only check here against ground truth instead of another detector. The data
+(58 MB) is downloaded on first run into `datasets/vocadito/` (gitignored); `results/vocadito-benchmark.md`
+and `.json` are rewritten each run (about 6.5 minutes for all six, SRH alone about 10 s).
+
+```powershell
+..\.venv\Scripts\python.exe benchmark_vocadito.py                  # all six
+..\.venv\Scripts\python.exe benchmark_vocadito.py srh pyin         # some
+..\.venv\Scripts\python.exe benchmark_vocadito.py srh --tracks 6 29  # some tracks
+```
+
+Scoring: each 5.8 ms reference frame takes the nearest detector frame (the detectors run at ~23 ms);
+"pitch" = voiced reference frames where the detector is within 50 (or 25) cents; "chroma" folds octaves;
+"octave errors" = wrong by 50+ cents but right once octaves are ignored; "false voiced" = detector
+voiced where the reference is unvoiced (vocadito marks pauses and consonants unvoiced). Pooled over all frames.
+
+| Pooled, 40 tracks | SRH | pYIN | First-Peak | HPS | CREPE | Praat |
+|---|---|---|---|---|---|---|
+| Pitch within 50 c | 93.6% | **97.9%** | 86.2% | 6.9% | 81.1% | 93.4% |
+| Pitch within 25 c | 84.2% | **94.3%** | 71.4% | 5.1% | 62.5% | 88.9% |
+| Chroma within 50 c | 95.7% | **98.2%** | 87.4% | 6.9% | 81.1% | 95.4% |
+| Octave errors | 2.0% | **0.4%** | 1.2% | 0.0% | 0.0% | 1.9% |
+| Voiced recall | 99.5% | 99.9% | 95.7% | 10.9% | 95.2% | 97.1% |
+| False voiced | 31.7% | 42.2% | 53.1% | 4.9% | 15.7% | 16.5% |
+| Overall (pitch + silence) | 85.0% | 84.3% | 72.9% | 36.9% | 82.2% | **90.1%** |
+| Mean error when right | 10.4 c | 6.6 c | 15.0 c | 18.4 c | 16.6 c | 6.8 c |
+| Median bias | -0.2 c | +1.3 c | -0.7 c | +6.8 c | +5.6 c | -0.1 c |
+
+- **SRH has no bias but is the loosest of the three good ones**: 84% within 25 cents against pYIN's 94%.
+  That fits its 23 ms hop and 4096-point FFT (5.4 Hz bins); pYIN tracks finer in both.
+- **SRH's failures are concentrated**: tracks 29 (25% octave errors), 6 (12%), 34 (7%) and 33 (5%) hold
+  most of the octave errors; most tracks are clean.
+- **Praat misses whole stretches on some tracks** (voiced recall about 70% on tracks 15 and 17) and is
+  an octave off about half the time on track 34, but rejects silence best of the three.
+- **HPS scores near zero because of its voicing gate, not its F0**: `confidence` is a 5-fold product
+  divided by the track's loudest frame, so on dynamic solo singing nearly every frame falls under 0.1.
+  It was already rejected for jitter; this is a second reason.
+- **Limits**: clean solo singing, not Demucs stems, so this does not test separation bleed (the consensus
+  tables above do); raw detector output only, without the second-voice step; the reference is
+  annotator-corrected, not EGG.
+
 ## Files
 
 | File | Purpose |
@@ -279,6 +323,8 @@ pitch data until re-imported.
 | `sonify.py` | Renders detected F0 as an audible sine tone alongside the original, one file per algorithm (`<name>-<algo>.wav`) |
 | `compare.py` | SRH vs pYIN overlay + per-frame disagreement in cents |
 | `batch_report.py` | Runs all of the above over every track in `tracks/`, ranks by disagreement |
+| `benchmark_vocadito.py` | Scores all six detectors against the public vocadito ground truth (downloads it on first run); writes `results/vocadito-benchmark.md`/`.json` |
+| `datasets/` | Public benchmark data, downloaded by the scripts (gitignored) |
 | `tracks/` | Drop split `vocals.wav` files here (gitignored) |
 | `results/` | Generated plots, sonified audio, and `index.md` report (gitignored) |
 
@@ -289,9 +335,9 @@ pitch data until re-imported.
 - HPS was tried and rejected for jitter; an LPC/LP-residual approach was
   tried and reverted because Demucs output is "too clean" and distorts the
   spectral envelope.
-- Only informal validation exists so far (VoceVista comparison on one
-  Chris Cornell track) — there's no accuracy dataset. This lab is meant to
-  start closing that gap across a wider range of voice types/timbres.
+- Validation started informal (VoceVista comparison on one Chris Cornell
+  track). Since 2026-10-16 there is a ground-truth benchmark (vocadito, see
+  above); it covers clean solo voices, not separated stems.
 - **Praat provenance (2026-07-11):** `praat` (`detect_pitch_praat`, via
   `praat-parselmouth`) was added after concluding VoceVista tracks split
   vocals better than our detectors. VoceVista's algorithm is unpublished, but

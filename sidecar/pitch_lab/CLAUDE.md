@@ -20,7 +20,8 @@ from something found only in one track's plot.
   `spectrogram_interactive.py`, `waveform_mpl.py` (native-window waveform), `short_term_spectrum_mpl.py`
   (the app's Short-Term Spectrum panel at a slider-chosen time, with per-algorithm F0 + harmonics overlay
   to eyeball octave errors), `sonify.py`, `compare.py`, `preprocess.py` / `preprocess_compare.py`,
-  `postprocess.py` / `postprocess_compare.py`, `batch_report.py`.
+  `postprocess.py` / `postprocess_compare.py`, `batch_report.py`, `benchmark_vocadito.py` (all six detectors
+  scored against the public vocadito ground truth).
 - **Real tracks in `tracks/`** (gitignored, not in this listing but present on disk): "Alice In Chains
   – Them Bones – Vocals.wav" (66.6% SRH/pYIN disagreement — pYIN fails badly on this raspy vocal) and
   "like a stone voice.mp3" (21.7% — comparatively mild, cleaner Chris Cornell vocal).
@@ -86,6 +87,11 @@ from something found only in one track's plot.
   until validated against more voice types/timbres (the existing rejections were specific to Layne
   Staley's raspy texture and Demucs' apparent lack of stationary noise floor — a different singer or a
   noisier source recording could change the answer).
+
+- **Ground truth exists (2026-10-16):** `benchmark_vocadito.py`, 40 clean solo excerpts. SRH 93.6% within 50 c
+  (pYIN 97.9%, Praat 93.4%, CREPE 81.1%, First-Peak 86.2%, HPS 6.9% because of its voicing gate); SRH has
+  no bias but only 84% within 25 c (pYIN 94%) and 2% octave errors concentrated on a few tracks (29, 6, 34,
+  33). Untested: Demucs stems. Table and caveats in README ("Ground truth: vocadito benchmark").
 
 ## Gotchas
 
