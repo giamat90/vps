@@ -51,6 +51,9 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
     ["exportMix", () => api.exportMix([{ path: "/p", gain: 1, isTake: false }], 1, 9, "mix.wav"), "export_mix",
       { sources: [{ path: "/p", gain: 1, isTake: false }], startSec: 1, endSec: 9, suggestedName: "mix.wav" }],
     ["exportPack", () => api.exportPack("s1", "Song.vppack"), "export_pack", { songId: "s1", suggestedName: "Song.vppack" }],
+    ["startPackShare", () => api.startPackShare("s1"), "start_pack_share", { songId: "s1", address: null }],
+    ["startPackShareOn", () => api.startPackShare("s1", "192.168.1.20"), "start_pack_share", { songId: "s1", address: "192.168.1.20" }],
+    ["stopPackShare", () => api.stopPackShare(), "stop_pack_share", undefined],
     ["saveExerciseTake", () => api.saveExerciseTake([9], 4.5), "save_exercise_take",
       { audioData: [9], duration: 4.5 }],
     ["listExerciseTakes", () => api.listExerciseTakes(), "list_exercise_takes", undefined],
@@ -76,7 +79,7 @@ describe("tauri.ts wrappers send the exact command name and payload the Rust sid
 
   it("covers every exported command wrapper", () => {
     const wrappers = Object.entries(api).filter(([, v]) => typeof v === "function").map(([k]) => k);
-    const covered = new Set(cases.map(([name]) => name).concat("onProcessingProgress", "detachPanelRemembered"));
+    const covered = new Set(cases.map(([name]) => name).concat("onProcessingProgress", "onPackShare", "detachPanelRemembered"));
     expect(wrappers.filter((w) => !covered.has(w))).toEqual([]);
   });
 
@@ -122,5 +125,20 @@ describe("onProcessingProgress", () => {
     const status: ProcessingStatus = { songId: "s", progress: 0.5, stage: "pitch", isComplete: false };
     listen.mock.calls[0][1]({ payload: status });
     expect(callback).toHaveBeenCalledWith(status);
+  });
+});
+
+describe("onPackShare", () => {
+  it("subscribes to the pack-share event and unwraps the payload", async () => {
+    const unlisten = vi.fn();
+    listen.mockResolvedValueOnce(unlisten);
+    const callback = vi.fn();
+
+    const result = await api.onPackShare(callback);
+
+    expect(result).toBe(unlisten);
+    expect(listen).toHaveBeenCalledWith("pack-share", expect.any(Function));
+    listen.mock.calls[0][1]({ payload: { kind: "sending", sent: 5, total: 10 } });
+    expect(callback).toHaveBeenCalledWith({ kind: "sending", sent: 5, total: 10 });
   });
 });

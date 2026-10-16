@@ -13,7 +13,7 @@ const read = (rel: string) => readFileSync(join(root, rel), "utf8").replace(/\r\
 
 const tauriTs = read("src/lib/tauri.ts") + "\n" + read("node_modules/@giamat90/mps-core/src/lyrics/ipc.ts") + "\n" + read("node_modules/@giamat90/mps-core/src/youtube/ipc.ts");
 // Commands live in more than one module; the handler list in lib.rs names each by module.
-const commandsRs = read("src-tauri/src/commands.rs") + "\n" + read("src-tauri/src/windows.rs") + "\n" + read("src-tauri/src/youtube_signin.rs");
+const commandsRs = read("src-tauri/src/commands.rs") + "\n" + read("src-tauri/src/windows.rs") + "\n" + read("src-tauri/src/youtube_signin.rs") + "\n" + read("src-tauri/src/pack_share.rs");
 const libRs = read("src-tauri/src/lib.rs");
 
 const camel = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
@@ -63,7 +63,7 @@ function tsInvokes(): TsInvoke[] {
 describe("IPC contract between src/lib/tauri.ts and src-tauri", () => {
   const rust = rustCommands();
   const handlerBlock = libRs.match(/generate_handler!\[([\s\S]*?)\]/)?.[1] ?? "";
-  const registered = new Set([...handlerBlock.matchAll(/(?:commands|windows|youtube_signin)::(\w+)/g)].map((m) => m[1]));
+  const registered = new Set([...handlerBlock.matchAll(/(?:commands|windows|youtube_signin|pack_share)::(\w+)/g)].map((m) => m[1]));
   const invokes = tsInvokes();
 
   it("parses a plausible number of commands on both sides (guards the regexes themselves)", () => {

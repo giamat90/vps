@@ -1,6 +1,7 @@
 mod commands;
 mod library;
 mod lyrics;
+mod pack_share;
 mod pitch;
 mod sidecar;
 mod storage;
@@ -23,6 +24,8 @@ pub fn run() {
         commands::export_take,
         commands::export_mix,
         commands::export_pack,
+        pack_share::start_pack_share,
+        pack_share::stop_pack_share,
         commands::pitch_shift_song,
         commands::list_songs,
         commands::delete_song,
@@ -70,6 +73,7 @@ pub fn run() {
         )
         .manage(SidecarState(std::sync::Mutex::new(None)))
         .manage(windows::WindowMemory::load())
+        .manage(pack_share::ShareState::default())
         .invoke_handler(move |invoke| {
             // The sign-in window shows Google's pages; none of this app's commands are open to it.
             if !mps_youtube_signin::may_invoke(invoke.message.webview().label()) {

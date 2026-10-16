@@ -1453,30 +1453,7 @@ pub async fn export_pack(
         .into_iter()
         .find(|s| s.id == song_id)
         .ok_or_else(|| "Song not found".to_string())?;
-
-    let temp_path = std::env::temp_dir().join(format!("{}.vppack", uuid::Uuid::new_v4()));
-    let _temp_guard = TempFile(temp_path.clone());
-    let cmd = serde_json::json!({
-        "cmd": "build_pack",
-        "songDir": song.directory,
-        "outputPath": temp_path.to_string_lossy(),
-        "meta": pack_meta(&song, &chrono::Utc::now().to_rfc3339()),
-    });
-
-    let summary = {
-        let guard = ensure_sidecar(&state)?;
-        let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
-        sidecar.send_command(&cmd)?;
-
-        let timeout = Duration::from_secs(300);
-        loop {
-            match sidecar.recv_timeout(timeout)? {
-                SidecarMessage::Result { data, .. } => break data,
-                SidecarMessage::Error { message, .. } => return Err(message),
-                _ => {}
-            }
-        }
-    };
+    let BuiltPack { temp, summary } = build_pack_file(&state, &song, &mut |_, _| {})?;
 
     let dest = tauri::async_runtime::spawn_blocking({
         let app = app.clone();
@@ -1493,18 +1470,68 @@ pub async fn export_pack(
     .map_err(|e| format!("Dialog task: {e}"))?;
 
     let Some(dest) = dest else { return Ok(serde_json::Value::Null) };
-    std::fs::copy(&temp_path, dest.as_path().ok_or("Invalid path")?)
+    std::fs::copy(temp.path(), dest.as_path().ok_or("Invalid path")?)
         .map_err(|e| format!("Copy failed: {e}"))?;
     Ok(summary)
 }
 
+/// A finished pack in the temp folder, deleted with the value, and what it contains.
+pub(crate) struct BuiltPack {
+    pub temp: TempFile,
+    pub summary: serde_json::Value,
+}
+
+/// Has the sidecar write the practice pack of `song` to a temp file (wiki/practice-pack.md),
+/// reporting how far it is as `(0..1, what it is doing)`. The name is recognisable so a pack
+/// left by a crash can be swept later.
+pub(crate) fn build_pack_file(
+    state: &SidecarState,
+    song: &Song,
+    on_progress: &mut dyn FnMut(f32, &str),
+) -> Result<BuiltPack, String> {
+    let temp = TempFile::new(std::env::temp_dir().join(format!("vps-pack-{}.vppack", uuid::Uuid::new_v4())));
+    let cmd = serde_json::json!({
+        "cmd": "build_pack",
+        "songDir": song.directory,
+        "outputPath": temp.path().to_string_lossy(),
+        "meta": pack_meta(song, &chrono::Utc::now().to_rfc3339()),
+    });
+
+    let guard = ensure_sidecar(state)?;
+    let sidecar = guard.as_ref().ok_or("Sidecar not available")?;
+    sidecar.send_command(&cmd)?;
+
+    let timeout = Duration::from_secs(300);
+    let summary = loop {
+        match sidecar.recv_timeout(timeout)? {
+            SidecarMessage::Result { data, .. } => break data,
+            SidecarMessage::Error { message, .. } => return Err(message),
+            SidecarMessage::Progress { value, stage, .. } => on_progress(value, &stage),
+            _ => {}
+        }
+    };
+    Ok(BuiltPack { temp, summary })
+}
+
 /// Deletes the wrapped temp file when dropped.
-struct TempFile(std::path::PathBuf);
+pub(crate) struct TempFile(std::path::PathBuf);
+
+impl TempFile {
+    pub(crate) fn new(path: std::path::PathBuf) -> TempFile {
+        TempFile(path)
+    }
+
+    pub(crate) fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+}
 
 impl Drop for TempFile {
     fn drop(&mut self) {
-        if let Err(e) = std::fs::remove_file(&self.0) {
-            log::warn!("Failed to remove temp export file {:?}: {e}", self.0);
+        match std::fs::remove_file(&self.0) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => log::warn!("Failed to remove temp export file {:?}: {e}", self.0),
         }
     }
 }
