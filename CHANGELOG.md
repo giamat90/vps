@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.90] - 2026-10-16
+
+### Added
+- **Send to phone over Wi-Fi.** **Send to phone** now opens a dialog. **Send over Wi-Fi** builds the practice pack and shows a QR code: on the phone, Vocal Practice Pocket, Songs, **Receive from laptop**, scan it and the pack downloads straight into the phone's song list, with progress on both sides. The laptop serves the pack once, only on your local network address, for ten minutes at most, behind a code that only the QR carries. **Save as a file** keeps the old way. If the computer has more than one network (Wi-Fi and Ethernet, a VPN, WSL), a picker lets you choose the one the phone is on. The first time, Windows may ask to allow Vocal Practice Studio on private networks: allow it.
+
 ## [0.0.89] - 2026-10-15
 
 ### Added
