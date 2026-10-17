@@ -9,7 +9,7 @@
  * since there's no future to precompute.
  */
 
-import { computeMagnitudeSpectrumDb } from "./fft";
+import { computeMagnitudeSpectrumDb } from "@giamat90/mps-core/spectrum";
 import { SPECTRO_COLORMAP } from "./spectroUtils";
 import { buildFreqBinLut, dbToCurvedNorm } from "../components/analysis/SpectrogramPanel";
 

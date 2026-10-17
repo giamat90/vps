@@ -2,8 +2,7 @@ import { useRef, useEffect } from "react";
 import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
 import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
-import { estimateFormants, type FormantEstimate } from "../../lib/formants";
-import { computeMagnitudeSpectrumDb } from "../../lib/fft";
+import { computeMagnitudeSpectrumDb, estimateFormants, type FormantEstimate } from "@giamat90/mps-core/spectrum";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.

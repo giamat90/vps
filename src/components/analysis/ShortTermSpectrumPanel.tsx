@@ -3,8 +3,7 @@ import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
 import { SPECTRO_COLORMAP, freqToX as freqToXShared, smoothSpectrumEnvelope, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
-import { computeMagnitudeSpectrumDb } from "../../lib/fft";
-import { estimateVoice, type VoiceEstimate } from "../../lib/formants";
+import { computeMagnitudeSpectrumDb, estimateVoice, type VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import { frequencyToNoteName, referenceF0 } from "../../audio/analysisUtils";
 import { useAnalysisStore } from "../../stores/analysis";
 

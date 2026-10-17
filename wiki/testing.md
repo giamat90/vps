@@ -25,7 +25,7 @@ cd sidecar
 - `vitest.config.ts`: node environment, `restoreMocks`/`clearMocks` on, `unstubGlobals` on. `src/test/setup.ts` installs an in-memory `localStorage`; everything else a test needs (`navigator.mediaDevices`, `AudioContext`, `MediaRecorder`, `OffscreenCanvas`, `requestAnimationFrame`, timers) it stubs itself with `vi.stubGlobal`.
 - Stores are tested against mocked boundaries: `../lib/tauri` (or `@tauri-apps/api/core` when the wrappers themselves are under test), `../audio/engine`, and the shared `@giamat90/mps-core/recorder` / `@giamat90/mps-core/metronome` (mocked by their package specifier). `player.test.ts` re-imports the store with `vi.resetModules()` where module-level state matters (device watcher, persisted calibrations).
 - `tests/contract/ipcContract.test.ts` parses `src/lib/tauri.ts` (and the lyrics wrappers shipped in `@giamat90/mps-core`), `src-tauri/src/commands.rs` and `lib.rs` and fails if a wrapper calls an unregistered command, sends an argument Rust does not accept, or omits a required one. It lives outside `src/` because it needs Node's `fs`; `tsc` only checks `src/`.
-- `src/lib/__fixtures__/synthVowel.ts` — seeded source-filter voice with known formants (shared by the formant tests).
+- The synthetic-vowel fixture and the formant/FFT tests moved to mps-core (`src/spectrum/`, v0.12.0); VPS keeps the `spectroUtils` tests.
 
 ## Rust conventions
 
