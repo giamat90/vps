@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { open } from "@tauri-apps/plugin-dialog";
 import { useLibraryStore } from "../../stores/library";
+import { pickFile } from "../../lib/pickFile";
+import { useDropZone } from "@giamat90/mps-core/hooks";
 
-export const AUDIO_EXTENSIONS = ["mp3", "wav", "flac", "ogg", "m4a", "aac", "wma"];
+export { AUDIO_EXTENSIONS } from "@giamat90/mps-core/hooks";
 
 interface DropZoneProps {
   highQuality?: boolean;
@@ -13,27 +13,11 @@ function DropZone({ highQuality, trackKind }: DropZoneProps) {
   const uploadSong = useLibraryStore((s) => s.uploadSong);
   const processing = useLibraryStore((s) => s.processing);
   const isProcessing = processing !== null;
-
-  const [pendingFile, setPendingFile] = useState<string | null>(null);
-
-  const handleClick = async () => {
-    if (isProcessing || pendingFile) return;
-    const selected = await open({
-      multiple: false,
-      filters: [{ name: "Audio", extensions: AUDIO_EXTENSIONS }],
-    });
-    if (selected) setPendingFile(selected);
-  };
-
-  const handleProcess = () => {
-    if (!pendingFile) return;
-    uploadSong(pendingFile, highQuality, trackKind);
-    setPendingFile(null);
-  };
-
-  const handleCancel = () => {
-    setPendingFile(null);
-  };
+  const { pendingFile, fileName, pick, confirm, cancel } = useDropZone({
+    isProcessing,
+    pickFile,
+    onUpload: (path) => uploadSong(path, highQuality, trackKind),
+  });
 
   if (isProcessing) {
     return (
@@ -55,16 +39,15 @@ function DropZone({ highQuality, trackKind }: DropZoneProps) {
   }
 
   if (pendingFile) {
-    const fileName = pendingFile.split(/[\\/]/).pop() ?? pendingFile;
     return (
       <div className="dropzone dropzone--pending">
         <div className="dropzone__pending">
           <div className="dropzone__pending-name" title={pendingFile}>{fileName}</div>
           <div className="dropzone__pending-actions">
-            <button className="dropzone__btn-cancel" type="button" onClick={handleCancel}>
+            <button className="dropzone__btn-cancel" type="button" onClick={cancel}>
               Cancel
             </button>
-            <button className="dropzone__btn-process" type="button" onClick={handleProcess}>
+            <button className="dropzone__btn-process" type="button" onClick={confirm}>
               Analyze
             </button>
           </div>
@@ -74,7 +57,7 @@ function DropZone({ highQuality, trackKind }: DropZoneProps) {
   }
 
   return (
-    <button className="dropzone" onClick={handleClick} disabled={isProcessing}>
+    <button className="dropzone" onClick={pick} disabled={isProcessing}>
       <div className="dropzone__idle">
         <div className="dropzone__icon">+</div>
         <div className="dropzone__label">

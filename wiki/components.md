@@ -2,6 +2,8 @@
 
 **Directory:** `src/components/`
 
+> **Logic in mps-core hooks.** `MicSelector`, `OutputSelector`, `KeyTranspose`, `TempoControl`, `LoopButton`, `RecordButton`, `TransportControls`, `ExportMixButton` and `DownloadAllButton` hold markup and CSS classes only; their state, effects and handlers are `@giamat90/mps-core/hooks` (`useMicSelect`, `useOutputSelect`, `useKeyTranspose`, `useTempoControl`, `useLoopToggle`, `useRecordButton`, `useTransportControls`, `useExportMix`, `useDownloadAll`), which take the player store and the IPC functions as arguments. What differs between VPS and SPS is an option (`stopEndsRecording`, the `watch` selectors of the mix export, `trackEntries`) or stays in the markup (aria-labels, wording).
+
 ## Component Tree
 
 ```
@@ -47,6 +49,7 @@ App
 ## State Management
 
 ### Library Store (`src/stores/library.ts`)
+**Shared with the sibling app (mps-core `hooks`, group library-page-stores).** The store's actions come from `libraryStateCreator` (the IPC functions, the sign-in and the cookies setter are passed in; the app adds its own `importYoutube(...)` that builds the request its backend takes), the error text from `createFriendlyError` (this app passes two rules of its own, the `VPS_PITCH_ALGORITHM` message shown as written and the ffmpeg-not-found text), and `filterSongs` from `createSongFilter` (plus the artist and "instrument" as extra terms). `LibraryPage.tsx` keeps markup and CSS classes only: loading, search, the New Folder field, the About/Settings toggles and the drop decision are `useLibraryPage` + `resolveLibraryDrop`, title/folder renaming is `useEditableText`, and the dnd-kit rows are `useSortableSongRow`, `useSortableFolder` and `useRootDropZone`. What stays here: the pitch-shift/export controls of `SongCard`, the Free Exercise button and the track-kind toggle.
 
 Manages the song list, import/upload flow, and error state.
 
@@ -185,7 +188,7 @@ Slimmed down to play/pause/stop + elapsed/total time — volume sliders were mov
 
 `LoopsMenu` (practice-room topbar, beside `LoopButton`) keeps two lists in one popover. **Saved loops** are named regions stored on the song (`Song.loops`, `set_song_loops`; the pure rules are `@giamat90/mps-core/loops`: `addLoop`, `renameLoop`, `removeLoop`, `validateLoop`). Saving takes the current punch region; clicking a loop calls `applyLoopRegion(start, end)`, which sets the punch region, turns the loop on and seeks to the start. **Bars** cuts the song into groups of 2, 4, 8 or 16 bars counted from the metronome downbeat at four beats to a bar (`barSections`); it is not structure detection, and needs a detected tempo.
 
-Keyboard shortcuts (`src/lib/shortcuts.ts`, installed by `PracticeRoom` on `window` through `@giamat90/mps-core/shortcuts`): Space play/pause, Home / End skip to start / end, ← → step 5 s (Shift: 1 s), L toggle the loop, [ and ] mark the region start and end at the playhead. Typing in a field, ctrl / alt / meta chords, auto-repeat and a focused button's own Space are left alone, and nothing runs while recording or counting in. The Free Exercise page has none.
+Keyboard shortcuts (`installPlayerShortcuts` from `@giamat90/mps-core/hooks`, installed by `PracticeRoom` on `window`): Space play/pause, Home / End skip to start / end, ← → step 5 s (Shift: 1 s), L toggle the loop, [ and ] mark the region start and end at the playhead. Typing in a field, ctrl / alt / meta chords, auto-repeat and a focused button's own Space are left alone, and nothing runs while recording or counting in. The Free Exercise page has none.
 
 ### LoopButton
 
@@ -236,6 +239,8 @@ The anchor is set two ways, both in `TempoControl`'s new "Downbeat" row (shown o
 A "↺" reset-to-0 button appears next to Set once the offset is nonzero.
 
 ### TimeRuler
+
+The logic (drawing, drag, cursors) is mps-core's `useTimeRuler`; the component is the `<canvas>` and passes the punch accent `233,69,96` and `lockWhileRecording: true`.
 
 Canvas strip above the waveform tracks (`2.8rem` tall). Shows time ticks at adaptive intervals (≥ 80 px target). Font size scales proportionally with canvas height. All ruler interaction is disabled during recording.
 
@@ -515,6 +520,8 @@ Rendered only when `takeVibrato` is non-null in the analysis store. If all value
 
 ### TakeList
 
+The logic (audibility, rename, download, delete) is mps-core's `useTakeList`; the component is markup only. `RecordingOffsetControl` likewise uses `useLatencyCalibration` (output-device routing on).
+
 List of recorded takes for the current song, in `practice-room__takes`. Each row shows the take's display name (`take.name || "Take {n}"`) and the recorded date; clicking a row calls `setActiveTake`. Three icon buttons sit on each row (`take-item__actions`):
 
 - **✎ rename** — or double-click the name itself — swaps the name for an inline `<input>` (local `editingId`/`editValue` state). Enter or blur commits via `renameTake(takeId, name)`; Escape cancels without saving. Trimmed-empty names clear back to the default `"Take N"` label (Rust command `rename_take` stores `None` in that case).
@@ -665,3 +672,11 @@ When a song holds two singers at once the sidecar stores the second one as `pitc
 State: `useVoiceViewStore` (`src/stores/voiceView.ts`, localStorage key `vps_voice_view`, `{showMultipleLines, mainVoice}`). It follows `storage` events so a detached piano-roll window and the main window stay in step. `useAnalysisStore` keeps the raw `songPitchData` and re-arranges `songPitch` / `songPitchAlt` when `mainVoice` changes, without reloading the song. Takes have no second voice.
 
 Songs analysed before this get `f0Alt` on their next open through the `load_analysis` backfill (once, persisted); the lead line of such a song may also change, because inside a two-voice stretch it is now held on one voice.
+
+## Panel menu, sortable panels, detach/dock handles, loops menu (headless hooks)
+
+`PanelMenu`, `SortablePanels` (`MoveGrip`), `DetachHandle`, `DockHandle` and `LoopsMenu` keep only markup and CSS class names; their logic is in `@giamat90/mps-core/hooks` (`usePanelMenu`, `usePopover`, `useSortablePanels` / `useSortablePanel` / `usePanelGrip`, `useDetachHandle`, `useDockHandle`, `useLoopsMenu`), which takes the app's stores and IPC functions as parameters.
+
+## Lyrics, import and update components: logic in mps-core hooks
+
+`LyricsPanel`, `YouTubeCookiesControl`, `YouTubeImport`, `DropZone` and `UpdateDialog` keep only markup and CSS class names. Their logic is a headless hook in `@giamat90/mps-core/hooks` (`useLyricsPanel`, `useYouTubeCookies`, `useYouTubeImport`, `useDropZone`, `useUpdateDialog`), shared with the other app; what differs is passed in: the player store adapter, the library action, the import call's arguments (quality, track kind). The native file dialog is injected through `src/lib/pickFile.ts` (the one place that imports `@tauri-apps/plugin-dialog` for these components). The hooks' tests live in mps-core.

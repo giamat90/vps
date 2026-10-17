@@ -144,7 +144,6 @@ VPS/
 │   │   ├── ipc.generated.ts   GENERATED IPC wrappers (scripts/gen-ipc.mjs); never edit by hand
 │   │   ├── ipcTypes.ts        shapes that cross IPC and are not Rust-derived (AnalysisData, PackSummary, MixSource, …)
 │   │   ├── constants.ts       piano window constants and follow logic (C0–C7); NOTE_NAMES/MIDI helpers are in @giamat90/mps-core/music
-│   │   ├── clapLatency.ts     click-clap latency detector on plain samples (RecordingOffsetControl's detection, unit tested)
 │   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
 │   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
 │   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic), `windowDragTime` (drag-to-seek maths shared with PianoRoll)
@@ -165,7 +164,7 @@ VPS/
 │   │   │   ├── persistence.ts     localStorage: take prefs, recording offsets
 │   │   │   ├── audioSync.ts       store subscriptions that keep the engine in step
 │   │   │   └── types.ts           slice interfaces, PlayerStore, CalibrationEntry, TrackKey
-│   │   ├── library.ts         song list + import flow (Zustand)
+│   │   ├── library.ts         song list + import flow (Zustand): `libraryStateCreator` from `@giamat90/mps-core/hooks` + this app's request shape and error rules
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
 │   │   ├── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
@@ -174,7 +173,7 @@ VPS/
 │   │   └── exercisePanels.ts  which Free Exercise panels are visible (`vps_exercise_panels`)
 │   ├── windows/           detachable panels (spike): VPS-specific state, commands and streams on top of `@giamat90/mps-core/windows` — see wiki/detachable-panels.md
 │   ├── pages/
-│   │   ├── LibraryPage.tsx    song list, import, SongCard (pitch shift + export)
+│   │   ├── LibraryPage.tsx    markup of the song list, import, SongCard (pitch shift + export); state and drag logic are `useLibraryPage` etc. from `@giamat90/mps-core/hooks`
 │   │   ├── PracticeRoom.tsx   main practice UI (waveforms + analysis + recording)
 │   │   └── ExercisePage.tsx   Free Exercise: record/monitor without a song (live pitch + spectrogram)
 │   └── styles/global.css

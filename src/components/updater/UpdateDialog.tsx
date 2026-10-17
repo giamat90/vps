@@ -1,9 +1,9 @@
-import { useUpdaterStore } from "@giamat90/mps-core/updater";
+import { useUpdateDialog } from "@giamat90/mps-core/hooks";
 
 export default function UpdateDialog() {
-  const { status, update, progress, dismissed, installAndRestart, dismiss } = useUpdaterStore();
+  const { visible, status, update, percent, install, dismiss } = useUpdateDialog();
 
-  if (dismissed || status === "idle" || status === "checking") return null;
+  if (!visible) return null;
 
   return (
     <div className="update-overlay">
@@ -14,7 +14,7 @@ export default function UpdateDialog() {
             {update && <p className="update-modal__version">v{update.version}</p>}
             {update?.body && <p className="update-modal__notes">{update.body}</p>}
             <div className="update-modal__actions">
-              <button className="update-modal__install" onClick={() => installAndRestart()}>
+              <button className="update-modal__install" onClick={install}>
                 Install &amp; Restart
               </button>
               <button className="update-modal__later" onClick={dismiss}>
@@ -30,7 +30,7 @@ export default function UpdateDialog() {
             <div className="progress-bar">
               <div
                 className="progress-bar__fill"
-                style={{ width: `${Math.round(progress * 100)}%` }}
+                style={{ width: `${percent}%` }}
               />
             </div>
           </>
@@ -45,7 +45,7 @@ export default function UpdateDialog() {
               Something went wrong while downloading or installing the update.
             </p>
             <div className="update-modal__actions">
-              <button className="update-modal__install" onClick={() => installAndRestart()}>
+              <button className="update-modal__install" onClick={install}>
                 Try again
               </button>
               <button className="update-modal__later" onClick={dismiss}>

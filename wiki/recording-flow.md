@@ -191,7 +191,7 @@ When `audioOffset > 0` the engine seeks 0.256 s into the audio file when the pla
 
 The calibrated value represents the full round-trip (output + input) latency measured through the actual signal chain. Focusrite Scarlett / Behringer UM2 typically measure 200–300 ms in WASAPI shared mode.
 
-The detector is `detectClapLatency` in `src/lib/clapLatency.ts` (plain samples, unit tested; the component only picks the loudest channel). Frames are timed from their sample index and an onset is stamped at the **end** of the first frame over the threshold. Until 2026-10-15 frames were counted as "1 ms" each, which at a 44.1 kHz context (44-sample hop = 0.9977 ms) stretched a 12 s recording by up to 27 ms (about +15 ms median), and the frame start was used as the onset time (about 4 ms early); contexts at 48 kHz (most Windows devices) only had the early stamp. A value measured before that date on a 44.1 kHz device is about 15 ms too high: recalibrate if it matters.
+The detector is `detectClapLatency` in mps-core (`@giamat90/mps-core/hooks`, plain samples, unit tested; the wizard's state machine is `useLatencyCalibration`, shared with SPS, which used to carry an older inline copy of this detector). Frames are timed from their sample index and an onset is stamped at the **end** of the first frame over the threshold. Until 2026-10-15 frames were counted as "1 ms" each, which at a 44.1 kHz context (44-sample hop = 0.9977 ms) stretched a 12 s recording by up to 27 ms (about +15 ms median), and the frame start was used as the onset time (about 4 ms early); contexts at 48 kHz (most Windows devices) only had the early stamp. A value measured before that date on a 44.1 kHz device is about 15 ms too high: recalibrate if it matters.
 
 ### Calibration entry schema
 

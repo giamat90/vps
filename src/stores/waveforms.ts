@@ -1,3 +1,4 @@
+import { hiddenTrackTags as hiddenTracks } from "@giamat90/mps-core/hooks";
 import { createPanelStore } from "@giamat90/mps-core/panels";
 
 // What the user wants to see of the waveform area. Not part of panels.ts: those
@@ -39,11 +40,5 @@ export function hiddenTrackTags(
   visible: Readonly<Record<WaveformPanelId, boolean>>,
   { muted, soloed }: { muted: Readonly<Partial<Record<string, boolean>>>; soloed: string | null },
 ): Partial<Record<WaveformPanelId, string>> {
-  const tags: Partial<Record<WaveformPanelId, string>> = {};
-  for (const id of ["vocals", "instrumental"] as const) {
-    if (visible[id]) continue;
-    if (soloed === id) tags[id] = "solo";
-    else if (muted[id]) tags[id] = "muted";
-  }
-  return tags;
+  return hiddenTracks(visible, ["vocals", "instrumental"] as const, { muted, soloed });
 }

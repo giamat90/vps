@@ -6,7 +6,7 @@ import ExportMixButton from "../components/player/ExportMixButton";
 import TransportControls from "../components/player/TransportControls";
 import LoopButton from "../components/player/LoopButton";
 import LoopsMenu from "../components/player/LoopsMenu";
-import { installPlayerShortcuts } from "../lib/shortcuts";
+import { installPlayerShortcuts } from "@giamat90/mps-core/hooks";
 import TempoControl from "../components/player/TempoControl";
 import KeyTranspose from "../components/player/KeyTranspose";
 import OutputSelector from "../components/player/OutputSelector";
