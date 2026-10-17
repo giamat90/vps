@@ -6,6 +6,12 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.91] - 2026-10-18
+
+### Changed
+- **Internal restructuring, nothing to relearn.** The player, the library, the panels and the controls now share their logic with Song Practice Studio through one common package (mps-core 0.13.0) instead of keeping two copies, and the spectrum and piano-roll drawing code was split into small, tested pieces. The screens, the buttons and the files on disk are unchanged.
+- **Fewer security advisories in the build tools.** The development toolchain was updated; the installed app is not affected.
+
 ## [0.0.90] - 2026-10-16
 
 ### Added
