@@ -306,6 +306,37 @@ voiced where the reference is unvoiced (vocadito marks pauses and consonants unv
   tables above do); raw detector output only, without the second-voice step; the reference is
   annotator-corrected, not EGG.
 
+### Experiment: what makes COVAREP's SRH more accurate (2026-10-16), not adopted
+
+COVAREP's original SRH (`pitch_srh.m`; a Python port was run once, not kept because the original is GPL-3)
+scored 95.8% within 50 cents on vocadito, 90.2% within 25, 0.2% octave errors, against 93.6 / 84.2 / 2.0 for
+ours. Ablations on vocadito (all via `srh_variant`, `benchmark_vocadito.py srh <name>`):
+
+| Change to production SRH | within 50 c | within 25 c |
+|---|---|---|
+| none | 93.6% | 84.2% |
+| `range_narrowing=True` (COVAREP's 2nd pass: median F0 of voiced frames, range cut to [median/2, 2*median]; `srh-narrow`) | 95.1% | 85.6% |
+| `fft_size=16384` (1.35 Hz bins) | 93.7% | 84.6% |
+| `hop_length=220` (10 ms instead of 23 ms) | 96.0% | 90.6% |
+| 10 ms hop + 16384 FFT | 96.6% | 91.7% |
+| 10 ms hop + 16384 FFT + 100 ms frame (`srh-fine`) | **97.3%** | **93.3%** |
+
+- The LP residual (COVAREP's front end) is **not** the reason: COVAREP on the raw signal scored 97.8% / 93.2%,
+  with the residual 95.8%; production SRH fed the residual 92.3%. COVAREP's voicing threshold is tuned for the
+  residual (69-80% false-voiced on the raw signal), so only its F0 was compared.
+- Hop and frame length carry the gain, FFT resolution alone does nothing. About 0.7 points of the hop effect is
+  scoring (nearest 23 ms frame against a 5.8 ms reference); with linear interpolation of the estimate
+  production gets 94.3% / 86.3% against 97.5% / 94.1% for `srh-fine`, so most of it is real. `srh-fine` costs
+  about 2.4x the compute.
+- **None of it shows on Demucs stems** (3 lab tracks + 9 random library vocals, first 90 s, scored against the
+  Praat/pYIN/CREPE consensus on the production frame grid): correct within 50 c production 82.1%, 10 ms hop
+  81.5%, `srh-fine` 81.3%, `srh-narrow` 80.6%; wrong by 100+ cents 7.7 / 8.7 / 8.2 / 8.5%. Stem errors are
+  octave jumps and bleed, not timing or frequency resolution, and the consensus (itself ~23 ms, 50 c) cannot
+  resolve a 25 c improvement, so this says "no visible gain", not "worse".
+- Verdict: the finer front end and the range narrowing help clean solo voices and not separated stems, so
+  production stays as is. Worth revisiting if the app ever scores takes recorded straight from the mic (clean
+  solo voice, where the vocadito result applies) with a finer pitch resolution than the song stems need.
+
 ## Files
 
 | File | Purpose |
