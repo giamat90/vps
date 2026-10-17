@@ -2,6 +2,7 @@
 # demucs / torchcrepe, so the heavy stem-separation and CREPE paths are
 # skipped unless the full requirements.txt is installed (tests use importorskip).
 pytest
+pytest-cov
 numpy
 scipy
 librosa
