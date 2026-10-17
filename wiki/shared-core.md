@@ -12,6 +12,7 @@ repository's `wiki/`; this page records how VPS uses it.
 | `@giamat90/mps-core/metronome`, `/metronomeSync`, `/recorder`, `/zoomPan` | `src/audio/metronome.ts`, `src/lib/metronomeSync.ts`, `src/audio/recorder.ts`, `src/lib/zoomPan.ts` and their tests |
 | `@giamat90/mps-core/music` | the note/frequency half of `src/lib/constants.ts` (the piano-window half is VPS only and stays) |
 | `@giamat90/mps-core/pitch` | new in v0.8.0: the autocorrelation inside `src/audio/pitchDetector.ts` (`autocorrelatePitch`); the `PitchDetector` class stays here as the AnalyserNode wrapper, and its algorithm tests moved to core |
+| `@giamat90/mps-core/spectrum` | new in v0.12.0: `src/lib/fft.ts`, `formants.ts`, `harmonicEnvelope.ts`, `pitchRefine.ts` (and the synthetic-vowel fixture) with their tests, and the pure half of `src/lib/spectroUtils.ts` (log-Hz axis, dB span, thermal colour map, curve and envelope smoothing). `spectroUtils.ts` re-exports those names so the panels keep one import, and keeps the canvas / stored-spectrogram helpers. The phone app (VPP) draws the same curve from the same code |
 | `@giamat90/mps-core/updater` | `src/stores/updater.ts` |
 | `@giamat90/mps-core/panels` | new in v0.2.0: `src/stores/panels.ts` builds the practice-room store with `createPanelStore`; `PanelMenu` is this app's own |
 | `@giamat90/mps-core/lyrics` | lyric types in `types.ts`, the four lyrics wrappers and `onLyricsProgress` in `tauri.ts`, `src/lib/lyrics.ts`, `src/stores/lyrics.ts` |

@@ -6,7 +6,7 @@ import { getSpectrumSource } from "../../windows/spectrumRegistry";
 import { freqToX, stitchAboveNyquist, smoothSpectrumLight, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H, type SpectrumPoint } from "../../lib/spectroUtils";
 import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
 import { COLOR_SONG, COLOR_SONG_ALT, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
-import type { VoiceEstimate } from "../../lib/formants";
+import type { VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import { currentPitchHz, frequencyToNoteName, referenceF0 } from "../../audio/analysisUtils";
 import { useVoiceViewStore } from "../../stores/voiceView";
 

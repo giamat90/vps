@@ -1,6 +1,6 @@
 import type { LiveSpectrum, SpectrumSource } from "../audio/spectrumSource";
 import { NO_FORMANTS } from "../audio/spectrumSource";
-import type { VoiceEstimate } from "../lib/formants";
+import type { VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import { encodeSpectrum } from "./spectrumCodec";
 import type { EncodedSpectrum, SpectrumMessage } from "./protocol";
 

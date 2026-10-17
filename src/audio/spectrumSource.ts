@@ -1,5 +1,4 @@
-import { estimateVoice, type VoiceEstimate } from "../lib/formants";
-import { computeMagnitudeSpectrumDb } from "../lib/fft";
+import { computeMagnitudeSpectrumDb, estimateVoice, type VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import { decodeSpectrum } from "../windows/spectrumCodec";
 import type { SpectrumMessage } from "../windows/protocol";
 
