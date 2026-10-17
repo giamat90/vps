@@ -68,7 +68,8 @@ PowerShell has it automatically after a normal rustup install. Prefer PowerShell
 ```
 
 ### IPC
-- **Frontend → Rust:** `invoke()` from `@tauri-apps/api/core`. Bindings in `src/lib/tauri.ts`.
+- **Frontend → Rust:** `invoke()` from `@tauri-apps/api/core`. Wrappers are generated from the Rust command signatures: `src/lib/ipc.generated.ts` (`npm run gen:ipc`), re-exported by `src/lib/tauri.ts`.
+  - **Adding a command:** write the `#[tauri::command]` fn with a `///` doc (it becomes the JSDoc), add it to `generate_handler!` in `src-tauri/src/lib.rs`, run `npm run gen:ipc`, add a case to `src/lib/tauri.test.ts`. A new Rust struct or `serde_json::Value` return needs an entry in `scripts/ipc-types.json`; the generator fails loudly otherwise. `tests/contract/ipcContract.test.ts` names whichever step was forgotten.
 - **Rust → Frontend:** `app.emit()` / `listen()`. Events in use: `"processing-progress"`, `"lyrics-progress"`, `"pack-share"` (the Send over Wi-Fi dialog: pack build progress, transfer progress, done, expired).
 - **Rust → Python:** JSON lines on stdin/stdout. Sidecar runs a synchronous dispatch loop (avoids GIL/numpy deadlocks on Windows). Manager in `src-tauri/src/sidecar.rs`.
 - **Audio files → WebView2:** Tauri asset protocol. `convertFileSrc(absolutePath)` → `tauri://localhost/...` URL used by WaveSurfer.
@@ -139,15 +140,31 @@ VPS/
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
 │   ├── lib/
 │   │   ├── types.ts           Song, Take, ExerciseTake, PitchData, PitchPoint, DynamicsPoint, VibratoMetrics, …
-│   │   ├── tauri.ts           IPC wrappers (processSong, saveTake, exportStem, …)
+│   │   ├── tauri.ts           re-exports ipc.generated.ts + the event listeners (onProcessingProgress, …)
+│   │   ├── ipc.generated.ts   GENERATED IPC wrappers (scripts/gen-ipc.mjs); never edit by hand
+│   │   ├── ipcTypes.ts        shapes that cross IPC and are not Rust-derived (AnalysisData, PackSummary, MixSource, …)
 │   │   ├── constants.ts       piano window constants and follow logic (C0–C7); NOTE_NAMES/MIDI helpers are in @giamat90/mps-core/music
 │   │   ├── clapLatency.ts     click-clap latency detector on plain samples (RecordingOffsetControl's detection, unit tested)
 │   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
 │   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
-│   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic)
+│   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic), `windowDragTime` (drag-to-seek maths shared with PianoRoll)
+│   │   ├── spectrogramMath.ts   SpectrogramPanel's pure maths: dB curve, frequency LUT, row norms, RGBA columns, scroll shift, static-window geometry, axis/legend ticks (no React, no stores)
+│   │   ├── spectrogramDraw.ts   SpectrogramPanel's canvas helpers: frequency axis, dB legend, grid, idle hint, playhead, formant ticks, track window
+│   │   ├── spectroShortTerm.ts  ShortTermSpectrumPanel's helpers: dB/decade grid, curve segments/fill/envelope, F0+formant markers, live-mic overlay
+│   │   ├── spectroComparison.ts  ShortTermSpectrumComparisonPanel's frame: stored/measured song and take curves, F0+formant markers, `drawComparisonFrame`
+│   │   ├── pianoRollGeometry.ts PianoRoll's pure maths: note lanes, ribbon polylines, note labels, ruler ticks, key colours
+│   │   ├── pianoRollDraw.ts     PianoRoll's canvas helpers: lanes, ribbons, piano strip, note label, ruler with punch region
+│   │   ├── pianoRollPunch.ts    the punch-region drag state machine (mousedown → override → commit), unit tested
 │   │   └── exerciseSpectrogram.ts  precomputes a loaded Free Exercise track's whole spectrogram once, for a centered drag-to-seek view
 │   ├── stores/
-│   │   ├── player.ts          player + recording + punch + latency-calibration state (Zustand)
+│   │   ├── player/            the player store, one zustand slice per concern composed in `index.ts` (public API unchanged: `usePlayerStore`, `getEngine`, `getMicAnalyser`, …); see "Player store shape"
+│   │   │   ├── song.ts, transport.ts, mixer.ts, timeline.ts, punch.ts, devices.ts, takes.ts, recording.ts, exercise.ts   slices
+│   │   │   ├── recordingFlow.ts   steps of startRecording (open mic, pin output, count-in, latency)
+│   │   │   ├── singletons.ts      engine / recorder / mic analyser, outside Zustand
+│   │   │   ├── volume.ts          effectiveVolume, buildMixSources, pushTakeAudio
+│   │   │   ├── persistence.ts     localStorage: take prefs, recording offsets
+│   │   │   ├── audioSync.ts       store subscriptions that keep the engine in step
+│   │   │   └── types.ts           slice interfaces, PlayerStore, CalibrationEntry, TrackKey
 │   │   ├── library.ts         song list + import flow (Zustand)
 │   │   ├── analysis.ts        pitch/onset/dynamics/live data (Zustand)
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
@@ -355,7 +372,7 @@ Three WaveSurfer instances in lockstep:
 
 ---
 
-## Recording flow (`src/stores/player.ts`, `@giamat90/mps-core/recorder`)
+## Recording flow (`src/stores/player/recording.ts`, `@giamat90/mps-core/recorder`)
 
 ### startRecording sequence
 ```
@@ -480,9 +497,9 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 
 ---
 
-## Player store shape (`src/stores/player.ts`)
+## Player store shape (`src/stores/player/`)
 
-Key state fields (abbreviated):
+One store, nine slices (`song`, `transport`, `mixer`, `timeline`, `punch`, `devices`, `takes`, `recording`, `exercise`), each a `Slice<…>` creator in its own file and composed in `index.ts`. Slices call each other through `get()`; the shared field/action interfaces are in `types.ts`. Key state fields (abbreviated):
 
 ```ts
 song: Song | null

@@ -154,7 +154,7 @@ VPS/
 │   │   ├── main.rs        Binary entry point (calls lib.rs::run)
 │   │   ├── lib.rs         Tauri builder + invoke_handler registration
 │   │   ├── commands.rs    Tauri command handlers
-│   │   ├── sidecar.rs     Python sidecar process manager
+│   │   ├── sidecar.rs     binds mps-core's `mps-sidecar` (Python sidecar process manager) to the `vps-sidecar` binary name
 │   │   ├── library.rs     Song library management
 │   │   └── storage.rs     Path helpers (~/.vps/)
 │   └── tauri.conf.json    App config (window size, asset scope)

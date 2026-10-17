@@ -17,6 +17,7 @@ import {
   smoothSpectrumEnvelope,
   smoothSpectrumLight,
   stitchAboveNyquist,
+  windowDragTime,
   xToFreq,
   type SpectrumPoint,
 } from "./spectroUtils";
@@ -321,5 +322,22 @@ describe("stitchAboveNyquist", () => {
   it("returns the measured curve untouched when its band reaches the top of the axis", () => {
     const measured = flat(0.3);
     expect(stitchAboveNyquist(measured, flat(0.9), 48000, W, 30, 20000)).toBe(measured);
+  });
+});
+
+describe("windowDragTime", () => {
+  it("moves back in time when dragging right and forward when dragging left", () => {
+    expect(windowDragTime(50, 300, 400, 800, 8, 200)).toBeCloseTo(49, 9);
+    expect(windowDragTime(50, 300, 200, 800, 8, 200)).toBeCloseTo(51, 9);
+  });
+
+  it("clamps to the song", () => {
+    expect(windowDragTime(1, 300, 800, 800, 8, 200)).toBe(0);
+    expect(windowDragTime(199, 300, 0, 800, 8, 200)).toBe(200);
+  });
+
+  it("returns null when the roll has no width", () => {
+    expect(windowDragTime(5, 0, 10, 0, 8, 200)).toBeNull();
+    expect(windowDragTime(5, 0, 10, -4, 8, 200)).toBeNull();
   });
 });

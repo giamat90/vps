@@ -1,182 +1,237 @@
 import { useRef, useEffect } from "react";
 import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
-import { SPECTRO_COLORMAP } from "../../lib/spectroUtils";
+import { SPECTRO_COLORMAP, windowDragTime } from "../../lib/spectroUtils";
 import { estimateFormants, type FormantEstimate } from "../../lib/formants";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
+import type { TrackSpectrogram } from "../../lib/exerciseSpectrogram";
+import {
+  AXIS_W,
+  CAPTURE_INTERVAL_MS,
+  LEGEND_WIDTH,
+  WINDOW_S,
+  buildFreqBinLut,
+  computeRowNorms,
+  formantTickYs,
+  maxFrequency,
+  nextScrollShift,
+  writeColumnPixels,
+} from "../../lib/spectrogramMath";
+import {
+  drawCenterPlayhead,
+  drawDbLegend,
+  drawFreqAxis,
+  drawGridLines,
+  drawIdleMessage,
+  drawTrackSpectrogramWindow,
+  fillFormantTicks,
+} from "../../lib/spectrogramDraw";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
 const FFT_SIZE = 8192;
 
-// ─── constants ───────────────────────────────────────────────────────────────
+type Canvas2D = OffscreenCanvas | HTMLCanvasElement;
+type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-export const AXIS_W   = 56;
-const WINDOW_S = 10;   // seconds visible across full roll width
-export const F_MIN    = 30;
-export const F_MAX    = 20000;
-
-export const MIN_DB = -85; // floor -85dB — matches VoceVista dynamic range
-export const MAX_DB = -20; // ceiling -20dB — loud bins reach top of thermal LUT
-
-const FREQ_TICKS = [30, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000];
-
-// dB → normalized [0,1] curve driving the thermal colormap lookup. Shared by
-// the live waterfall below and exerciseSpectrogram.ts's precompute pass so a
-// loaded track's static spectrogram looks identical to the live one.
-export function dbToCurvedNorm(db: number): number {
-  const norm = db < -80 ? 0 : Math.max(0, Math.min(1, (db - MIN_DB) / (MAX_DB - MIN_DB)));
-  // soft gate pushes noise floor to black like VoceVista
-  const gated = norm < 0.15 ? norm * (norm / 0.15) * 0.3 : norm;
-  // gamma 0.38 — preserves fundamental peak brightness
-  return Math.pow(gated, 0.38);
+interface FrameSource {
+  sr: number;
+  freqData: Float32Array;
+  timeData: Float32Array;
 }
 
-// ─── frequency ↔ canvas-row LUT (Float32 for bilinear interpolation) ─────────
+interface RenderState {
+  offscreen: Canvas2D | null;
+  lastCapture: number;
+  shiftAccum: number;
+  fftScratch: Float32Array<ArrayBuffer> | null;
+  timeScratch: Float32Array<ArrayBuffer> | null;
+  colNorms: Float32Array | null;
+  freqLut: { low: Uint16Array; high: Uint16Array; H: number; sr: number } | null;
+  prevFormant: FormantEstimate;
+  sr: number;
+}
 
-// Exported so exerciseSpectrogram.ts's precompute pass can bucket bins into
-// rows identically to the live waterfall (same F_MIN/F_MAX log mapping).
-export function buildFreqBinLut(
-  H: number,
-  fftSize: number,
-  sampleRate: number,
-): { low: Uint16Array; high: Uint16Array } {
-  const nyquist = sampleRate / 2;
-  const fMax    = Math.min(F_MAX, nyquist);
-  const binHz   = sampleRate / fftSize;
-  const maxBin  = fftSize / 2 - 1;
-  const logFMin = Math.log(F_MIN);
-  const logFMax = Math.log(fMax);
-  const low     = new Uint16Array(H);
-  const high    = new Uint16Array(H);
-  for (let py = 0; py < H; py++) {
-    const tLo   = Math.max(0, (py - 0.5) / (H - 1));
-    const tHi   = Math.min(1, (py + 0.5) / (H - 1));
-    const fHigh = Math.exp(logFMax + tLo * (logFMin - logFMax));
-    const fLow  = Math.exp(logFMax + tHi * (logFMin - logFMax));
-    const binLow  = Math.max(0, Math.floor(fLow / binHz));
-    let   binHigh = Math.min(maxBin, Math.ceil(fHigh / binHz));
-    if (binHigh < binLow + 1) binHigh = Math.min(maxBin, binLow + 1);
-    low[py]  = binLow;
-    high[py] = binHigh;
+interface FrameParams {
+  active: boolean;
+  trackActive: boolean;
+  shouldScroll: boolean;
+  staticMode: boolean;
+  trackSpectrogram: TrackSpectrogram | null;
+  dpr: number;
+  W: number;
+  H: number;
+  rollW: number;
+}
+
+function newRenderState(): RenderState {
+  return {
+    offscreen: null,
+    lastCapture: 0,
+    shiftAccum: 0,
+    fftScratch: null,
+    timeScratch: null,
+    colNorms: null,
+    freqLut: null,
+    prevFormant: { f1: null, f2: null, f3: null },
+    sr: 48000,
+  };
+}
+
+function ensureOffscreen(state: RenderState, rollW: number, H: number): Ctx2D | null {
+  if (!state.offscreen || state.offscreen.width !== rollW || state.offscreen.height !== H) {
+    try {
+      state.offscreen = new OffscreenCanvas(rollW, H);
+    } catch {
+      const fb = document.createElement("canvas");
+      fb.width = rollW;
+      fb.height = H;
+      state.offscreen = fb;
+    }
+    const ic = state.offscreen.getContext("2d") as Ctx2D | null;
+    if (ic) { ic.fillStyle = "#000"; ic.fillRect(0, 0, rollW, H); }
   }
-  return { low, high };
+  return state.offscreen.getContext("2d") as Ctx2D | null;
 }
 
-// ─── frequency axis ───────────────────────────────────────────────────────────
-
-export function freqToY(f: number, H: number, fMax: number): number {
-  const logFMin = Math.log(F_MIN);
-  const logFMax = Math.log(fMax);
-  return ((logFMax - Math.log(f)) / (logFMax - logFMin)) * H;
-}
-
-function formatHz(f: number): string {
-  return f >= 1000 ? `${f / 1000}k` : `${f}`;
-}
-
-function drawFreqAxis(ctx: CanvasRenderingContext2D, H: number, sampleRate: number, dpr: number): void {
-  const nyquist = sampleRate / 2;
-  const fMax    = Math.min(F_MAX, nyquist);
-
-  ctx.fillStyle = "#16213e";
-  ctx.fillRect(0, 0, AXIS_W, H);
-
-  ctx.strokeStyle = "#333";
-  ctx.lineWidth   = 1;
-  ctx.beginPath();
-  ctx.moveTo(AXIS_W - 1, 0);
-  ctx.lineTo(AXIS_W - 1, H);
-  ctx.stroke();
-
-  ctx.font         = `${11 * dpr}px monospace`;
-  ctx.textBaseline = "middle";
-  ctx.textAlign    = "right";
-
-  // 20k label pinned at top edge
-  if (fMax >= 20000) {
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillText("20k", AXIS_W - 6, 8 * dpr);
+// A loaded track snapshots its decoded buffer at the playhead (works paused or playing); otherwise the live mic.
+function readFrameSource(state: RenderState, trackActive: boolean): FrameSource | null {
+  if (trackActive) {
+    const engineSr = getEngine().getExerciseTrackSampleRate();
+    const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
+    if (!engineSr || !samples) return null;
+    return { sr: engineSr, timeData: samples, freqData: computeMagnitudeSpectrumDb(samples, FFT_SIZE) };
   }
-
-  for (const f of FREQ_TICKS) {
-    if (f > fMax || f === 20000) continue;
-    const y = freqToY(f, H, fMax);
-    if (y < 4 || y > H - 4) continue;
-
-    const anchor    = f === 1000 || f === 5000;
-    ctx.strokeStyle = anchor ? "rgba(255,255,255,0.45)" : "rgba(255,255,255,0.3)";
-    ctx.lineWidth   = 1;
-    ctx.beginPath();
-    ctx.moveTo(AXIS_W, y);
-    ctx.lineTo(AXIS_W + 8, y);
-    ctx.stroke();
-
-    ctx.fillStyle = anchor ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.85)";
-    ctx.fillText(formatHz(f), AXIS_W - 6, y);
+  const analyser = getMicAnalyser();
+  if (!analyser) return null;
+  const binCount = analyser.frequencyBinCount;
+  if (!state.fftScratch || state.fftScratch.length !== binCount) {
+    state.fftScratch = new Float32Array(binCount);
   }
+  if (!state.timeScratch || state.timeScratch.length !== analyser.fftSize) {
+    state.timeScratch = new Float32Array(analyser.fftSize);
+  }
+  analyser.getFloatFrequencyData(state.fftScratch);
+  analyser.getFloatTimeDomainData(state.timeScratch);
+  return { sr: analyser.context.sampleRate, freqData: state.fftScratch, timeData: state.timeScratch };
 }
 
-// ─── dB legend ────────────────────────────────────────────────────────────────
+function scrollHistory(offCtx: Ctx2D, state: RenderState, rollW: number, H: number): number {
+  const next = nextScrollShift(state.shiftAccum, rollW);
+  state.shiftAccum = next.accum;
+  const shifted = offCtx.getImageData(next.shift, 0, rollW - next.shift, H);
+  offCtx.putImageData(shifted, 0, 0);
+  return next.shift;
+}
 
-export const LEGEND_WIDTH  = 52;   // px reserved on right for legend
-const BAR_WIDTH     = 10;   // px width of gradient bar
-const LEGEND_MARGIN = 6;    // px gap between bar and labels
-const LEGEND_TICKS  = [-20, -30, -40, -50, -60, -70, -80, -85];
+function appendFrame(offCtx: Ctx2D, state: RenderState, src: FrameSource, p: FrameParams): void {
+  const { H, rollW } = p;
+  state.sr = src.sr;
+  if (!state.colNorms || state.colNorms.length !== H) state.colNorms = new Float32Array(H);
 
-function drawDbLegend(ctx: CanvasRenderingContext2D, W: number, H: number, dpr: number): void {
-  const barX = W - LEGEND_WIDTH;
-
-  // Inset the bar vertically so the min/max labels have room to render
-  // fully instead of clipping at the canvas edge — this is what made
-  // the legend feel "too tall" with the extremes barely visible.
-  const padY  = 12 * dpr;
-  const barTop = padY;
-  const barH   = H - padY * 2;
-
-  // Step 1: thermal gradient bar (only within the inset region)
-  for (let r = 0; r < barH; r++) {
-    const normalized = 1 - r / barH; // top = loud
-    const curved = Math.pow(normalized, 0.38); // same gamma
-    const idx = Math.floor(curved * 255);
-    const R = SPECTRO_COLORMAP[idx * 3];
-    const G = SPECTRO_COLORMAP[idx * 3 + 1];
-    const B = SPECTRO_COLORMAP[idx * 3 + 2];
-    ctx.fillStyle = `rgb(${R},${G},${B})`;
-    ctx.fillRect(barX, barTop + r, BAR_WIDTH, 1);
+  const fftSize = src.freqData.length * 2;
+  if (!state.freqLut || state.freqLut.H !== H || state.freqLut.sr !== src.sr) {
+    const { low, high } = buildFreqBinLut(H, fftSize, src.sr);
+    state.freqLut = { low, high, H, sr: src.sr };
   }
-  ctx.strokeStyle = "rgba(255,255,255,0.25)";
-  ctx.lineWidth   = 1;
-  ctx.strokeRect(barX, barTop, BAR_WIDTH, barH);
+  computeRowNorms(src.freqData, state.freqLut.low, state.freqLut.high, H, state.colNorms);
 
-  // Step 2: dB tick labels — normalized against the existing floor/ceiling
-  // constants (MIN_DB/MAX_DB) so the legend always matches them. Min/max
-  // are bolded and brightened so the range endpoints stand out clearly.
-  for (const dbValue of LEGEND_TICKS) {
-    const isEdge     = dbValue === MAX_DB || dbValue === MIN_DB;
-    const normalized = (dbValue - MIN_DB) / (MAX_DB - MIN_DB); // 0..1
-    const y = barTop + (1 - normalized) * barH; // flip: loud = top
+  // Paused or scrubbed with a loaded track: keep the history and overwrite a fixed strip at the right edge.
+  const shift = p.shouldScroll ? scrollHistory(offCtx, state, rollW, H) : Math.min(6, rollW);
 
-    ctx.strokeStyle = isEdge ? "rgba(255,255,255,0.7)" : "rgba(255,255,255,0.4)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(barX - 2, y);
-    ctx.lineTo(barX + BAR_WIDTH, y);
-    ctx.stroke();
+  const colImg = offCtx.createImageData(shift, H);
+  colImg.data.set(writeColumnPixels(state.colNorms, H, shift, SPECTRO_COLORMAP));
+  offCtx.putImageData(colImg, rollW - shift, 0);
 
-    ctx.fillStyle = isEdge ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.7)";
-    ctx.font = isEdge ? `bold ${11 * dpr}px monospace` : `${9.5 * dpr}px monospace`;
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    ctx.fillText(`${dbValue}`, barX + BAR_WIDTH + LEGEND_MARGIN, y);
+  const formant = estimateFormants(src.timeData, src.sr, state.prevFormant);
+  state.prevFormant = formant;
+  fillFormantTicks(offCtx as CanvasRenderingContext2D, formantTickYs(formant, H, src.sr), rollW - shift, shift);
+}
+
+function appendSilence(offCtx: Ctx2D, state: RenderState, rollW: number, H: number): void {
+  const shift = scrollHistory(offCtx, state, rollW, H);
+  offCtx.fillStyle = "#000000";
+  offCtx.fillRect(rollW - shift, 0, shift, H);
+}
+
+function captureColumns(offCtx: Ctx2D, state: RenderState, p: FrameParams): void {
+  const now = performance.now();
+  if (now - state.lastCapture < CAPTURE_INTERVAL_MS) return;
+  state.lastCapture = now;
+
+  const src = readFrameSource(state, p.trackActive);
+  if (p.active && src) appendFrame(offCtx, state, src, p);
+  else if (p.active) appendSilence(offCtx, state, p.rollW, p.H);
+}
+
+function drawWaterfall(ctx: CanvasRenderingContext2D, state: RenderState, p: FrameParams): boolean {
+  const offCtx = ensureOffscreen(state, p.rollW, p.H);
+  if (!offCtx) return false;
+  captureColumns(offCtx, state, p);
+
+  // Active: blend the offscreen at 72% over the previous frame (temporal smoothing). Idle: clear the roll area.
+  if (p.active) {
+    ctx.globalAlpha = 0.72;
+    ctx.drawImage(state.offscreen as CanvasImageSource, AXIS_W, 0);
+    ctx.globalAlpha = 1.0;
+  } else {
+    ctx.fillStyle = "#0f0f1e";
+    ctx.fillRect(AXIS_W, 0, p.rollW, p.H);
+  }
+  return true;
+}
+
+// Centred, drag-to-seek window over a precomputed track spectrogram; formants are estimated live at the playhead.
+function drawStatic(ctx: CanvasRenderingContext2D, state: RenderState, spec: TrackSpectrogram, p: FrameParams): void {
+  const engine = getEngine();
+  const engineSr = engine.getExerciseTrackSampleRate();
+  if (engineSr) state.sr = engineSr;
+
+  drawTrackSpectrogramWindow(ctx, spec, engine.getCurrentTime(), p.rollW, p.H);
+
+  const cx = AXIS_W + p.rollW / 2;
+  drawCenterPlayhead(ctx, cx, p.H, p.dpr);
+
+  const samples = engine.getExerciseTrackSamples(FFT_SIZE);
+  if (samples && engineSr) {
+    const formant = estimateFormants(samples, engineSr, state.prevFormant);
+    state.prevFormant = formant;
+    fillFormantTicks(ctx, formantTickYs(formant, p.H, engineSr), cx - 2 * p.dpr, 4 * p.dpr);
   }
 }
 
-// ─── component ───────────────────────────────────────────────────────────────
+function sizeCanvas(canvas: HTMLCanvasElement, state: RenderState): { dpr: number; W: number; H: number } {
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round((canvas.clientWidth || 600) * dpr);
+  const H = Math.round((canvas.clientHeight || 200) * dpr);
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
+    state.freqLut = null;
+    state.offscreen = null;
+  }
+  return { dpr, W, H };
+}
+
+function drawFrame(canvas: HTMLCanvasElement, state: RenderState, flags: Omit<FrameParams, "dpr" | "W" | "H" | "rollW">): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  const { dpr, W, H } = sizeCanvas(canvas, state);
+  const p: FrameParams = { ...flags, dpr, W, H, rollW: W - AXIS_W - LEGEND_WIDTH };
+
+  if (p.staticMode && p.trackSpectrogram) drawStatic(ctx, state, p.trackSpectrogram, p);
+  else if (!drawWaterfall(ctx, state, p)) return;
+
+  // Grid lines and axis always drawn at full opacity after composite
+  const sr = state.sr;
+  drawGridLines(ctx, W, H, maxFrequency(sr));
+  drawFreqAxis(ctx, H, sr, dpr);
+  drawDbLegend(ctx, W, H, dpr);
+  if (!p.active) drawIdleMessage(ctx, AXIS_W + p.rollW / 2, H / 2, dpr);
+}
 
 export default function SpectrogramPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
-  const offscreenRef = useRef<OffscreenCanvas | HTMLCanvasElement | null>(null);
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
   const isPlaying    = usePlayerStore((s) => s.isPlaying);
@@ -198,16 +253,9 @@ export default function SpectrogramPanel() {
   const staticMode   = trackActive && trackSpectrogram !== null;
   const shouldScroll = isRecording || isMonitoring || (trackActive && !staticMode && isPlaying);
 
-  const lastCapture = useRef(0);
-  const shiftAccum  = useRef(0);
-  const fftScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
-  const timeScratch = useRef<Float32Array<ArrayBuffer> | null>(null);
-  const colNorms    = useRef<Float32Array | null>(null);
-  const freqLut     = useRef<{ low: Uint16Array; high: Uint16Array; H: number; sr: number } | null>(null);
-  const drawRef     = useRef<() => void>(() => {});
-  const prevFormant = useRef<FormantEstimate>({ f1: null, f2: null, f3: null });
-  const srRef       = useRef(48000);
-  const rollDrag    = useRef<{ active: boolean; startX: number; startTime: number }>({
+  const stateRef = useRef<RenderState>(newRenderState());
+  const drawRef  = useRef<() => void>(() => {});
+  const rollDrag = useRef<{ active: boolean; startX: number; startTime: number }>({
     active: false,
     startX: 0,
     startTime: 0,
@@ -241,288 +289,13 @@ export default function SpectrogramPanel() {
     drawRef.current = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const dpr  = window.devicePixelRatio || 1;
-      const cssW = canvas.clientWidth  || 600;
-      const cssH = canvas.clientHeight || 200;
-      const W    = Math.round(cssW * dpr);
-      const H    = Math.round(cssH * dpr);
-      const rollW = W - AXIS_W - LEGEND_WIDTH;
-
-      // Resize main canvas and invalidate offscreen if dimensions changed
-      if (canvas.width !== W || canvas.height !== H) {
-        canvas.width     = W;
-        canvas.height    = H;
-        freqLut.current  = null;
-        offscreenRef.current = null;
-      }
-
-      const active = isRecording || isMonitoring || trackActive;
-
-      if (staticMode && trackSpectrogram) {
-        // ── centered, drag-to-seek window over a precomputed track
-        // spectrogram (exerciseSpectrogram.ts) — mirrors PianoRoll's
-        // centered pitch ribbon instead of the live scrolling waterfall,
-        // since the whole track's spectrum is already known up front. ──────
-        const engineSr = getEngine().getExerciseTrackSampleRate();
-        if (engineSr) srRef.current = engineSr;
-
-        ctx.fillStyle = "#0f0f1e";
-        ctx.fillRect(AXIS_W, 0, rollW, H);
-
-        const currentTime = getEngine().getCurrentTime();
-        const t0 = currentTime - WINDOW_S / 2;
-        const t1 = currentTime + WINDOW_S / 2;
-        const { hopTime, cols, rows } = trackSpectrogram;
-        const pxPerSec = rollW / WINDOW_S;
-
-        const colF0 = t0 / hopTime;
-        const colF1 = t1 / hopTime;
-        const srcColStart = Math.max(0, colF0);
-        const srcColEnd   = Math.min(cols, colF1);
-        if (srcColEnd > srcColStart) {
-          const destX = AXIS_W + (srcColStart - colF0) * hopTime * pxPerSec;
-          const destW = (srcColEnd - srcColStart) * hopTime * pxPerSec;
-          ctx.drawImage(
-            trackSpectrogram.canvas,
-            srcColStart, 0, srcColEnd - srcColStart, rows,
-            destX, 0, destW, H,
-          );
-        }
-
-        // Center playhead — same visual language as PianoRoll's dashed center line.
-        const cx = AXIS_W + rollW / 2;
-        ctx.save();
-        ctx.strokeStyle = "rgba(255, 200, 60, 0.85)";
-        ctx.lineWidth   = 1.5 * dpr;
-        ctx.setLineDash([4 * dpr, 3 * dpr]);
-        ctx.beginPath();
-        ctx.moveTo(cx, 0);
-        ctx.lineTo(cx, H);
-        ctx.stroke();
-        ctx.restore();
-
-        // Formant markers at the playhead — estimated live from the current
-        // position's samples rather than precomputed per-column (formant
-        // tracking needs frame-to-frame continuity, not a one-off pass).
-        const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
-        if (samples && engineSr) {
-          const formant = estimateFormants(samples, engineSr, prevFormant.current);
-          prevFormant.current = formant;
-          const fMaxTick = Math.min(F_MAX, engineSr / 2);
-          ctx.fillStyle = "#e8fbff";
-          for (const f of [formant.f1, formant.f2, formant.f3]) {
-            if (f === null) continue;
-            const y = freqToY(f, H, fMaxTick);
-            if (y < 0 || y > H) continue;
-            ctx.fillRect(cx - 2 * dpr, Math.max(0, y - 1), 4 * dpr, 2);
-          }
-        }
-      } else {
-        // ── live scrolling waterfall — mic monitoring/recording, or a
-        // loaded track whose spectrogram hasn't finished precomputing yet ──
-
-        // Lazily create offscreen — sized to roll area only (rollW × H)
-        if (
-          !offscreenRef.current ||
-          offscreenRef.current.width  !== rollW ||
-          offscreenRef.current.height !== H
-        ) {
-          try {
-            offscreenRef.current = new OffscreenCanvas(rollW, H);
-          } catch {
-            const fb = document.createElement("canvas");
-            fb.width  = rollW;
-            fb.height = H;
-            offscreenRef.current = fb;
-          }
-          const oc = offscreenRef.current;
-          const ic = oc instanceof OffscreenCanvas
-            ? oc.getContext("2d")
-            : (oc as HTMLCanvasElement).getContext("2d");
-          if (ic) { ic.fillStyle = "#000"; ic.fillRect(0, 0, rollW, H); }
-        }
-
-        const offscreen = offscreenRef.current;
-        const offCtx = offscreen instanceof OffscreenCanvas
-          ? offscreen.getContext("2d")
-          : (offscreen as HTMLCanvasElement).getContext("2d");
-        if (!offCtx) return;
-
-        // ── capture + scroll (~30 fps) ────────────────────────────────────
-        const now = performance.now();
-        if (now - lastCapture.current >= 33) {
-          lastCapture.current = now;
-
-          // Resolve this frame's data source: a loaded track snapshots its
-          // decoded buffer at the current playhead (works paused or playing);
-          // otherwise fall back to the live mic AnalyserNode.
-          let sr: number | null = null;
-          let freqData: Float32Array | null = null;
-          let timeData: Float32Array | null = null;
-
-          if (trackActive) {
-            const engineSr = getEngine().getExerciseTrackSampleRate();
-            const samples = getEngine().getExerciseTrackSamples(FFT_SIZE);
-            if (engineSr && samples) {
-              sr = engineSr;
-              timeData = samples;
-              freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
-            }
-          } else {
-            const analyser = getMicAnalyser();
-            if (analyser) {
-              const binCount = analyser.frequencyBinCount;
-              if (!fftScratch.current || fftScratch.current.length !== binCount) {
-                fftScratch.current = new Float32Array(binCount);
-              }
-              if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
-                timeScratch.current = new Float32Array(analyser.fftSize);
-              }
-              analyser.getFloatFrequencyData(fftScratch.current);
-              analyser.getFloatTimeDomainData(timeScratch.current);
-              sr = analyser.context.sampleRate;
-              freqData = fftScratch.current;
-              timeData = timeScratch.current;
-            }
-          }
-
-          if (active && sr !== null && freqData !== null) {
-            srRef.current = sr;
-            if (!colNorms.current || colNorms.current.length !== H) {
-              colNorms.current = new Float32Array(H);
-            }
-
-            const data    = freqData;
-            const binCount = data.length;
-            const fftSize = binCount * 2;
-
-            if (!freqLut.current || freqLut.current.H !== H || freqLut.current.sr !== sr) {
-              const { low, high } = buildFreqBinLut(H, fftSize, sr);
-              freqLut.current = { low, high, H, sr };
-            }
-
-            const lutLow  = freqLut.current.low;
-            const lutHigh = freqLut.current.high;
-            const norms   = colNorms.current;
-            const colLut  = SPECTRO_COLORMAP;
-
-            // Pass 1: dB → normalised magnitude for each canvas row
-            for (let py = 0; py < H; py++) {
-              // max-in-range bin mapping — fills gaps on log scale
-              let maxDb = -Infinity;
-              for (let b = lutLow[py]; b <= lutHigh[py]; b++) {
-                if (data[b] > maxDb) maxDb = data[b];
-              }
-              norms[py] = dbToCurvedNorm(maxDb);
-            }
-
-            // Scrolling (shifting existing history left + appending new columns)
-            // only makes sense while audio is actually advancing. Paused/scrubbed
-            // with a loaded track: leave prior history in place and just
-            // overwrite a fixed-width strip at the right edge with the current
-            // frame's snapshot, so scrubbing updates the view without an
-            // otherwise-empty waterfall endlessly "scrolling" a frozen value.
-            let shift: number;
-            if (shouldScroll) {
-              shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
-              shift = Math.max(1, Math.floor(shiftAccum.current));
-              shiftAccum.current -= shift;
-              const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
-              offCtx.putImageData(shifted, 0, 0);
-            } else {
-              shift = Math.min(6, rollW);
-            }
-
-            // Pass 2: write `shift` new columns at right (no vertical blur —
-            // relies on temporal blending only)
-            const colImg = offCtx.createImageData(shift, H);
-            const cd     = colImg.data;
-            for (let py = 0; py < H; py++) {
-              const curr    = norms[py];
-              const ci      = Math.min(255, Math.floor(curr * 255));
-              for (let s = 0; s < shift; s++) {
-                const base    = (py * shift + s) * 4;
-                cd[base]      = colLut[ci * 3];
-                cd[base + 1]  = colLut[ci * 3 + 1];
-                cd[base + 2]  = colLut[ci * 3 + 2];
-                cd[base + 3]  = 255;
-              }
-            }
-            offCtx.putImageData(colImg, rollW - shift, 0);
-
-            // ── formant ticks — F1/F2/F3, drawn into the same new column so
-            // they scroll with the spectrogram history and leave a trail ──
-            if (timeData) {
-              const formant = estimateFormants(timeData, sr, prevFormant.current);
-              prevFormant.current = formant;
-
-              const fMaxTick = Math.min(F_MAX, sr / 2);
-              offCtx.fillStyle = "#e8fbff";
-              for (const f of [formant.f1, formant.f2, formant.f3]) {
-                if (f === null) continue;
-                const y = freqToY(f, H, fMaxTick);
-                if (y < 0 || y > H) continue;
-                offCtx.fillRect(rollW - shift, Math.max(0, y - 1), shift, 2);
-              }
-            }
-
-          } else if (active) {
-            // Active but analyser not ready yet — silence columns
-            shiftAccum.current += rollW * 33 / (WINDOW_S * 1000);
-            const shift = Math.max(1, Math.floor(shiftAccum.current));
-            shiftAccum.current -= shift;
-            const shifted = offCtx.getImageData(shift, 0, rollW - shift, H);
-            offCtx.putImageData(shifted, 0, 0);
-            offCtx.fillStyle = "#000000";
-            offCtx.fillRect(rollW - shift, 0, shift, H);
-          }
-          // Not active: no shift — canvas freezes at last frame
-        }
-
-        // ── composite to main canvas ──────────────────────────────────────
-        // Active: blend offscreen at 72% over previous frame (temporal smoothing).
-        // Idle: clear roll area so stale spectrogram doesn't linger.
-        if (active) {
-          ctx.globalAlpha = 0.72;
-          ctx.drawImage(offscreen, AXIS_W, 0);
-          ctx.globalAlpha = 1.0;
-        } else {
-          ctx.fillStyle = "#0f0f1e";
-          ctx.fillRect(AXIS_W, 0, rollW, H);
-        }
-      }
-
-      // Grid lines and axis always drawn at full opacity after composite
-      const sr        = srRef.current;
-      const nyquist   = sr / 2;
-      const fMax      = Math.min(F_MAX, nyquist);
-      ctx.save();
-      ctx.strokeStyle = "rgba(255,255,255,0.07)";
-      ctx.lineWidth   = 0.5;
-      for (const f of [100, 500, 1000, 5000, 10000]) {
-        if (f > fMax) continue;
-        const y = freqToY(f, H, fMax);
-        if (y < 0 || y > H) continue;
-        ctx.beginPath();
-        ctx.moveTo(AXIS_W, y);
-        ctx.lineTo(W - LEGEND_WIDTH, y);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      drawFreqAxis(ctx, H, sr, dpr);
-      drawDbLegend(ctx, W, H, dpr);
-
-      if (!active) {
-        ctx.fillStyle    = "#a0a0b040";
-        ctx.font         = `${11 * dpr}px sans-serif`;
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, H / 2);
-      }
+      drawFrame(canvas, stateRef.current, {
+        active: isRecording || isMonitoring || trackActive,
+        trackActive,
+        shouldScroll,
+        staticMode,
+        trackSpectrogram,
+      });
     };
   }, [isRecording, isMonitoring, trackActive, shouldScroll, staticMode, trackSpectrogram]);
 
@@ -559,11 +332,9 @@ export default function SpectrogramPanel() {
     if (!rollDrag.current.active) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const rollW = canvas.clientWidth - AXIS_W - LEGEND_WIDTH;
-    if (rollW <= 0) return;
     const { startX, startTime } = rollDrag.current;
-    const deltaT = -((e.nativeEvent.offsetX - startX) / rollW) * WINDOW_S;
-    seek(Math.max(0, Math.min(duration, startTime + deltaT)));
+    const t = windowDragTime(startTime, startX, e.nativeEvent.offsetX, canvas.clientWidth - AXIS_W - LEGEND_WIDTH, WINDOW_S, duration);
+    if (t !== null) seek(t);
   };
 
   const onCanvasMouseUp = () => { rollDrag.current.active = false; };

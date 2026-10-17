@@ -1,49 +1,131 @@
 import { useRef, useEffect } from "react";
 import { getMicAnalyser, getEngine, usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
-import { SPECTRO_COLORMAP, freqToX as freqToXShared, smoothSpectrumEnvelope, analyserCurvePoints, SPECTRUM_MIN_DB, SPECTRUM_MAX_DB, SPECTRUM_BOTTOM_AXIS_H } from "../../lib/spectroUtils";
-import { AXIS_W, LEGEND_WIDTH, F_MIN, F_MAX } from "./SpectrogramPanel";
+import { AXIS_W, LEGEND_WIDTH, F_MAX } from "../../lib/spectrogramMath";
+import { drawIdleMessage } from "../../lib/spectrogramDraw";
+import {
+  BOTTOM_AXIS_H,
+  buildSpectrumPoints,
+  drawCurveFill,
+  drawCurveSegments,
+  drawDbGrid,
+  drawDecadeGrid,
+  drawEnvelope,
+  drawLiveOverlay,
+  drawVoiceMarkers,
+  envelopeWithY,
+  voiceMarkers,
+} from "../../lib/spectroShortTerm";
 import { computeMagnitudeSpectrumDb } from "../../lib/fft";
 import { estimateVoice, type VoiceEstimate } from "../../lib/formants";
-import { frequencyToNoteName, referenceF0 } from "../../audio/analysisUtils";
+import { referenceF0 } from "../../audio/analysisUtils";
 import { useAnalysisStore } from "../../stores/analysis";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
 const FFT_SIZE = 8192;
 
-// ─── constants ───────────────────────────────────────────────────────────────
-
-const MIN_DB = SPECTRUM_MIN_DB;
-const MAX_DB = SPECTRUM_MAX_DB;
-
-const BOTTOM_AXIS_H = SPECTRUM_BOTTOM_AXIS_H;
-const DB_TICK_STEP   = 10;
-const FREQ_DECADES    = [100, 1000, 10000];
-
-// One color per formant slot (F1/F2/F3) so overlapping lines stay distinguishable.
-const FORMANT_COLORS = ["#ffcf5c", "#5cffe0", "#ff5ca8"];
-// The fundamental is drawn solid, in a colour none of the formant slots use.
-const F0_COLOR = "#b48cff";
-
-// ─── frequency axis (shared log math, inverted for horizontal placement) ─────
-
-function freqToX(f: number, rollW: number, fMax: number): number {
-  return freqToXShared(f, rollW, F_MIN, fMax);
+interface Source {
+  sr: number;
+  freqData: Float32Array;
+  timeData: Float32Array;
 }
 
-function formatHz(f: number): string {
-  return f >= 1000 ? `${f / 1000}k` : `${f}`;
+interface PanelState {
+  prevFormant: VoiceEstimate;
+  timeScratch: Float32Array<ArrayBuffer> | null;
 }
 
-
-function buildSpectrumPoints(data: Float32Array, sr: number, rollW: number, fMax: number, plotH: number) {
-  const points = analyserCurvePoints(data, sr, rollW, F_MIN, fMax, AXIS_W);
-  points.forEach((p) => { p.y = plotH * (1 - p.normalized); });
-  return points;
+interface FrameFlags {
+  trackActive: boolean;
+  isMonitoring: boolean;
+  anyInput: boolean;
 }
 
-const LIVE_OVERLAY_COLOR = "255,140,30";
+interface Geometry {
+  dpr: number;
+  W: number;
+  H: number;
+  rollW: number;
+  plotH: number;
+  fMax: number;
+}
+
+function readSource(state: PanelState, trackActive: boolean): Source | null {
+  if (trackActive) {
+    const engineSr = getEngine().getExerciseTrackSampleRate();
+    const samples = getEngine().getExerciseTrackSamples(FFT_SIZE, true);
+    if (!engineSr || !samples) return null;
+    return { sr: engineSr, timeData: samples, freqData: computeMagnitudeSpectrumDb(samples, FFT_SIZE) };
+  }
+  const analyser = getMicAnalyser();
+  if (!analyser) return null;
+  const data = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(data);
+  if (!state.timeScratch || state.timeScratch.length !== analyser.fftSize) {
+    state.timeScratch = new Float32Array(analyser.fftSize);
+  }
+  analyser.getFloatTimeDomainData(state.timeScratch);
+  return { sr: analyser.context.sampleRate, freqData: data, timeData: state.timeScratch };
+}
+
+// F0 and the formants all come from the same window, so F0 is the pitch whose harmonics the curve shows.
+function drawVoice(ctx: CanvasRenderingContext2D, state: PanelState, src: Source, trackActive: boolean, geo: Geometry): void {
+  const voice = estimateVoice(src.timeData, src.sr, state.prevFormant);
+  state.prevFormant = voice;
+  // A loaded track has its stored SRH pitch (the piano roll's line); the live mic has only the estimate.
+  const f0 = trackActive
+    ? referenceF0(useAnalysisStore.getState().takePitch, getEngine().getCurrentTime(), voice.f0)
+    : voice.f0;
+  drawVoiceMarkers(ctx, voiceMarkers(f0, voice, geo.fMax, geo.rollW), geo.plotH, geo.dpr);
+}
+
+// Second input: the live mic overlaid on the loaded track's spectrum.
+function drawMicOverlay(ctx: CanvasRenderingContext2D, geo: Geometry): void {
+  const analyser = getMicAnalyser();
+  if (!analyser) return;
+  const liveData = new Float32Array(analyser.frequencyBinCount);
+  analyser.getFloatFrequencyData(liveData);
+  const livePoints = buildSpectrumPoints(liveData, analyser.context.sampleRate, geo.rollW, geo.fMax, geo.plotH);
+  drawLiveOverlay(ctx, envelopeWithY(livePoints, geo.plotH), geo.W, geo.plotH, geo.dpr);
+}
+
+function drawFrame(canvas: HTMLCanvasElement, state: PanelState, flags: FrameFlags): void {
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.round((canvas.clientWidth || 600) * dpr);
+  const H = Math.round((canvas.clientHeight || 200) * dpr);
+  if (canvas.width !== W || canvas.height !== H) {
+    canvas.width = W;
+    canvas.height = H;
+  }
+  const rollW = W - AXIS_W - LEGEND_WIDTH;
+  const plotH = H - BOTTOM_AXIS_H * dpr;
+
+  const src = readSource(state, flags.trackActive);
+  const fMax = Math.min(F_MAX, (src?.sr ?? 48000) / 2);
+  const geo: Geometry = { dpr, W, H, rollW, plotH, fMax };
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = "#0f0f1e";
+  ctx.fillRect(0, 0, W, H);
+  drawDbGrid(ctx, W, plotH, dpr);
+  drawDecadeGrid(ctx, rollW, plotH, fMax, dpr);
+
+  if (!flags.anyInput || !src) {
+    drawIdleMessage(ctx, AXIS_W + rollW / 2, plotH / 2, dpr);
+    return;
+  }
+
+  const points = buildSpectrumPoints(src.freqData, src.sr, rollW, fMax, plotH);
+  drawCurveSegments(ctx, points, dpr);
+  drawCurveFill(ctx, points, plotH);
+  drawEnvelope(ctx, points, plotH, dpr);
+  drawVoice(ctx, state, src, flags.trackActive, geo);
+  if (flags.trackActive && flags.isMonitoring) drawMicOverlay(ctx, geo);
+}
 
 export default function ShortTermSpectrumPanel() {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
@@ -55,8 +137,7 @@ export default function ShortTermSpectrumPanel() {
   const trackActive  = loadedTrackId !== null;
   const drawRef      = useRef<() => void>(() => {});
   const loggedRef    = useRef(false);
-  const prevFormant  = useRef<VoiceEstimate>({ f0: null, f1: null, f2: null, f3: null });
-  const timeScratch  = useRef<Float32Array<ArrayBuffer> | null>(null);
+  const stateRef     = useRef<PanelState>({ prevFormant: { f0: null, f1: null, f2: null, f3: null }, timeScratch: null });
 
   useEffect(() => {
     if (!loggedRef.current) {
@@ -73,245 +154,11 @@ export default function ShortTermSpectrumPanel() {
     drawRef.current = () => {
       const canvas = canvasRef.current;
       if (!canvas) return;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return;
-
-      const dpr  = window.devicePixelRatio || 1;
-      const cssW = canvas.clientWidth  || 600;
-      const cssH = canvas.clientHeight || 200;
-      const W    = Math.round(cssW * dpr);
-      const H    = Math.round(cssH * dpr);
-      if (canvas.width !== W || canvas.height !== H) {
-        canvas.width  = W;
-        canvas.height = H;
-      }
-
-      const rollW  = W - AXIS_W - LEGEND_WIDTH;
-      const bottomH = BOTTOM_AXIS_H * dpr;
-      const plotH  = H - bottomH;
-
-      let sr: number | null = null;
-      let freqData: Float32Array | null = null;
-      let timeData: Float32Array | null = null;
-      if (trackActive) {
-        const engineSr = getEngine().getExerciseTrackSampleRate();
-        const samples = getEngine().getExerciseTrackSamples(FFT_SIZE, true);
-        if (engineSr && samples) {
-          sr = engineSr;
-          timeData = samples;
-          freqData = computeMagnitudeSpectrumDb(samples, FFT_SIZE);
-        }
-      } else {
-        const analyser = getMicAnalyser();
-        if (analyser) {
-          const binCount = analyser.frequencyBinCount;
-          const data = new Float32Array(binCount);
-          analyser.getFloatFrequencyData(data);
-          if (!timeScratch.current || timeScratch.current.length !== analyser.fftSize) {
-            timeScratch.current = new Float32Array(analyser.fftSize);
-          }
-          analyser.getFloatTimeDomainData(timeScratch.current);
-          sr = analyser.context.sampleRate;
-          freqData = data;
-          timeData = timeScratch.current;
-        }
-      }
-
-      const active    = (isRecording || isMonitoring || trackActive) && sr !== null && freqData !== null;
-      const nyquist   = (sr ?? 48000) / 2;
-      const fMax      = Math.min(F_MAX, nyquist);
-
-      // 1. full clear (no trail)
-      ctx.clearRect(0, 0, W, H);
-      ctx.fillStyle = "#0f0f1e";
-      ctx.fillRect(0, 0, W, H);
-
-      // ── dB grid + left labels ───────────────────────────────────────────
-      ctx.font         = `${11 * dpr}px monospace`;
-      ctx.textBaseline = "middle";
-      const dbTicks: number[] = [MIN_DB];
-      for (let db = Math.ceil(MIN_DB / DB_TICK_STEP) * DB_TICK_STEP; db < MAX_DB; db += DB_TICK_STEP) {
-        dbTicks.push(db);
-      }
-      dbTicks.push(MAX_DB);
-      for (const db of dbTicks) {
-        const isEdge     = db === MIN_DB || db === MAX_DB;
-        const normalized = (db - MIN_DB) / (MAX_DB - MIN_DB);
-        const y = plotH * (1 - normalized);
-
-        ctx.strokeStyle = isEdge ? "rgba(255,255,255,0.25)" : "rgba(255,255,255,0.08)";
-        ctx.lineWidth   = 1;
-        ctx.beginPath();
-        ctx.moveTo(AXIS_W, y);
-        ctx.lineTo(W - LEGEND_WIDTH, y);
-        ctx.stroke();
-
-        ctx.fillStyle = isEdge ? "rgba(255,255,255,0.9)" : "rgba(255,255,255,0.6)";
-        ctx.textAlign = "right";
-        ctx.fillText(`${db}`, AXIS_W - 6, Math.max(6 * dpr, Math.min(plotH - 6 * dpr, y)));
-      }
-
-      // ── decade grid + bottom Hz labels ──────────────────────────────────
-      ctx.textAlign    = "center";
-      ctx.textBaseline = "top";
-      for (const f of FREQ_DECADES) {
-        if (f > fMax) continue;
-        const x = AXIS_W + freqToX(f, rollW, fMax);
-        ctx.strokeStyle = "rgba(255,255,255,0.08)";
-        ctx.lineWidth   = 1;
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, plotH);
-        ctx.stroke();
-
-        ctx.fillStyle = "rgba(255,255,255,0.6)";
-        ctx.fillText(formatHz(f), x, plotH + 3 * dpr);
-      }
-
-      if (!active) {
-        ctx.fillStyle    = "#a0a0b040";
-        ctx.font         = `${11 * dpr}px sans-serif`;
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText("Enable Monitor or Record to see spectrum", AXIS_W + rollW / 2, plotH / 2);
-        return;
-      }
-
-      // ── per-frame snapshot: same source feeding the spectrogram ──────────
-      const points = buildSpectrumPoints(freqData!, sr!, rollW, fMax, plotH);
-
-      // 3. stroke as individually colored segments
-      for (let i = 1; i < points.length; i++) {
-        const idx = Math.floor(points[i].normalized * 255);
-        const R = SPECTRO_COLORMAP[idx * 3];
-        const G = SPECTRO_COLORMAP[idx * 3 + 1];
-        const B = SPECTRO_COLORMAP[idx * 3 + 2];
-        ctx.strokeStyle = `rgb(${R},${G},${B})`;
-        ctx.lineWidth   = 1.5 * dpr;
-        ctx.beginPath();
-        ctx.moveTo(points[i - 1].x, points[i - 1].y);
-        ctx.lineTo(points[i].x, points[i].y);
-        ctx.stroke();
-      }
-
-      // 4. area fill under curve, thermal gradient, reduced opacity
-      if (points.length > 1) {
-        const gradient = ctx.createLinearGradient(0, 0, 0, plotH);
-        for (let s = 0; s <= 10; s++) {
-          const t = s / 10;
-          const idx = Math.floor(t * 255);
-          const R = SPECTRO_COLORMAP[idx * 3];
-          const G = SPECTRO_COLORMAP[idx * 3 + 1];
-          const B = SPECTRO_COLORMAP[idx * 3 + 2];
-          gradient.addColorStop(1 - t, `rgba(${R},${G},${B},${t})`);
-        }
-
-        ctx.save();
-        ctx.globalAlpha = 0.35;
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.moveTo(points[0].x, plotH);
-        for (const p of points) ctx.lineTo(p.x, p.y);
-        ctx.lineTo(points[points.length - 1].x, plotH);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // ── smoothed spectral envelope overlay, drawn on top of the comb ────
-      if (points.length > 1) {
-        const envelopePoints = smoothSpectrumEnvelope(points);
-        envelopePoints.forEach((p) => { p.y = plotH * (1 - p.normalized); });
-
-        ctx.beginPath();
-        ctx.moveTo(envelopePoints[0].x, envelopePoints[0].y);
-        for (let i = 1; i < envelopePoints.length; i++) {
-          ctx.lineTo(envelopePoints[i].x, envelopePoints[i].y);
-        }
-        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = 2 * dpr;
-        ctx.setLineDash([]);
-        ctx.stroke();
-      }
-
-      // ── fundamental + formant markers: a solid line for F0 and a dashed one
-      // per detected formant (F1/F2/F3), each with its Hz label. All come from
-      // the same window, so F0 is the pitch whose harmonics the curve shows ──
-      if (timeData) {
-        const voice = estimateVoice(timeData, sr!, prevFormant.current);
-        prevFormant.current = voice;
-        // A loaded track has its stored SRH pitch (the piano roll's line); the live mic has only the estimate.
-        const f0 = trackActive
-          ? referenceF0(useAnalysisStore.getState().takePitch, getEngine().getCurrentTime(), voice.f0)
-          : voice.f0;
-
-        ctx.font         = `${11 * dpr}px monospace`;
-        ctx.textAlign    = "center";
-        ctx.textBaseline = "bottom";
-        [f0, voice.f1, voice.f2, voice.f3].forEach((f, slot) => {
-          if (f === null || f > fMax) return;
-          const isF0 = slot === 0;
-          const x = AXIS_W + freqToX(f, rollW, fMax);
-          const color = isF0 ? F0_COLOR : FORMANT_COLORS[slot - 1];
-
-          ctx.strokeStyle = color;
-          ctx.lineWidth   = 1.5 * dpr;
-          ctx.setLineDash(isF0 ? [] : [4 * dpr, 3 * dpr]);
-          ctx.beginPath();
-          ctx.moveTo(x, 0);
-          ctx.lineTo(x, plotH);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          const label = isF0
-            ? `F0 ${Math.round(f)}Hz ${frequencyToNoteName(f).name}`
-            : `F${slot} ${Math.round(f)}Hz`;
-          const labelY = plotH - 3 * dpr - slot * 12 * dpr;
-          ctx.lineJoin    = "round";
-          ctx.lineWidth   = 3 * dpr;
-          ctx.strokeStyle = "rgba(15, 15, 30, 0.9)";
-          ctx.strokeText(label, x, labelY);
-          ctx.fillStyle = color;
-          ctx.fillText(label, x, labelY);
-        });
-      }
-
-      // ── second input: live mic overlaid on the loaded track's spectrum ───
-      if (trackActive && isMonitoring) {
-        const analyser = getMicAnalyser();
-        if (analyser) {
-          const liveData = new Float32Array(analyser.frequencyBinCount);
-          analyser.getFloatFrequencyData(liveData);
-          const livePoints = buildSpectrumPoints(liveData, analyser.context.sampleRate, rollW, fMax, plotH);
-          const liveEnvelope = smoothSpectrumEnvelope(livePoints);
-          liveEnvelope.forEach((p) => { p.y = plotH * (1 - p.normalized); });
-
-          ctx.save();
-          ctx.fillStyle = `rgba(${LIVE_OVERLAY_COLOR},0.18)`;
-          ctx.beginPath();
-          ctx.moveTo(liveEnvelope[0].x, plotH);
-          for (const p of liveEnvelope) ctx.lineTo(p.x, p.y);
-          ctx.lineTo(liveEnvelope[liveEnvelope.length - 1].x, plotH);
-          ctx.closePath();
-          ctx.fill();
-
-          ctx.strokeStyle = `rgba(${LIVE_OVERLAY_COLOR},0.95)`;
-          ctx.lineWidth = 2 * dpr;
-          ctx.beginPath();
-          ctx.moveTo(liveEnvelope[0].x, liveEnvelope[0].y);
-          for (let i = 1; i < liveEnvelope.length; i++) ctx.lineTo(liveEnvelope[i].x, liveEnvelope[i].y);
-          ctx.stroke();
-
-          ctx.font         = `${11 * dpr}px sans-serif`;
-          ctx.textAlign    = "right";
-          ctx.textBaseline = "top";
-          ctx.fillStyle    = `rgba(${LIVE_OVERLAY_COLOR},0.95)`;
-          ctx.fillText("● mic", W - LEGEND_WIDTH - 6 * dpr, 4 * dpr);
-          ctx.fillStyle    = "rgba(255,255,255,0.85)";
-          ctx.fillText("○ track", W - LEGEND_WIDTH - 6 * dpr, 4 * dpr + 13 * dpr);
-          ctx.restore();
-        }
-      }
+      drawFrame(canvas, stateRef.current, {
+        trackActive,
+        isMonitoring,
+        anyInput: isRecording || isMonitoring || trackActive,
+      });
     };
   }, [isRecording, isMonitoring, trackActive]);
 

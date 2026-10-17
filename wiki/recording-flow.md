@@ -1,6 +1,6 @@
 # Recording Flow
 
-**Key files:** `@giamat90/mps-core/recorder` · `src/stores/player.ts`
+**Key files:** `@giamat90/mps-core/recorder` · `src/stores/player/recording.ts` · `src/stores/player/recordingFlow.ts`
 
 ## Overview
 
@@ -195,7 +195,7 @@ The detector is `detectClapLatency` in `src/lib/clapLatency.ts` (plain samples, 
 
 ### Calibration entry schema
 
-Each `recordingOffsets` entry is a `CalibrationEntry` (`player.ts`), still keyed by input `deviceId` and persisted to `localStorage`:
+Each `recordingOffsets` entry is a `CalibrationEntry` (`stores/player/types.ts`), still keyed by input `deviceId` and persisted to `localStorage`:
 
 ```ts
 interface CalibrationEntry {
@@ -298,7 +298,7 @@ When the instrumental finishes (`"finish"` event), the engine fires the `_finish
 
 ## Free Exercise Recording (song-less)
 
-`ExercisePage.tsx`'s Record button uses a **separate, parallel pair of store actions** — `startExerciseRecording`/`stopExerciseRecording` in `player.ts` — not `startRecording`/`stopRecording` above. There's no song, so none of the vocals/instrumental/take trio or punch-region logic applies; the engine's `_exerciseMode`/`_exerciseOffset` timer (`startExerciseTimer`/`stopExerciseTimer`, `src/audio/engine.ts`) stands in for the instrumental as the elapsed-time clock (see `getCurrentTime()`'s `_exerciseMode` branch).
+`ExercisePage.tsx`'s Record button uses a **separate, parallel pair of store actions** — `startExerciseRecording`/`stopExerciseRecording` in `stores/player/exercise.ts` — not `startRecording`/`stopRecording` above. There's no song, so none of the vocals/instrumental/take trio or punch-region logic applies; the engine's `_exerciseMode`/`_exerciseOffset` timer (`startExerciseTimer`/`stopExerciseTimer`, `src/audio/engine.ts`) stands in for the instrumental as the elapsed-time clock (see `getCurrentTime()`'s `_exerciseMode` branch).
 
 ### startExerciseRecording sequence
 

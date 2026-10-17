@@ -11,7 +11,7 @@
 
 import { computeMagnitudeSpectrumDb } from "./fft";
 import { SPECTRO_COLORMAP } from "./spectroUtils";
-import { buildFreqBinLut, dbToCurvedNorm } from "../components/analysis/SpectrogramPanel";
+import { buildFreqBinLut, dbToCurvedNorm } from "./spectrogramMath";
 
 const FFT_SIZE = 8192;
 const HOP_SIZE = 4096; // 50% overlap — ~93ms/column at 44.1kHz, smooth enough to scrub

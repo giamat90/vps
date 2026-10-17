@@ -24,7 +24,7 @@ repository's `wiki/`; this page records how VPS uses it.
 - **`sidecar/requirements.txt` and `requirements-test.txt`**: `git+https://github.com/giamat90/mps-core.git@vX.Y.Z#subdirectory=python`. Keep the two tags equal to each other and to `package.json`.
 - **`vitest.config.ts`**: `server.deps.inline: [/@giamat90\/mps-core/]` (the package ships TypeScript source).
 - **`sidecar/main.py`**: `APP = AppIdentity(name="VPS-VocalPracticeStudio", url="https://github.com/giamat90/vps", data_dir="~/.vps", env_prefix="VPS")`, passed as `app=APP` to `check_yt_dlp_freshness`, `align_lyrics`, `find_lyrics`. This is why the models directory, the yt-dlp cache and `VPS_LYRICS_ENGINE` are where they always were.
-- **`tests/contract/ipcContract.test.ts`**: reads `node_modules/@giamat90/mps-core/src/lyrics/ipc.ts` next to `src/lib/tauri.ts`, so the package's wrappers are checked against this app's Rust handlers.
+- **`tests/contract/ipcContract.test.ts`**: reads `node_modules/@giamat90/mps-core/src/lyrics/ipc.ts` next to `src/lib/ipc.generated.ts`, so the package's wrappers are checked against this app's Rust handlers.
 - **`sidecar/tests/test_yt_dlp_floor.py`**: the requirement files must carry the floor `mps_core.version_check.MIN_YT_DLP_VERSION`.
 
 ## Working with it
@@ -40,6 +40,9 @@ repository's `wiki/`; this page records how VPS uses it.
 ## What stayed behind, and why
 
 `KeyTranspose`, `OutputSelector`, `MicSelector`, `YouTubeCookiesControl` are
-identical in both apps but read app stores and app CSS; `sidecar.rs`,
-`test_util.rs` and `lyrics.rs` are largely shared but tied to each app's `Song`
-model. The shared repository's `wiki/architecture.md` lists each with the reason.
+identical in both apps but read app stores and app CSS; `test_util.rs` and
+`lyrics.rs` are largely shared but tied to each app's `Song` model.
+
+## Rust crates and `punch` (2026-10-17, not yet tagged)
+
+`sidecar.rs` and `windows.rs` are thin wrappers over mps-core's `mps-sidecar` (the process manager and the JSON-lines protocol; this app supplies its binary name) and `mps-detached-windows` (allowlist, remembered position, docking; this app supplies its `PanelSpec` table and data directory and keeps the `#[tauri::command]` wrappers). `TimeRuler` takes the punch-region drag rules from `@giamat90/mps-core/punch`. Until mps-core is tagged with them, `src-tauri/Cargo.toml` names the two crates by local `path` (`../../core-metrics-followups/rust/...`) and `node_modules` holds a copy pushed with `push-to-app.mjs`; switch to `git` + `tag` and bump the pin at release. See `MPS/wiki/code-metrics-2026-10-17.md`. The shared repository's `wiki/architecture.md` lists each with the reason.

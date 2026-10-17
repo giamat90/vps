@@ -50,7 +50,7 @@ Until a window says hello the main window publishes nothing and runs no timer.
 | `src/components/panels/DockHandle.tsx` | in the detached window: grip carried over the main window to dock (uses `createDockGesture`) |
 | `src/audio/livePitchFeed.ts`, `components/analysis/LivePitchFeed.tsx` | the microphone → live pitch detector, extracted from `DualTuner` |
 | `src/stores/detached.ts` | which panels are currently in their own window (never persisted) |
-| `src-tauri/src/windows.rs` | `detach_panel`, `dock_panel`, `close_detached_panel`, `cursor_over_main`, `close_detached_windows`; the panel allowlist; remembered window geometry; closes detached windows with the main one |
+| `src-tauri/src/windows.rs` | VPS's panel table and the five `#[tauri::command]` wrappers (`detach_panel`, `dock_panel`, `close_detached_panel`, `cursor_over_main`, `close_detached_windows`); the allowlist check, remembered geometry and docking are mps-core's `mps-detached-windows` crate; closes detached windows (and the sign-in window) with the main one |
 | `src-tauri/capabilities/detached.json` | events and core only: no dialog or updater access |
 
 ## What is in mps-core

@@ -72,7 +72,7 @@ pub fn run() {
                 .build(),
         )
         .manage(SidecarState(std::sync::Mutex::new(None)))
-        .manage(windows::WindowMemory::load())
+        .manage(windows::load_memory())
         .manage(pack_share::ShareState::default())
         .invoke_handler(move |invoke| {
             // The sign-in window shows Google's pages; none of this app's commands are open to it.
