@@ -25,7 +25,7 @@ import soundfile as sf
 
 from algorithms import (
     srh_production, pyin_production, hps_production, crepe_production, praat_production,
-    first_peak_production,
+    first_peak_production, srh_variant,
 )
 
 LAB_DIR = Path(__file__).resolve().parent
@@ -41,6 +41,13 @@ ALGORITHMS = {
     "crepe": crepe_production,
     "praat": praat_production,
 }
+
+# Experiments: opt-in by name, not part of the default "all six" run.
+EXPERIMENTS = {
+    "srh-narrow": lambda audio, sr: srh_variant(audio, sr, range_narrowing=True),
+    "srh-fine": lambda audio, sr: srh_variant(audio, sr, fft_size=16384, hop_length=220, frame_length=2205),
+}
+ALL = {**ALGORITHMS, **EXPERIMENTS}
 
 TOLERANCE_CENTS = 50.0  # the MIREX/mir_eval standard for raw pitch accuracy
 STRICT_CENTS = 25.0
@@ -135,13 +142,13 @@ def markdown(summaries: dict, rows: dict) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("algorithms", nargs="*", help=f"any of {', '.join(ALGORITHMS)}; default: all six")
+    ap.add_argument("algorithms", nargs="*", help=f"any of {', '.join(ALL)}; default: the six production detectors")
     ap.add_argument("--tracks", type=int, nargs="*", help="vocadito track ids (default: all 40)")
     args = ap.parse_args()
     algos = args.algorithms or list(ALGORITHMS)
-    unknown = [a for a in algos if a not in ALGORITHMS]
+    unknown = [a for a in algos if a not in ALL]
     if unknown:
-        ap.error(f"unknown algorithm {unknown}; choose from {', '.join(ALGORITHMS)}")
+        ap.error(f"unknown algorithm {unknown}; choose from {', '.join(ALL)}")
 
     ensure_dataset()
     wavs = sorted((DATA_DIR / "Audio").glob("vocadito_*.wav"), key=lambda p: int(p.stem.split("_")[1]))
@@ -156,7 +163,7 @@ def main() -> None:
         if audio.ndim > 1:
             audio = audio.mean(axis=1)
         for a in algos:
-            r = ALGORITHMS[a](audio, sr)
+            r = ALL[a](audio, sr)
             row = score_track(ref[:, 0], ref[:, 1], np.asarray(r["times"], float), np.asarray(r["f0"], float))
             row["track"] = n
             rows[a].append(row)

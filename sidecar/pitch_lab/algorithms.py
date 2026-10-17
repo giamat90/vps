@@ -117,6 +117,9 @@ def srh_variant(
     runs_median_size: int = 5,
     median_size: int = 6,
     gaussian_sigma: float = 1.5,
+    range_narrowing: bool = False,
+    narrow_low: float = 0.5,
+    narrow_high: float = 2.0,
 ) -> dict:
     """
     Parametrized reimplementation of detect_pitch_srh (processor.py) with every constant exposed.
@@ -131,8 +134,28 @@ def srh_variant(
       smoothing="runs"         median of `runs_median_size` inside each voiced run; "production" is the
                                median(`median_size`) + Gaussian(`gaussian_sigma`) over the voiced
                                frames concatenated across gaps.
+      range_narrowing          COVAREP's second pass (Drugman & Alwan 2011, `pitch_srh.m`): run once, take the
+                               median F0 of the voiced frames, then run again with the search range cut to
+                               [`narrow_low` * median, `narrow_high` * median] (never wider than fmin..fmax).
+                               Off in production; on vocadito it removed most octave errors (see README).
     `confidence` is always the best SRH score normalised by the track maximum, as in production.
     """
+    if range_narrowing:
+        first = srh_variant(
+            audio, sr, frame_length=frame_length, fft_size=fft_size, hop_length=hop_length,
+            n_harmonics=n_harmonics, fmin=fmin, fmax=fmax, amplitude_threshold_db=amplitude_threshold_db,
+            n_candidates=n_candidates, min_peak_gap=min_peak_gap, viterbi=viterbi, viterbi_beta=viterbi_beta,
+            voicing=voicing, contrast_threshold=contrast_threshold, voicing_threshold=voicing_threshold,
+            smoothing=smoothing, runs_median_size=runs_median_size, median_size=median_size,
+            gaussian_sigma=gaussian_sigma,
+        )
+        f0 = np.asarray(first["f0"])
+        voiced_f0 = f0[np.asarray(first["voiced"], dtype=bool) & (f0 > 0)]
+        if voiced_f0.size == 0:
+            return first
+        median = float(np.median(voiced_f0))
+        fmin = max(fmin, narrow_low * median)
+        fmax = min(fmax, narrow_high * median)
     if voicing not in ("track_max", "contrast"):
         raise ValueError(f"voicing must be 'track_max' or 'contrast', got {voicing!r}")
     if smoothing not in ("production", "runs"):
