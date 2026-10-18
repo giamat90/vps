@@ -33,6 +33,7 @@ from processor import process, compute_st_spectrum_from_file, compute_second_voi
 from analysis import analyze_recording, convert_take_to_wav, mix_export
 from mps_core import lyrics
 from mps_core.app import AppIdentity
+from mps_core.identity import artist_from_file
 from mps_core.version_check import check_yt_dlp_freshness
 
 APP = AppIdentity(
@@ -83,6 +84,7 @@ def main():
                     skip_separation=cmd.get("skipSeparation", False),
                     pitch_algorithm=cmd.get("algorithm", "srh"),
                 )
+                result["artist"] = artist_from_file(cmd["filePath"])
                 send({"type": "result", "cmd": "process", "data": result})
 
             elif cmd.get("cmd") == "analyze":

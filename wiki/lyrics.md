@@ -44,7 +44,7 @@ Rust (`src-tauri/src/lyrics.rs`, thin wrappers in `commands.rs`): `load_lyrics`,
 
 A song's `title` is the user's to rename, typically to tell versions apart (studio, live, acoustic). The online search must not follow it, so `Song` carries a second pair, `officialTitle` / `officialArtist`, and `Song::lookup_identity()` (`library.rs`) is what `find_lyrics` and `search_lyrics` send:
 
-- imports seed `officialTitle` with the imported title (`officialArtist` stays empty until set);
+- imports seed `officialTitle` with the imported title and `officialArtist` with the artist the sidecar found (`library::detected_artist`: a file's tags, read with mutagen; for YouTube the video's `artist`/`creator` metadata, else the channel name with `- Topic`/`VEVO`/`Official` stripped; see `mps_core.identity`). The guess can be wrong, so the lookup tries `Artist Title` first and the title alone when that finds nothing (LRCLIB wants every word of `q`), and results by the wrong artist rank behind the right one;
 - `rename_song` never changes them; renaming a song that has no `officialTitle` yet first copies the old title into it, so a library written before this existed keeps looking itself up under the name it had;
 - empty fields fall back to `title` / `artist`;
 - `set_song_identity(songId, officialTitle?, officialArtist?)` sets them (trimmed, blank clears). The lyrics panel's **Change** link is the only UI for it.
