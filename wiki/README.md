@@ -16,6 +16,7 @@
 | [YouTube sign-in](youtube-signin.md) | In-app Google sign-in that produces the cookies file for YouTube import: flow, security (no IPC for the remote window), hand-test checklist |
 | [Dev Setup](dev-setup.md) | Prerequisites, build commands, and local development notes |
 | [Testing](testing.md) | The three test suites (vitest, cargo, pytest), CI, fixtures, cross-language contract tests |
+| [UML diagrams](uml.md) | Thirteen Mermaid diagrams: layers, screens, domain model, player store, engine, Rust backend, sidecar, record and process sequences |
 | [Lyrics Sync](lyrics.md) | Forced alignment of lyrics to the vocals stem: design, wire protocol, accuracy measurements, tests |
 | [Practice pack](practice-pack.md) | "Send to phone": the `.vppack` file for the phone companion, what is in it, how it is built |
 | [Shared code](shared-core.md) | What comes from `@giamat90/mps-core`, the wiring in this repo, how to change or bump it |
