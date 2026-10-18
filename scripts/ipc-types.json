@@ -1,0 +1,46 @@
+{
+  "skip": {
+    "load_lyrics": "wrapped by @giamat90/mps-core/lyrics",
+    "sync_lyrics": "wrapped by @giamat90/mps-core/lyrics",
+    "find_lyrics": "wrapped by @giamat90/mps-core/lyrics",
+    "search_lyrics": "wrapped by @giamat90/mps-core/lyrics",
+    "delete_lyrics": "wrapped by @giamat90/mps-core/lyrics",
+    "sign_in_youtube": "wrapped by @giamat90/mps-core/youtube",
+    "sign_out_youtube": "wrapped by @giamat90/mps-core/youtube"
+  },
+  "names": {
+    "delete_take": "deleteTakeApi",
+    "rename_take": "renameTakeApi",
+    "set_take_manual_offset": "setTakeManualOffsetApi",
+    "set_metronome_offset": "setMetronomeOffsetApi",
+    "set_song_loops": "setSongLoopsApi",
+    "rename_song": "renameSongApi",
+    "set_song_identity": "setSongIdentityApi",
+    "delete_exercise_take": "deleteExerciseTakeApi"
+  },
+  "types": {
+    "Song": "Song",
+    "Take": "Take",
+    "ExerciseTake": "ExerciseTake",
+    "Folder": "Folder",
+    "NamedLoop": "NamedLoop",
+    "ZipEntry": "ZipExportEntry",
+    "MixSource": "MixSource",
+    "ShareInfo": "PackShareInfo"
+  },
+  "params": {
+    "process_song.trackKind": "\"vocal\" | \"instrument\""
+  },
+  "defaults": {
+    "save_take.audioOffset": "0"
+  },
+  "returns": {
+    "load_analysis": "AnalysisData",
+    "pitch_shift_song": "{ vocalsPath: string; instrumentalPath: string }",
+    "export_pack": "PackSummary | null"
+  },
+  "imports": {
+    "./types": ["Song", "Take", "ExerciseTake", "Folder", "NamedLoop"],
+    "./ipcTypes": ["AnalysisData", "MixSource", "PackShareInfo", "PackSummary", "ZipExportEntry"]
+  }
+}

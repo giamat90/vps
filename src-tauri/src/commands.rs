@@ -174,6 +174,7 @@ fn remove_failed_job_dir(dir: &std::path::Path) {
     }
 }
 
+/// Process a song file through the Python sidecar
 #[tauri::command]
 pub async fn process_song(
     app: AppHandle,
@@ -329,6 +330,7 @@ pub async fn process_song(
     }
 }
 
+/// Pitch-shift both tracks for a song; returns paths to the shifted WAV files
 #[tauri::command]
 pub async fn pitch_shift_song(
     state: State<'_, SidecarState>,
@@ -372,31 +374,37 @@ pub async fn pitch_shift_song(
     }
 }
 
+/// List all songs in the library
 #[tauri::command]
 pub async fn list_songs() -> Result<Vec<Song>, String> {
     library::load_songs()
 }
 
+/// Delete a song from the library
 #[tauri::command]
 pub async fn delete_song(song_id: String) -> Result<(), String> {
     library::remove(&song_id)
 }
 
+/// Persist the metronome's downbeat anchor (song time, seconds) for this song; null clears it back to song start
 #[tauri::command]
 pub async fn set_metronome_offset(song_id: String, offset: Option<f64>) -> Result<Song, String> {
     library::update_metronome_offset(&song_id, offset)
 }
 
+/// Replace the song's saved named loops; the backend trims names and keeps them in time order
 #[tauri::command]
 pub async fn set_song_loops(song_id: String, loops: Vec<library::NamedLoop>) -> Result<Song, String> {
     library::set_loops(&song_id, loops)
 }
 
+/// Rename a song's library title. Empty/whitespace is rejected.
 #[tauri::command]
 pub async fn rename_song(song_id: String, title: String) -> Result<Song, String> {
     library::rename(&song_id, &title)
 }
 
+/// Set the title and artist online lookups use for a song. Blank clears a field (the lookup falls back to the song's own title/artist).
 #[tauri::command]
 pub async fn set_song_identity(
     song_id: String,
@@ -408,31 +416,37 @@ pub async fn set_song_identity(
 
 // --- Folder commands ---
 
+/// List all folders in the library
 #[tauri::command]
 pub async fn list_folders() -> Result<Vec<library::Folder>, String> {
     library::load_folders()
 }
 
+/// Create a new (flat) folder. Empty/whitespace name is rejected.
 #[tauri::command]
 pub async fn create_folder(name: String) -> Result<library::Folder, String> {
     library::create_folder(&name)
 }
 
+/// Rename a folder. Empty/whitespace name is rejected.
 #[tauri::command]
 pub async fn rename_folder(folder_id: String, name: String) -> Result<library::Folder, String> {
     library::rename_folder(&folder_id, &name)
 }
 
+/// Delete a folder; its songs move back to the root list, they are not deleted.
 #[tauri::command]
 pub async fn delete_folder(folder_id: String) -> Result<(), String> {
     library::delete_folder(&folder_id)
 }
 
+/// Reorder folders (drag-to-reorder the folder sections themselves)
 #[tauri::command]
 pub async fn reorder_folders(ordered_ids: Vec<String>) -> Result<Vec<library::Folder>, String> {
     library::reorder_folders(&ordered_ids)
 }
 
+/// Move/reorder songs into `folderId` (null = root) in the given order. Covers both a same-folder reorder and a cross-folder drag-drop-at-position.
 #[tauri::command]
 pub async fn move_songs(
     folder_id: Option<String>,
@@ -508,6 +522,7 @@ fn save_takes(song_id: &str, takes: &[Take]) -> Result<(), String> {
     std::fs::write(&path, data).map_err(|e| format!("Write takes: {e}"))
 }
 
+/// Save a recorded take
 #[tauri::command]
 pub async fn save_take(
     state: State<'_, SidecarState>,
@@ -633,6 +648,7 @@ pub(crate) fn save_take_impl(
     Ok(take)
 }
 
+/// Load song analysis data (pitchData, onsets, dynamics, spectrogram)
 #[tauri::command]
 pub async fn load_analysis(
     state: State<'_, SidecarState>,
@@ -779,6 +795,7 @@ pub async fn delete_lyrics(song_id: String) -> Result<(), String> {
     crate::lyrics::delete(&song_id)
 }
 
+/// List takes for a song
 #[tauri::command]
 pub async fn list_takes(state: State<'_, SidecarState>, song_id: String) -> Result<Vec<Take>, String> {
     list_takes_impl(&state, &song_id)
@@ -811,6 +828,7 @@ pub(crate) fn list_takes_impl(state: &SidecarState, song_id: &str) -> Result<Vec
     Ok(takes)
 }
 
+/// Delete a take
 #[tauri::command]
 pub async fn delete_take(song_id: String, take_id: String) -> Result<(), String> {
     let takes = load_takes(&song_id)?;
@@ -824,6 +842,7 @@ pub async fn delete_take(song_id: String, take_id: String) -> Result<(), String>
     save_takes(&song_id, &filtered)
 }
 
+/// Rename a take (empty/whitespace name clears it back to the default "Take N" label)
 #[tauri::command]
 pub async fn rename_take(song_id: String, take_id: String, name: String) -> Result<Take, String> {
     let mut takes = load_takes(&song_id)?;
@@ -838,6 +857,7 @@ pub async fn rename_take(song_id: String, take_id: String, name: String) -> Resu
     Ok(updated)
 }
 
+/// Persist a manual drag nudge (seconds, signed) on top of a take's auto-detected startPosition; 0 clears it back to that position
 #[tauri::command]
 pub async fn set_take_manual_offset(song_id: String, take_id: String, offset: f64) -> Result<Take, String> {
     let mut takes = load_takes(&song_id)?;
@@ -975,6 +995,7 @@ fn analyze_and_persist_exercise_take(
     Ok(take)
 }
 
+/// Save a free-exercise recorded take
 #[tauri::command]
 pub async fn save_exercise_take(
     state: State<'_, SidecarState>,
@@ -1002,6 +1023,7 @@ pub(crate) fn save_exercise_take_impl(
     analyze_and_persist_exercise_take(state, &file_path_str, file_path_str.clone(), &output_dir_str, take_id, duration, &algorithm)
 }
 
+/// Import an arbitrary external audio file into Free Exercise as an ExerciseTake
 #[tauri::command]
 pub async fn import_exercise_file(
     state: State<'_, SidecarState>,
@@ -1037,11 +1059,13 @@ pub(crate) fn import_exercise_file_impl(
     analyze_and_persist_exercise_take(state, &dest_str, dest_str.clone(), &output_dir_str, take_id, duration, &algorithm)
 }
 
+/// List all exercise takes
 #[tauri::command]
 pub async fn list_exercise_takes() -> Result<Vec<ExerciseTake>, String> {
     load_exercise_takes()
 }
 
+/// Delete an exercise take
 #[tauri::command]
 pub async fn delete_exercise_take(take_id: String) -> Result<(), String> {
     let takes = load_exercise_takes()?;
@@ -1055,6 +1079,7 @@ pub async fn delete_exercise_take(take_id: String) -> Result<(), String> {
     save_exercise_takes_list(&filtered)
 }
 
+/// Import a YouTube URL through yt-dlp + Demucs pipeline
 #[tauri::command]
 pub async fn import_youtube(
     app: AppHandle,
@@ -1189,6 +1214,7 @@ pub async fn import_youtube(
     }
 }
 
+/// Open a native Save As dialog and copy a stem WAV to user-chosen location
 #[tauri::command]
 pub async fn export_stem(
     app: AppHandle,
@@ -1230,6 +1256,7 @@ pub struct ZipEntry {
     pub archive_name: String,
 }
 
+/// Open a native Save As dialog and bundle stems + takes into a zip archive
 #[tauri::command]
 pub async fn export_all(
     app: AppHandle,
@@ -1282,6 +1309,9 @@ pub async fn export_all(
     Ok(())
 }
 
+/// Open a native Save As dialog and write a recorded take to a user-chosen
+/// location as WAV. The take (typically webm/opus) is decoded via the
+/// Python sidecar first.
 #[tauri::command]
 pub async fn export_take(
     app: AppHandle,
@@ -1358,6 +1388,9 @@ pub struct MixSource {
     pub manual_offset: Option<f64>,
 }
 
+/// Render a mixdown WAV from `sources` (each already resolved to a final
+/// linear gain by the caller) trimmed to [startSec, endSec) of the project
+/// timeline, then open a native Save As dialog for the result.
 #[tauri::command]
 pub async fn export_mix(
     app: AppHandle,

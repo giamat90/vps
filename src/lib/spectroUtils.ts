@@ -117,3 +117,19 @@ export function stitchAboveNyquist(
     return stored ? stored[px] : { ...p, normalized: 0 };
   });
 }
+/**
+ * Song time under a horizontal drag of a centred, fixed-width time window (PianoRoll, SpectrogramPanel):
+ * dragging right moves back in time. Null when the roll has no width to measure against.
+ */
+export function windowDragTime(
+  startTime: number,
+  startX: number,
+  x: number,
+  rollW: number,
+  windowS: number,
+  duration: number,
+): number | null {
+  if (rollW <= 0) return null;
+  const deltaT = -((x - startX) / rollW) * windowS;
+  return Math.max(0, Math.min(duration, startTime + deltaT));
+}

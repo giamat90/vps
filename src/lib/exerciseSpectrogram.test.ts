@@ -1,10 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../stores/player", () => ({ getMicAnalyser: vi.fn(), getEngine: vi.fn(), usePlayerStore: vi.fn() }));
-vi.mock("../stores/exercise", () => ({ useExerciseStore: vi.fn() }));
-
 import { computeTrackSpectrogram, TRACK_SPECTRO_ROWS } from "./exerciseSpectrogram";
-import { buildFreqBinLut } from "../components/analysis/SpectrogramPanel";
+import { buildFreqBinLut } from "./spectrogramMath";
 import { SPECTRO_COLORMAP } from "./spectroUtils";
 
 let lastImage: ImageData | null = null;

@@ -20,11 +20,21 @@ cd sidecar
 
 `requirements-test.txt` is a subset of `requirements.txt`; tests needing `torch`/`torchcrepe` use `importorskip` and run only when the full requirements are installed. `VPS_SKIP_SLOW=1` skips tests marked `slow` (process spawning, CREPE).
 
+## Coverage of the other two languages
+
+The vitest config measures `lib`, `audio` and `stores` only, so its ~97 % hides the components (about 10-15 %). Measure everything with `npx vitest run --coverage --coverage.include='src/**'`.
+
+- **Python:** `pytest-cov` is in `sidecar/requirements-test.txt`; `sidecar/.coveragerc` omits tests, the venv, vendored models and the pitch lab. `cd sidecar; python -m pytest --cov=.` (first run on a machine takes minutes: the suite drives real audio). `main.py` reads low (about 33 %) because the Rust tests exercise it in a subprocess; `build.py` and `fetch_models.py` are build scripts.
+- **Rust:** `cargo install cargo-llvm-cov` and `rustup component add llvm-tools-preview` once, then `cd src-tauri; cargo llvm-cov --lib` (a full instrumented rebuild; set `CARGO_TARGET_DIR` elsewhere to keep your build cache). Inline `#[cfg(test)]` modules count as covered, so for a production-only figure export LCOV (`cargo llvm-cov report --lcov --output-path x.lcov`) and ignore lines after the `#[cfg(test)]` marker. The gaps are Tauri glue that needs a live window (`commands.rs`, the `windows.rs` wrappers).
+
+How to read these numbers: [Code metrics: a short course](../../wiki/code-metrics-guide.md); the 2026-10-17 results are in [Code metrics snapshot](../../wiki/code-metrics-2026-10-17.md).
+
 ## Frontend conventions
 
 - `vitest.config.ts`: node environment, `restoreMocks`/`clearMocks` on, `unstubGlobals` on. `src/test/setup.ts` installs an in-memory `localStorage`; everything else a test needs (`navigator.mediaDevices`, `AudioContext`, `MediaRecorder`, `OffscreenCanvas`, `requestAnimationFrame`, timers) it stubs itself with `vi.stubGlobal`.
 - Stores are tested against mocked boundaries: `../lib/tauri` (or `@tauri-apps/api/core` when the wrappers themselves are under test), `../audio/engine`, and the shared `@giamat90/mps-core/recorder` / `@giamat90/mps-core/metronome` (mocked by their package specifier). `player.test.ts` re-imports the store with `vi.resetModules()` where module-level state matters (device watcher, persisted calibrations).
-- `tests/contract/ipcContract.test.ts` parses `src/lib/tauri.ts` (and the lyrics wrappers shipped in `@giamat90/mps-core`), `src-tauri/src/commands.rs` and `lib.rs` and fails if a wrapper calls an unregistered command, sends an argument Rust does not accept, or omits a required one. It lives outside `src/` because it needs Node's `fs`; `tsc` only checks `src/`.
+- `tests/contract/ipcContract.test.ts` asks `scripts/gen-ipc.mjs --list` for every `#[tauri::command]` and fails if `src/lib/ipc.generated.ts` is stale (`gen-ipc.mjs --check`), a command is missing from (or invented in) `generate_handler!` in `lib.rs`, or a wrapper (generated, or the lyrics/YouTube ones shipped in `@giamat90/mps-core`) calls a missing command, sends an argument Rust does not accept, or omits a required one. It lives outside `src/` because it needs Node's `fs`; `tsc` only checks `src/`.
+- Canvas panels: the arithmetic and drawing passes live in `src/lib/spectrogram*`, `spectroShortTerm`, `spectroComparison`, `pianoRoll*` and are tested without React. `src/test/fakeCanvas.ts` gives a recording 2D context (`createRecordingContext()`: every call and property set as a string) and a fake canvas element; assert on the log (`fillText("1k",…)`, `strokeStyle="…"`), never on pixels. The React shells (`SpectrogramPanel.tsx`, `ShortTermSpectrumPanel.tsx`, `PianoRoll.tsx`) are not unit-tested; when you change one, keep it orchestration-only.
 - The synthetic-vowel fixture and the formant/FFT tests moved to mps-core (`src/spectrum/`, v0.12.0); VPS keeps the `spectroUtils` tests.
 
 ## Rust conventions
@@ -49,11 +59,11 @@ Details in [Lyrics Sync](lyrics.md#tests). In short: the alignment algorithm is 
 
 - `_smooth_voiced` (median 6 + Gaussian σ 1.5) keeps only ~40 % of a 5.5 Hz vibrato's depth, so the reported vibrato depth is under-stated; `test_preserves_a_vibrato_shaped_contour` is an `xfail` that will flip to XPASS if the smoothing is ever retuned.
 - SRH's voicing decision is relative to the loudest frame of the file, so broadband noise above the −50 dBFS gate is reported as voiced.
-- `SpectrogramPanel.dbToCurvedNorm` jumps from 0.045 to 0.15 at its soft-gate knee (the `× 0.3` in the gate); left as tuned.
+- `dbToCurvedNorm` (`src/lib/spectrogramMath.ts`) jumps from 0.045 to 0.15 at its soft-gate knee (the `× 0.3` in the gate); left as tuned.
 
 ## When you change something
 
-- New Tauri command → add the wrapper to `src/lib/tauri.ts` (the contract test then forces the Rust registration to match) and a case in `src/lib/tauri.test.ts`.
+- New Tauri command → write the Rust fn (its `///` doc becomes the wrapper's JSDoc), register it in `generate_handler!` in `lib.rs`, run `npm run gen:ipc` (the contract test fails with the missing step otherwise), and add a case in `src/lib/tauri.test.ts`.
 - Bumped the short-term-spectrum resolution → change `N_BINS` (Python) and `ST_SPECTRUM_MIN_BINS` (Rust) together; a test fails if they diverge.
 - Bumped the yt-dlp floor → change `MIN_YT_DLP_VERSION` in `mps-core` (`version_check.py`), then both requirements files here and in SPS (see MPS conventions #10); `tests/test_yt_dlp_floor.py` fails if they disagree.
 - Shared code (metronome, recorder, zoom/pan, updater store, lyrics engine and slice, version check) is tested in `mps-core`; see [Shared code](shared-core.md). Its tests no longer run here.

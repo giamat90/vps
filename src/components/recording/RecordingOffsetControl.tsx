@@ -1,242 +1,24 @@
-import { useEffect, useRef, useState } from "react";
-import { usePlayerStore } from "../../stores/player";
 import {
-  FIRST_CLICK_S,
-  INTERVAL_S,
   MAX_OFFSET_MS,
-  MIN_DETECTED_CLAPS,
-  N_COUNTIN,
   N_MEASURED,
   confidenceOf,
-  detectClapLatency,
-  type ClapDetection,
-} from "../../lib/clapLatency";
+  useLatencyCalibration,
+  type CalibrationMessages,
+} from "@giamat90/mps-core/hooks";
+import { usePlayerStore } from "../../stores/player";
 
-type CalibPhase = "idle" | "counting" | "measuring" | "analyzing" | "done" | "error";
-
-function scheduleClick(ctx: AudioContext, atTime: number, isCountIn: boolean): void {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.frequency.value = isCountIn ? 880 : 1320;
-  gain.gain.setValueAtTime(0, atTime);
-  gain.gain.linearRampToValueAtTime(isCountIn ? 0.2 : 0.4, atTime + 0.005);
-  gain.gain.exponentialRampToValueAtTime(0.001, atTime + 0.08);
-  osc.start(atTime);
-  osc.stop(atTime + 0.09);
-}
-
-// Some interfaces (e.g. 2-in USB devices) only route the input to one physical
-// channel — same issue buildChannelFixGraph() works around in recorder.ts, but
-// this calibration flow records its own raw stream, so pick the loudest channel
-// here instead of assuming channel 0.
-function pickLoudestChannel(buffer: AudioBuffer): Float32Array {
-  let best = buffer.getChannelData(0);
-  let bestPeak = 0;
-  for (let c = 0; c < buffer.numberOfChannels; c++) {
-    const data = buffer.getChannelData(c);
-    let peak = 0;
-    for (let i = 0; i < data.length; i++) {
-      const v = Math.abs(data[i]);
-      if (v > peak) peak = v;
-    }
-    if (peak > bestPeak) {
-      bestPeak = peak;
-      best = data;
-    }
-  }
-  return best;
-}
-
-function detectLatencyMs(buffer: AudioBuffer): ClapDetection | null {
-  return detectClapLatency(pickLoudestChannel(buffer), buffer.sampleRate);
-}
+const MESSAGES: CalibrationMessages = {
+  inputUnavailable: "Microphone unavailable: ",
+  noSignal: "Could not detect claps — clap clearly on each click and try again.",
+  rejected:
+    "Calibration failed — measured value out of range / too few claps detected. Try again in a quieter room.",
+};
 
 function RecordingOffsetControl() {
-  const audioDevices = usePlayerStore((s) => s.audioDevices);
-  const selectedDeviceId = usePlayerStore((s) => s.selectedDeviceId);
-  const selectedOutputDeviceId = usePlayerStore((s) => s.selectedOutputDeviceId);
-  const recordingOffsets = usePlayerStore((s) => s.recordingOffsets);
-  const setRecordingOffset = usePlayerStore((s) => s.setRecordingOffset);
-  const applyCalibration = usePlayerStore((s) => s.applyCalibration);
-  const fetchAudioDevices = usePlayerStore((s) => s.fetchAudioDevices);
-
-  const [phase, setPhase] = useState<CalibPhase>("idle");
-  const [calibTargetId, setCalibTargetId] = useState<string>("");
-  const [countdown, setCountdown] = useState(0);
-  const [measuredCount, setMeasuredCount] = useState(0);
-  const [result, setResult] = useState<ClapDetection | null>(null);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  const recorderRef = useRef<MediaRecorder | null>(null);
-  const chunksRef = useRef<Blob[]>([]);
-  const ctxRef = useRef<AudioContext | null>(null);
-  const cancelledRef = useRef(false);
-
-  useEffect(() => {
-    fetchAudioDevices();
-    return () => { cancelledRef.current = true; };
-  }, []);
-
-  const micDeviceId = selectedDeviceId ?? "";
-
-  const startCalibration = async (targetDeviceId: string) => {
-    cancelledRef.current = false;
-    setCalibTargetId(targetDeviceId);
-    setPhase("counting");
-    setCountdown(N_COUNTIN);
-    setMeasuredCount(0);
-    setResult(null);
-    setErrorMsg("");
-
-    let stream: MediaStream;
-    try {
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          ...(targetDeviceId ? { deviceId: { exact: targetDeviceId } } : {}),
-          echoCancellation: { exact: false },
-          noiseSuppression: { exact: false },
-          autoGainControl: { exact: false },
-        },
-        video: false,
-      });
-    } catch (e) {
-      console.error("[calibration] getUserMedia failed:", e);
-      setErrorMsg("Microphone unavailable: " + (e instanceof Error ? e.message : String(e)));
-      setPhase("error");
-      return;
-    }
-
-    const mimeType =
-      ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus"].find(
-        (t) => MediaRecorder.isTypeSupported(t),
-      ) ?? "";
-    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
-    recorderRef.current = recorder;
-    chunksRef.current = [];
-    recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-    recorder.onerror = (e) => console.error("[calibration] MediaRecorder error:", e);
-
-    // Use the same output device the song plays through so the singer hears clicks
-    // from the same headphones they use during practice.
-    const ctxOpts = selectedOutputDeviceId
-      ? ({ sinkId: selectedOutputDeviceId } as AudioContextOptions)
-      : undefined;
-    const ctx = new AudioContext(ctxOpts);
-    ctxRef.current = ctx;
-
-    recorder.start(100);
-    const schedBase = ctx.currentTime;
-    const firstClickCtx = schedBase + FIRST_CLICK_S;
-
-    for (let i = 0; i < N_COUNTIN + N_MEASURED; i++) {
-      const clickCtx = firstClickCtx + i * INTERVAL_S;
-      scheduleClick(ctx, clickCtx, i < N_COUNTIN);
-      const uiDelayMs = (clickCtx - schedBase) * 1000;
-      const ci = i;
-      setTimeout(() => {
-        if (cancelledRef.current) return;
-        if (ci < N_COUNTIN) {
-          setCountdown(N_COUNTIN - ci);
-          setPhase("counting");
-        } else {
-          setMeasuredCount(ci - N_COUNTIN + 1);
-          setPhase("measuring");
-        }
-      }, uiDelayMs);
-    }
-
-    // Stop 1.5 s after the last click to capture the last clap
-    const totalDurationMs =
-      (FIRST_CLICK_S + (N_COUNTIN + N_MEASURED - 1) * INTERVAL_S + 1.5) * 1000;
-
-    setTimeout(async () => {
-      if (cancelledRef.current) return;
-      setPhase("analyzing");
-
-      const blob = await new Promise<Blob>((resolve) => {
-        const mtype = recorder.mimeType;
-        recorder.onstop = () => resolve(new Blob(chunksRef.current, { type: mtype }));
-        if (recorder.state === "recording") recorder.stop();
-        else resolve(new Blob(chunksRef.current, { type: mtype }));
-      });
-
-      stream.getTracks().forEach((t) => t.stop());
-      ctx.close().catch((e: unknown) => console.warn("[calibration] ctx close:", e));
-      ctxRef.current = null;
-
-      if (cancelledRef.current) return;
-
-      try {
-        const arrayBuf = await blob.arrayBuffer();
-        const decCtx = new AudioContext();
-        const audioBuf = await decCtx.decodeAudioData(arrayBuf);
-        decCtx.close().catch((e: unknown) => console.warn("[calibration] decCtx close:", e));
-
-        if (cancelledRef.current) return;
-
-        const detection = detectLatencyMs(audioBuf);
-        if (detection === null) {
-          setErrorMsg("Could not detect claps — clap clearly on each click and try again.");
-          setPhase("error");
-        } else if (
-          detection.medianMs < 0 ||
-          detection.medianMs > MAX_OFFSET_MS ||
-          detection.detectedCount < MIN_DETECTED_CLAPS
-        ) {
-          console.debug("[calibration] rejected:", {
-            medianMs: detection.medianMs,
-            madMs: detection.madMs,
-            detectedCount: detection.detectedCount,
-            offsets: detection.offsets,
-          });
-          setErrorMsg(
-            "Calibration failed — measured value out of range / too few claps detected. Try again in a quieter room.",
-          );
-          setPhase("error");
-        } else {
-          setResult(detection);
-          setPhase("done");
-        }
-      } catch (e) {
-        console.error("[calibration] analysis error:", e);
-        if (!cancelledRef.current) {
-          setErrorMsg("Analysis failed: " + (e instanceof Error ? e.message : String(e)));
-          setPhase("error");
-        }
-      }
-    }, totalDurationMs);
-  };
-
-  const cancel = () => {
-    cancelledRef.current = true;
-    if (recorderRef.current?.state === "recording") recorderRef.current.stop();
-    ctxRef.current?.close().catch((e: unknown) =>
-      console.warn("[calibration] ctx close on cancel:", e),
-    );
-    ctxRef.current = null;
-    recorderRef.current = null;
-    setPhase("idle");
-  };
-
-  const applyResult = () => {
-    if (result !== null) {
-      applyCalibration(calibTargetId, {
-        offset: result.medianMs,
-        madMs: result.madMs,
-        ...(selectedOutputDeviceId ? { outputDeviceId: selectedOutputDeviceId } : {}),
-      });
-    }
-    setPhase("idle");
-  };
-
-  const devices = [
-    { deviceId: "", label: "Default microphone" },
-    ...audioDevices,
-  ];
-
-  const isActive = phase !== "idle" && phase !== "done" && phase !== "error";
+  const {
+    phase, isActive, countdown, measuredCount, result, errorMsg, devices, micDeviceId, recordingOffsets,
+    targetName, start, cancel, apply, dismiss, setOffsetFromInput,
+  } = useLatencyCalibration({ useStore: usePlayerStore, messages: MESSAGES, followOutputDevice: true });
 
   return (
     <div className="rec-offset">
@@ -278,14 +60,12 @@ function RecordingOffsetControl() {
                     min={0}
                     max={MAX_OFFSET_MS}
                     step={1}
-                    onChange={(e) =>
-                      setRecordingOffset(d.deviceId, parseInt(e.target.value) || 0)
-                    }
+                    onChange={(e) => setOffsetFromInput(d.deviceId, e.target.value)}
                   />
                   <span className="rec-offset__unit">ms</span>
                   <button
                     className="rec-offset__row-calib-btn"
-                    onClick={() => startCalibration(d.deviceId)}
+                    onClick={() => start(d.deviceId)}
                     title={`Calibrate latency for ${d.label || "this device"}`}
                   >
                     Cal
@@ -303,7 +83,7 @@ function RecordingOffsetControl() {
                   : "This microphone hasn't been calibrated — measure its latency?"}
               </span>
               <div className="rec-offset__banner-actions">
-                <button className="rec-offset__banner-btn" onClick={() => startCalibration(micDeviceId)}>
+                <button className="rec-offset__banner-btn" onClick={() => start(micDeviceId)}>
                   Calibrate
                 </button>
               </div>
@@ -327,12 +107,12 @@ function RecordingOffsetControl() {
                 </span>
               )}
               <div className="rec-offset__banner-actions">
-                <button className="rec-offset__banner-btn" onClick={applyResult}>
-                  Apply to {devices.find((d) => d.deviceId === calibTargetId)?.label?.split("(")[0].trim() ?? "device"}
+                <button className="rec-offset__banner-btn" onClick={apply}>
+                  Apply to {targetName("device")}
                 </button>
                 <button
                   className="rec-offset__banner-btn rec-offset__banner-btn--ghost"
-                  onClick={() => setPhase("idle")}
+                  onClick={dismiss}
                 >
                   Discard
                 </button>
@@ -344,7 +124,7 @@ function RecordingOffsetControl() {
               <span>{errorMsg}</span>
               <button
                 className="rec-offset__banner-btn rec-offset__banner-btn--ghost"
-                onClick={() => setPhase("idle")}
+                onClick={dismiss}
               >
                 Close
               </button>
@@ -356,7 +136,7 @@ function RecordingOffsetControl() {
       {isActive && (
         <div className="rec-offset__active">
           <p className="rec-offset__active-device">
-            {devices.find((d) => d.deviceId === calibTargetId)?.label?.split("(")[0].trim() ?? "Default microphone"}
+            {targetName("Default microphone")}
           </p>
           {phase === "counting" && (
             <>

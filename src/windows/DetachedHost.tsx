@@ -1,5 +1,5 @@
-import { useEffect } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { detachedTitle, dockSafely, useBridgeRun } from "@giamat90/mps-core/hooks";
 import { createRemoteSpectrumSource } from "../audio/spectrumSource";
 import DynamicsCurve from "../components/analysis/DynamicsCurve";
 import PianoKeyboard from "../components/analysis/PianoKeyboard";
@@ -71,53 +71,45 @@ function DetachedHost({ panel }: DetachedHostProps) {
   const song = usePlayerStore((s) => s.song);
   const hasTake = usePlayerStore((s) => s.activeTakeId !== null);
 
-  useEffect(() => {
-    let cancelled = false;
-    let bridge: { dispose(): void } | null = null;
+  useBridgeRun(
+    () => {
+      // The spectrum panel asks its source for what only the main window can
+      // measure; here that source is the stream the bridge hands to `onSpectrum`.
+      const remote = createRemoteSpectrumSource();
+      const uninstallSpectrum = panel === "spectrum" ? installSpectrumSource(remote.source) : () => {};
 
-    // The spectrum panel asks its source for what only the main window can
-    // measure; here that source is the stream the bridge hands to `onSpectrum`.
-    const remote = createRemoteSpectrumSource();
-    const uninstallSpectrum = panel === "spectrum" ? installSpectrumSource(remote.source) : () => {};
-
-    startDetachedBridge({
-      panelId: panel,
-      player: usePlayerStore,
-      analysis: useAnalysisStore,
-      emit: (event, payload) => emit(event, payload),
-      listen: (event, cb) => listen(event, (e) => cb(e.payload)),
-      now: () => Date.now(),
-      onSpectrum: remote.apply,
-      installTimeSource: installPlaybackTimeSource,
-      loadSongAnalysis: (songId) => useAnalysisStore.getState().loadSongAnalysis(songId),
-      loadTakeAnalysis: (take) => useAnalysisStore.getState().loadTakeAnalysis(take),
-      clearTakeAnalysis: () => useAnalysisStore.getState().clearTakeAnalysis(),
-    })
-      .then((b) => {
-        if (cancelled) b.dispose();
-        else bridge = b;
-      })
-      .catch((e: unknown) => console.error("[detached] could not connect to the main window:", e));
-
-    return () => {
-      cancelled = true;
-      uninstallSpectrum();
-      bridge?.dispose();
-    };
-  }, [panel]);
+      return {
+        bridge: startDetachedBridge({
+          panelId: panel,
+          player: usePlayerStore,
+          analysis: useAnalysisStore,
+          emit: (event, payload) => emit(event, payload),
+          listen: (event, cb) => listen(event, (e) => cb(e.payload)),
+          now: () => Date.now(),
+          onSpectrum: remote.apply,
+          installTimeSource: installPlaybackTimeSource,
+          loadSongAnalysis: (songId) => useAnalysisStore.getState().loadSongAnalysis(songId),
+          loadTakeAnalysis: (take) => useAnalysisStore.getState().loadTakeAnalysis(take),
+          clearTakeAnalysis: () => useAnalysisStore.getState().clearTakeAnalysis(),
+        }),
+        cleanup: uninstallSpectrum,
+      };
+    },
+    "[detached] could not connect to the main window:",
+    [panel],
+  );
 
   return (
     <div className="detached-host">
       <header className="detached-host__bar">
         <span className="detached-host__title">
-          {TITLES[panel]}
-          {song ? ` — ${song.title}` : ""}
+          {detachedTitle(TITLES, panel, song?.title)}
         </span>
         <DockHandle />
         <button
           type="button"
           className="detached-host__dock"
-          onClick={() => dockPanel().catch((e: unknown) => console.error("[detached] could not dock:", e))}
+          onClick={() => dockSafely(dockPanel)}
         >
           Dock
         </button>

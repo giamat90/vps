@@ -41,11 +41,11 @@ VPS is a three-tier desktop application:
 
 ### Frontend ↔ Tauri (invoke)
 
-All frontend→backend calls use `invoke()` from `@tauri-apps/api/core`. The bindings live in `src/lib/tauri.ts`. Push events from Rust to frontend use `app.emit()` / `listen()` (e.g., `"processing-progress"`, `"lyrics-progress"`, `"pack-share"`).
+All frontend→backend calls use `invoke()` from `@tauri-apps/api/core`. Command wrappers are generated from the Rust `#[tauri::command]` signatures into `src/lib/ipc.generated.ts` (`npm run gen:ipc`; struct names, `serde_json::Value` return types, defaults and the commands mps-core wraps are listed in `scripts/ipc-types.json`). `src/lib/tauri.ts` re-exports them and keeps only the event listeners. Push events from Rust to frontend use `app.emit()` / `listen()` (e.g., `"processing-progress"`, `"lyrics-progress"`, `"pack-share"`).
 
 ### Tauri ↔ Python (JSON lines)
 
-The Rust backend spawns the Python sidecar as a child process (`SidecarManager` in `src-tauri/src/sidecar.rs`). Communication is newline-delimited JSON on stdin/stdout. The sidecar runs a synchronous dispatch loop to avoid GIL/numpy deadlocks on Windows. See [Python Sidecar](python-sidecar.md) for the message format.
+The Rust backend spawns the Python sidecar as a child process (`SidecarManager`, from mps-core's `mps-sidecar` crate and wrapped in `src-tauri/src/sidecar.rs` with the `vps-sidecar` binary name). Communication is newline-delimited JSON on stdin/stdout. The sidecar runs a synchronous dispatch loop to avoid GIL/numpy deadlocks on Windows. See [Python Sidecar](python-sidecar.md) for the message format.
 
 ## Auto-Update
 

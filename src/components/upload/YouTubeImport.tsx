@@ -1,29 +1,19 @@
-import { useState } from "react";
 import { useLibraryStore } from "../../stores/library";
 import { useSettingsStore } from "../../stores/settings";
-
-const YT_PATTERN = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//;
+import { useYouTubeImport } from "@giamat90/mps-core/hooks";
 
 interface YouTubeImportProps {
   highQuality?: boolean;
 }
 
 function YouTubeImport({ highQuality }: YouTubeImportProps) {
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState<string | null>(null);
   const importYoutube = useLibraryStore((s) => s.importYoutube);
   const isProcessing = useLibraryStore((s) => s.processing !== null);
   const youtubeCookiesPath = useSettingsStore((s) => s.youtubeCookiesPath);
-
-  const handleImport = async () => {
-    if (!YT_PATTERN.test(url)) {
-      setError("Please enter a valid YouTube URL.");
-      return;
-    }
-    setError(null);
-    await importYoutube(url, highQuality, youtubeCookiesPath);
-    setUrl("");
-  };
+  const { url, setUrl, error, canSubmit, submit, onKeyDown } = useYouTubeImport({
+    isProcessing,
+    onImport: (link) => importYoutube(link, highQuality, youtubeCookiesPath),
+  });
 
   return (
     <div className="yt-import">
@@ -35,12 +25,12 @@ function YouTubeImport({ highQuality }: YouTubeImportProps) {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           disabled={isProcessing}
-          onKeyDown={(e) => e.key === "Enter" && !isProcessing && handleImport()}
+          onKeyDown={onKeyDown}
         />
         <button
           className="yt-import__btn"
-          onClick={handleImport}
-          disabled={isProcessing || !url.trim()}
+          onClick={submit}
+          disabled={!canSubmit}
         >
           Import
         </button>

@@ -2,6 +2,8 @@
 
 **Directory:** `src/components/`
 
+> **Logic in mps-core hooks.** `MicSelector`, `OutputSelector`, `KeyTranspose`, `TempoControl`, `LoopButton`, `RecordButton`, `TransportControls`, `ExportMixButton` and `DownloadAllButton` hold markup and CSS classes only; their state, effects and handlers are `@giamat90/mps-core/hooks` (`useMicSelect`, `useOutputSelect`, `useKeyTranspose`, `useTempoControl`, `useLoopToggle`, `useRecordButton`, `useTransportControls`, `useExportMix`, `useDownloadAll`), which take the player store and the IPC functions as arguments. What differs between VPS and SPS is an option (`stopEndsRecording`, the `watch` selectors of the mix export, `trackEntries`) or stays in the markup (aria-labels, wording).
+
 ## Component Tree
 
 ```
@@ -47,6 +49,7 @@ App
 ## State Management
 
 ### Library Store (`src/stores/library.ts`)
+**Shared with the sibling app (mps-core `hooks`, group library-page-stores).** The store's actions come from `libraryStateCreator` (the IPC functions, the sign-in and the cookies setter are passed in; the app adds its own `importYoutube(...)` that builds the request its backend takes), the error text from `createFriendlyError` (this app passes two rules of its own, the `VPS_PITCH_ALGORITHM` message shown as written and the ffmpeg-not-found text), and `filterSongs` from `createSongFilter` (plus the artist and "instrument" as extra terms). `LibraryPage.tsx` keeps markup and CSS classes only: loading, search, the New Folder field, the About/Settings toggles and the drop decision are `useLibraryPage` + `resolveLibraryDrop`, title/folder renaming is `useEditableText`, and the dnd-kit rows are `useSortableSongRow`, `useSortableFolder` and `useRootDropZone`. What stays here: the pitch-shift/export controls of `SongCard`, the Free Exercise button and the track-kind toggle.
 
 Manages the song list, import/upload flow, and error state.
 
@@ -68,7 +71,7 @@ Errors from `importYoutube` and `uploadSong` are parsed by `friendlyError()` int
 
 ### Player Store
 
-All player state lives in a single Zustand store: `src/stores/player.ts`.
+All player state lives in a single Zustand store, `usePlayerStore`, built from slices in `src/stores/player/` (`song`, `transport`, `mixer`, `timeline`, `punch`, `devices`, `takes`, `recording`, `exercise`; each file owns the fields and actions of one concern, `index.ts` composes them, `types.ts` holds the interfaces). Import from `../../stores/player` as before.
 
 ```ts
 import { usePlayerStore } from "../../stores/player";
@@ -185,7 +188,7 @@ Slimmed down to play/pause/stop + elapsed/total time — volume sliders were mov
 
 `LoopsMenu` (practice-room topbar, beside `LoopButton`) keeps two lists in one popover. **Saved loops** are named regions stored on the song (`Song.loops`, `set_song_loops`; the pure rules are `@giamat90/mps-core/loops`: `addLoop`, `renameLoop`, `removeLoop`, `validateLoop`). Saving takes the current punch region; clicking a loop calls `applyLoopRegion(start, end)`, which sets the punch region, turns the loop on and seeks to the start. **Bars** cuts the song into groups of 2, 4, 8 or 16 bars counted from the metronome downbeat at four beats to a bar (`barSections`); it is not structure detection, and needs a detected tempo.
 
-Keyboard shortcuts (`src/lib/shortcuts.ts`, installed by `PracticeRoom` on `window` through `@giamat90/mps-core/shortcuts`): Space play/pause, Home / End skip to start / end, ← → step 5 s (Shift: 1 s), L toggle the loop, [ and ] mark the region start and end at the playhead. Typing in a field, ctrl / alt / meta chords, auto-repeat and a focused button's own Space are left alone, and nothing runs while recording or counting in. The Free Exercise page has none.
+Keyboard shortcuts (`installPlayerShortcuts` from `@giamat90/mps-core/hooks`, installed by `PracticeRoom` on `window`): Space play/pause, Home / End skip to start / end, ← → step 5 s (Shift: 1 s), L toggle the loop, [ and ] mark the region start and end at the playhead. Typing in a field, ctrl / alt / meta chords, auto-repeat and a focused button's own Space are left alone, and nothing runs while recording or counting in. The Free Exercise page has none.
 
 ### LoopButton
 
@@ -214,7 +217,7 @@ When monitoring is active **and the track is playing** (`isMonitoring && isPlayi
 
 While monitoring but **paused** (`isMonitoring && !isPlaying`), the mic stream stays open (button stays lit) but no pitch is captured or shown — `currentTime` is frozen while paused, so a still-running detector would otherwise keep appending points at that one frozen time, painting a stale smear instead of a trace. `DualTuner`'s effect is keyed on `isRecording || (isMonitoring && isPlaying)` (see [DualTuner](#dualtuner)) so it tears down its detector and clears `livePitch` the moment playback pauses, and starts a fresh trace when play resumes.
 
-Nothing is saved — `startMonitoring()`/`stopMonitoring()` in `stores/player.ts` call `useAnalysisStore.getState().clearLivePitch()` directly (start *and* stop), so the trace is wiped even if the analysis panel/DualTuner isn't mounted at the moment monitoring toggles; `startRecording()` does the same before opening its own stream. A third guard — a `usePlayerStore.subscribe()` at the bottom of `stores/player.ts` — clears `livePitch` on any `isPlaying: true → false` transition while `isMonitoring` is true, regardless of which of the many pause/stop call sites (`pause`, `stop`, punch-out, `onFinish`, `pauseExerciseTrack`, …) caused it. Don't rely on `DualTuner`'s effect alone for correctness — it only clears while it stays mounted across the transition; the store-level guards are what make clearing unconditional.
+Nothing is saved — `startMonitoring()`/`stopMonitoring()` in `stores/player/recording.ts` call `useAnalysisStore.getState().clearLivePitch()` directly (start *and* stop), so the trace is wiped even if the analysis panel/DualTuner isn't mounted at the moment monitoring toggles; `startRecording()` does the same before opening its own stream. A third guard — a `usePlayerStore.subscribe()` in `stores/player/audioSync.ts` — clears `livePitch` on any `isPlaying: true → false` transition while `isMonitoring` is true, regardless of which of the many pause/stop call sites (`pause`, `stop`, punch-out, `onFinish`, `pauseExerciseTrack`, …) caused it. Don't rely on `DualTuner`'s effect alone for correctness — it only clears while it stays mounted across the transition; the store-level guards are what make clearing unconditional.
 
 ### TempoControl
 
@@ -236,6 +239,8 @@ The anchor is set two ways, both in `TempoControl`'s new "Downbeat" row (shown o
 A "↺" reset-to-0 button appears next to Set once the offset is nonzero.
 
 ### TimeRuler
+
+The logic (drawing, drag, cursors) is mps-core's `useTimeRuler`; the component is the `<canvas>` and passes the punch accent `233,69,96` and `lockWhileRecording: true`.
 
 Canvas strip above the waveform tracks (`2.8rem` tall). Shows time ticks at adaptive intervals (≥ 80 px target). Font size scales proportionally with canvas height. All ruler interaction is disabled during recording.
 
@@ -344,7 +349,7 @@ Loop toggling for this region (and the waveform's identical one — same `punchI
 
 **Constants:** 40-semitone visible window, 8-second time window, `15rem` canvas height.
 
-**Sliding vertical window:** the visible pitch range no longer sits at a fixed MIDI span. `PIANO_WINDOW_SIZE = 40` (unchanged) semitones are always shown, but the window's lower bound (`midiMin`, a float held in a `windowMinRef`) slides to follow whichever pitch is currently active (`liveMidi ?? takeMidi ?? songMidi`), letting the same visual resolution as the old fixed A2–C6 range support the full `PIANO_ABS_MIN`–`PIANO_ABS_MAX` (C0–C7) keyboard — needed for wide-range instrument practice tracks. See [constants.ts](../src/lib/constants.ts): `computePianoWindowTarget()` only moves the window once the active note gets within `PIANO_FOLLOW_MARGIN` (6 semitones) of an edge (a "dead zone" so normal melodic movement doesn't cause drift), and `stepPianoWindow()` eases toward that target by a fixed fraction (`PIANO_FOLLOW_LERP = 0.06`) every animation frame, so the window glides rather than snaps. `midiToY`/`drawLanes`/`drawRibbon`/`drawPianoStrip` all take the float `midiMin` directly — no rounding — so the ribbon and lane backgrounds scroll continuously pixel-by-pixel rather than jumping a whole semitone at a time. When no pitch is active, the window holds its last position.
+**Sliding vertical window:** the visible pitch range no longer sits at a fixed MIDI span. `PIANO_WINDOW_SIZE = 40` (unchanged) semitones are always shown, but the window's lower bound (`midiMin`, a float held in a `windowMinRef`) slides to follow whichever pitch is currently active (`liveMidi ?? takeMidi ?? songMidi`), letting the same visual resolution as the old fixed A2–C6 range support the full `PIANO_ABS_MIN`–`PIANO_ABS_MAX` (C0–C7) keyboard — needed for wide-range instrument practice tracks. See [constants.ts](../src/lib/constants.ts): `computePianoWindowTarget()` only moves the window once the active note gets within `PIANO_FOLLOW_MARGIN` (6 semitones) of an edge (a "dead zone" so normal melodic movement doesn't cause drift), and `stepPianoWindow()` eases toward that target by a fixed fraction (`PIANO_FOLLOW_LERP = 0.06`) every animation frame, so the window glides rather than snaps. `midiToY`/`drawLanes`/`drawRibbon`/`drawPianoStrip` (in `src/lib/pianoRollGeometry.ts` / `pianoRollDraw.ts`) all take the float `midiMin` directly — no rounding — so the ribbon and lane backgrounds scroll continuously pixel-by-pixel rather than jumping a whole semitone at a time. When no pitch is active, the window holds its last position.
 
 **No spectrogram:** frequency spectrogram was moved to the dedicated `SpectrogramPanel` component (Free Exercise page only).
 
@@ -379,6 +384,19 @@ Scrolling live spectrogram rendered exclusively in the Free Exercise page. Shows
 
 **Layout in ExercisePage:** Inside `exercise-page__spectro`, below the `exercise-page__keyboard` strip and `exercise-page__roll`, inside the `exercise-page__analysis` scrollable wrapper. Canvas height: `clamp(15rem, 45vh, 35rem)`.
 
+### Where the analysis panels' drawing code lives
+
+`SpectrogramPanel`, `ShortTermSpectrumPanel`, `ShortTermSpectrumComparisonPanel` and `PianoRoll` only wire React to the canvas: they read the stores and the audio engine, pick the data source, and call helpers. Everything that is arithmetic or a drawing pass is in `src/lib/` and imports neither components nor stores (a lib module importing a component was the VPS import cycle `exerciseSpectrogram → SpectrogramPanel → stores/exercise → exerciseSpectrogram`, fixed 2026-10-17).
+
+| Panel | Pure maths | Canvas helpers |
+|---|---|---|
+| SpectrogramPanel | `spectrogramMath.ts` | `spectrogramDraw.ts` |
+| ShortTermSpectrumPanel | `spectroShortTerm.ts` (both) | |
+| ShortTermSpectrumComparisonPanel | `spectroComparison.ts` (both; reuses `spectroShortTerm`'s grids) | |
+| PianoRoll | `pianoRollGeometry.ts`, `pianoRollPunch.ts` | `pianoRollDraw.ts` |
+
+Canvas helpers take a `CanvasRenderingContext2D` and are tested with the recording context in `src/test/fakeCanvas.ts` (asserts on calls and colours, not pixels). A new constant or draw pass belongs in these modules, not back in the component.
+
 ### ShortTermSpectrumPanel
 
 Real-time spectral **snapshot** (not a waterfall) — a single spectrum curve fully redrawn each frame, on the Free Exercise page below the SpectrogramPanel. Horizontal **log-frequency axis** (reuses `freqToX`/`xToFreq` from `src/lib/spectroUtils.ts` and `F_MIN`/`F_MAX`/`MIN_DB`/`MAX_DB`/`AXIS_W`/`LEGEND_WIDTH` exported by `SpectrogramPanel`), vertical dB axis with 10 dB ticks. Draws the raw spectrum plus a **smoothed spectral envelope overlay** — a moving average whose window widens with frequency, since formants are proportionally wider at high frequencies on a log axis.
@@ -397,7 +415,7 @@ Song-vs-take spectral envelope comparison in `PracticeRoom`. Overlays up to thre
 - **Take** — per-take envelope computed during `save_take` analysis and persisted on the `Take` (`stSpectrumTimes`/`stSpectrumB64`/`stSpectrumFrames`/`stSpectrumBins`/`stSpectrumMinDb`/`stSpectrumMaxDb` — base64-packed byte matrix). The analysis store aligns take frames to **song time** (shifting by `startPosition`/`audioOffset`) so the two curves compare like-for-like at the playhead.
 - **Live** — current mic spectrum while recording/monitoring.
 
-Spectrum frames are coarse (~20 fps) relative to rAF, so the draw loop does a nearest-frame binary search per tick. Uses its **own** dB span of −100…0 dBFS — deliberately decoupled from SpectrogramPanel's −85…−20 display window — to cover the full vocal dynamic range, matching the mic `AnalyserNode`'s widened `minDecibels`/`maxDecibels` (see `stores/player.ts`).
+Spectrum frames are coarse (~20 fps) relative to rAF, so the draw loop does a nearest-frame binary search per tick. Uses its **own** dB span of −100…0 dBFS — deliberately decoupled from SpectrogramPanel's −85…−20 display window — to cover the full vocal dynamic range, matching the mic `AnalyserNode`'s widened `minDecibels`/`maxDecibels` (see `stores/player/recording.ts`).
 
 **Smoothing:** the Live/Take curve is passed through `smoothSpectrumLight()` (`src/lib/spectroUtils.ts`, fixed ±2-sample window) before stroking — just enough to take the edge off per-frame jitter without flattening real harmonic peaks. This is deliberately **not** the same smoothing `ShortTermSpectrumPanel` uses for its formant-envelope overlay (`smoothSpectrumEnvelope()`, a much heavier widening 15–40-sample window) — that one is designed to be drawn *on top of* a raw curve to show vocal-tract resonance shape, and using it as a full replacement made the comparison panel's vocal line look "unrealistically smooth," erasing the actual spectral detail. The Song reference curve is left fully raw/unsmoothed on purpose, since it's the precise target the singer is comparing against. `storedCurvePoints()`/`liveCurvePoints()` build a `SpectrumPoint[]` first (rather than stroking per-pixel as the frame is scanned) so the smoothing pass has the whole curve to average over before `strokePoints()` draws it.
 
@@ -421,7 +439,7 @@ Label slots are fixed (F0, F1, F2, F3 from the anchor edge), so a label does not
 
 ### DualTuner
 
-Real-time pitch gauge. Active whenever `isRecording || (isMonitoring && isPlaying)` — monitoring alone isn't enough; the track must also be playing. While monitoring but paused, `currentTime` is frozen, so an active detector would keep appending points at that single time instead of tracing a moving pitch line. `isRecording` always implies `isPlaying` (see `stores/player.ts`), so this only changes behavior for the monitor-only case.
+Real-time pitch gauge. Active whenever `isRecording || (isMonitoring && isPlaying)` — monitoring alone isn't enough; the track must also be playing. While monitoring but paused, `currentTime` is frozen, so an active detector would keep appending points at that single time instead of tracing a moving pitch line. `isRecording` always implies `isPlaying` (see `stores/player/recording.ts`), so this only changes behavior for the monitor-only case.
 
 **Form factor:** Thin SVG horizontal bar (`viewBox="0 0 300 8"`, `preserveAspectRatio="none"`) — stretches to full container width. No note labels, no ticks — pure color zones only. Range: ±50 cents. Zones: green ±0–15 ct, yellow ±15–30 ct, red >±30 ct. Needle is a 3 px rect; centre mark at x=150.
 
@@ -501,6 +519,8 @@ Rendered only when `takeVibrato` is non-null in the analysis store. If all value
 **Color coding:** Each value is highlighted green (`vibrato-card__val--ok`) or amber (`vibrato-card__val--warn`) based on ideal-range thresholds.
 
 ### TakeList
+
+The logic (audibility, rename, download, delete) is mps-core's `useTakeList`; the component is markup only. `RecordingOffsetControl` likewise uses `useLatencyCalibration` (output-device routing on).
 
 List of recorded takes for the current song, in `practice-room__takes`. Each row shows the take's display name (`take.name || "Take {n}"`) and the recorded date; clicking a row calls `setActiveTake`. Three icon buttons sit on each row (`take-item__actions`):
 
@@ -652,3 +672,11 @@ When a song holds two singers at once the sidecar stores the second one as `pitc
 State: `useVoiceViewStore` (`src/stores/voiceView.ts`, localStorage key `vps_voice_view`, `{showMultipleLines, mainVoice}`). It follows `storage` events so a detached piano-roll window and the main window stay in step. `useAnalysisStore` keeps the raw `songPitchData` and re-arranges `songPitch` / `songPitchAlt` when `mainVoice` changes, without reloading the song. Takes have no second voice.
 
 Songs analysed before this get `f0Alt` on their next open through the `load_analysis` backfill (once, persisted); the lead line of such a song may also change, because inside a two-voice stretch it is now held on one voice.
+
+## Panel menu, sortable panels, detach/dock handles, loops menu (headless hooks)
+
+`PanelMenu`, `SortablePanels` (`MoveGrip`), `DetachHandle`, `DockHandle` and `LoopsMenu` keep only markup and CSS class names; their logic is in `@giamat90/mps-core/hooks` (`usePanelMenu`, `usePopover`, `useSortablePanels` / `useSortablePanel` / `usePanelGrip`, `useDetachHandle`, `useDockHandle`, `useLoopsMenu`), which takes the app's stores and IPC functions as parameters.
+
+## Lyrics, import and update components: logic in mps-core hooks
+
+`LyricsPanel`, `YouTubeCookiesControl`, `YouTubeImport`, `DropZone` and `UpdateDialog` keep only markup and CSS class names. Their logic is a headless hook in `@giamat90/mps-core/hooks` (`useLyricsPanel`, `useYouTubeCookies`, `useYouTubeImport`, `useDropZone`, `useUpdateDialog`), shared with the other app; what differs is passed in: the player store adapter, the library action, the import call's arguments (quality, track kind). The native file dialog is injected through `src/lib/pickFile.ts` (the one place that imports `@tauri-apps/plugin-dialog` for these components). The hooks' tests live in mps-core.

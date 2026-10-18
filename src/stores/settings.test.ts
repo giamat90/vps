@@ -11,22 +11,23 @@ beforeEach(() => {
   localStorage.clear();
 });
 
-describe("loading persisted settings", () => {
-  it("falls back to defaults when nothing is stored", async () => {
-    const s = (await freshStore()).getState();
-    expect(s.youtubeCookiesPath).toBeNull();
-    expect(s.collapsedFolders).toEqual({});
-  });
-
-  it("restores valid stored values", async () => {
+describe("settings store of this app", () => {
+  it("restores what was saved under vps_settings", async () => {
     localStorage.setItem(KEY, JSON.stringify({ youtubeCookiesPath: "/c.txt", collapsedFolders: { f1: true } }));
     const s = (await freshStore()).getState();
     expect(s.youtubeCookiesPath).toBe("/c.txt");
     expect(s.collapsedFolders).toEqual({ f1: true });
   });
 
-  // Until v0.1.63 the user picked the algorithm in Settings and it was persisted.
-  // Nobody may stay pinned to that old choice: the app decides it now.
+  it("saves under vps_settings only, in the shape older versions read", async () => {
+    (await freshStore()).getState().setFolderCollapsed("a", true);
+    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toEqual({ youtubeCookiesPath: null, collapsedFolders: { a: true } });
+    expect(localStorage.length).toBe(1);
+    expect(localStorage.key(0)).toBe(KEY);
+  });
+
+  // Until v0.1.63 the user picked the algorithm in Settings and it was persisted;
+  // nobody may stay pinned to that old choice: the app decides it now.
   it.each(["crepe", "praat", "pyin", "hps", "srh", "garbage", 42])(
     "ignores a pitchAlgorithm of %j stored by an older version",
     async (legacy) => {
@@ -36,85 +37,4 @@ describe("loading persisted settings", () => {
       expect(state.youtubeCookiesPath).toBe("/c.txt");
     },
   );
-
-  it("drops the stale pitchAlgorithm from storage the next time anything is saved", async () => {
-    localStorage.setItem(KEY, JSON.stringify({ pitchAlgorithm: "crepe", collapsedFolders: {} }));
-    (await freshStore()).getState().setFolderCollapsed("a", true);
-    expect(JSON.parse(localStorage.getItem(KEY) ?? "{}")).toEqual({
-      youtubeCookiesPath: null, collapsedFolders: { a: true },
-    });
-  });
-
-  it("ignores wrongly-typed cookies path and collapsedFolders", async () => {
-    localStorage.setItem(KEY, JSON.stringify({ youtubeCookiesPath: 5, collapsedFolders: ["a"] }));
-    const s = (await freshStore()).getState();
-    expect(s.youtubeCookiesPath).toBeNull();
-    expect(s.collapsedFolders).toEqual({});
-  });
-
-  it("ignores a null collapsedFolders", async () => {
-    localStorage.setItem(KEY, JSON.stringify({ collapsedFolders: null }));
-    expect((await freshStore()).getState().collapsedFolders).toEqual({});
-  });
-
-  it("survives corrupt JSON, warning instead of throwing", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    localStorage.setItem(KEY, "{not json");
-    const s = (await freshStore()).getState();
-    expect(s.collapsedFolders).toEqual({});
-    expect(warn).toHaveBeenCalled();
-  });
-
-  it("survives localStorage itself throwing", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(localStorage, "getItem").mockImplementation(() => { throw new Error("blocked"); });
-    const s = (await freshStore()).getState();
-    expect(s.youtubeCookiesPath).toBeNull();
-    expect(warn).toHaveBeenCalled();
-  });
-});
-
-describe("persisting changes", () => {
-  const stored = () => JSON.parse(localStorage.getItem(KEY) ?? "{}");
-
-  it("persists only the settings the user can change", async () => {
-    const store = await freshStore();
-    store.getState().setYoutubeCookiesPath("/c.txt");
-    expect(stored()).toEqual({ youtubeCookiesPath: "/c.txt", collapsedFolders: {} });
-  });
-
-  it("writes and clears the cookies path", async () => {
-    const store = await freshStore();
-    store.getState().setYoutubeCookiesPath("/c.txt");
-    expect(stored().youtubeCookiesPath).toBe("/c.txt");
-    store.getState().setYoutubeCookiesPath(null);
-    expect(stored().youtubeCookiesPath).toBeNull();
-  });
-
-  it("merges folder collapse flags instead of replacing them", async () => {
-    const store = await freshStore();
-    store.getState().setFolderCollapsed("a", true);
-    store.getState().setFolderCollapsed("b", true);
-    store.getState().setFolderCollapsed("a", false);
-    expect(store.getState().collapsedFolders).toEqual({ a: false, b: true });
-    expect(stored().collapsedFolders).toEqual({ a: false, b: true });
-  });
-
-  it("round-trips through a fresh module load", async () => {
-    const first = await freshStore();
-    first.getState().setYoutubeCookiesPath("/c.txt");
-    first.getState().setFolderCollapsed("x", true);
-    const second = (await freshStore()).getState();
-    expect(second.youtubeCookiesPath).toBe("/c.txt");
-    expect(second.collapsedFolders).toEqual({ x: true });
-  });
-
-  it("keeps the in-memory value and warns when storage rejects the write", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const store = await freshStore();
-    vi.spyOn(localStorage, "setItem").mockImplementation(() => { throw new Error("quota"); });
-    store.getState().setYoutubeCookiesPath("/c.txt");
-    expect(store.getState().youtubeCookiesPath).toBe("/c.txt");
-    expect(warn).toHaveBeenCalled();
-  });
 });
