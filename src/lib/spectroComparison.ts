@@ -1,5 +1,5 @@
 import { currentPitchHz, frequencyToNoteName, referenceF0 } from "../audio/analysisUtils";
-import type { VoiceEstimate } from "./formants";
+import type { VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import {
   SPECTRUM_BOTTOM_AXIS_H,
   SPECTRUM_MAX_DB,

@@ -16,8 +16,7 @@ import {
   envelopeWithY,
   voiceMarkers,
 } from "../../lib/spectroShortTerm";
-import { computeMagnitudeSpectrumDb } from "../../lib/fft";
-import { estimateVoice, type VoiceEstimate } from "../../lib/formants";
+import { computeMagnitudeSpectrumDb, estimateVoice, type VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import { referenceF0 } from "../../audio/analysisUtils";
 import { useAnalysisStore } from "../../stores/analysis";
 

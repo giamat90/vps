@@ -144,9 +144,7 @@ VPS/
 │   │   ├── ipc.generated.ts   GENERATED IPC wrappers (scripts/gen-ipc.mjs); never edit by hand
 │   │   ├── ipcTypes.ts        shapes that cross IPC and are not Rust-derived (AnalysisData, PackSummary, MixSource, …)
 │   │   ├── constants.ts       piano window constants and follow logic (C0–C7); NOTE_NAMES/MIDI helpers are in @giamat90/mps-core/music
-│   │   ├── fft.ts             dependency-free radix-2 FFT — one-off magnitude spectrum for a paused/scrubbed Free Exercise playhead
-│   │   ├── formants.ts        client-side F1/F2/F3 LPC estimator (Levinson-Durbin + Durand-Kerner root-finding)
-│   │   ├── spectroUtils.ts    shared spectrogram rendering constants/helpers (song precomputed + live mic), `windowDragTime` (drag-to-seek maths shared with PianoRoll)
+│   │   ├── spectroUtils.ts    spectrogram canvas/row helpers and the stitch of measured + stored curves; re-exports the pure curve code (FFT, formants F1-F3, dB span, colour map, smoothing) from `@giamat90/mps-core/spectrum`; `windowDragTime` (drag-to-seek maths shared with PianoRoll)
 │   │   ├── spectrogramMath.ts   SpectrogramPanel's pure maths: dB curve, frequency LUT, row norms, RGBA columns, scroll shift, static-window geometry, axis/legend ticks (no React, no stores)
 │   │   ├── spectrogramDraw.ts   SpectrogramPanel's canvas helpers: frequency axis, dB legend, grid, idle hint, playhead, formant ticks, track window
 │   │   ├── spectroShortTerm.ts  ShortTermSpectrumPanel's helpers: dB/decade grid, curve segments/fill/envelope, F0+formant markers, live-mic overlay
@@ -206,7 +204,7 @@ VPS/
 
 ## Shared code (`@giamat90/mps-core`)
 
-Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), note/frequency maths (`music`), autocorrelation pitch of one sample window (`pitch`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
+Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), `spectrum` (FFT, dB curve helpers, F0 and F1-F3 estimator), note/frequency maths (`music`), autocorrelation pitch of one sample window (`pitch`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
 
 ## Data model
 

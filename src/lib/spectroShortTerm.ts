@@ -1,5 +1,5 @@
 import { frequencyToNoteName } from "../audio/analysisUtils";
-import type { VoiceEstimate } from "./formants";
+import type { VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import {
   SPECTRO_COLORMAP,
   SPECTRUM_BOTTOM_AXIS_H,
