@@ -266,7 +266,7 @@ pub async fn process_song(
                 let song = Song {
                     id: song_id,
                     official_title: Some(title.clone()),
-                    official_artist: None,
+                    official_artist: library::detected_artist(&data),
                     title,
                     artist: None,
                     duration,
@@ -1153,7 +1153,7 @@ pub async fn import_youtube(
                 let song = Song {
                     id: song_id,
                     official_title: Some(title.clone()),
-                    official_artist: None,
+                    official_artist: library::detected_artist(&data),
                     title,
                     artist: None,
                     duration,

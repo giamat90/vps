@@ -234,6 +234,27 @@ def test_process_an_instrument_track_without_separation(sidecar, work, tmp_path)
     assert progress[-1]["value"] == 1.0
 
 
+def test_process_reports_the_artist_in_the_files_tags(sidecar, work, tmp_path):
+    from mutagen.flac import FLAC
+
+    tagged = tmp_path / "tagged.flac"
+    audio, sr = sf.read(str(work / "tone.wav"), dtype="float32")
+    sf.write(str(tagged), audio, sr, format="FLAC")
+    tags = FLAC(str(tagged))
+    tags["artist"] = "Leonard Cohen"
+    tags.save()
+    msg, _ = sidecar.call(
+        {"cmd": "process", "filePath": str(tagged), "outputDir": str(tmp_path / "o"), "skipSeparation": True, "algorithm": "piano"},
+        timeout=180,
+    )
+    assert msg["type"] == "result" and msg["data"]["artist"] == "Leonard Cohen"
+    msg, _ = sidecar.call(
+        {"cmd": "process", "filePath": str(work / "tone.wav"), "outputDir": str(tmp_path / "o2"), "skipSeparation": True, "algorithm": "piano"},
+        timeout=180,
+    )
+    assert msg["data"]["artist"] is None
+
+
 def test_non_ascii_paths_round_trip(sidecar, tmp_path):
     folder = tmp_path / "Música – 日本語 ñ"
     folder.mkdir()
