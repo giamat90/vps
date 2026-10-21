@@ -46,8 +46,14 @@ export async function pinHardwareOutput(get: StoreGet, eng: AudioEngine, failure
   return outputId;
 }
 
-// Plays N bars of click at the song's tempo before capture begins. Resolves
-// true when the count finished, false when cancelCountIn aborted it.
+// The click follows the tempo the singer hears: detected BPM scaled by the playback rate.
+export function countInBpm(get: StoreGet): number {
+  return (get().song?.detectedBpm ?? 120) * get().playbackRate;
+}
+
+// Plays N bars of click at the song's tempo before capture (or monitored
+// playback) begins. Resolves true when the count finished, false when
+// cancelCountIn aborted it.
 export function runCountIn(set: StoreSet, bpm: number, bars: number): Promise<boolean> {
   const totalBeats = bars * 4;
   const beatIntervalMs = (60 / bpm) * 1000;

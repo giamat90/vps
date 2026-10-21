@@ -4,6 +4,7 @@ import { useAnalysisStore } from "../analysis";
 import {
   abandonAfterCountIn,
   cancelRunningCountIn,
+  countInBpm,
   openRecorderMic,
   pinHardwareOutput,
   releaseRecorderMic,
@@ -50,7 +51,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
 
   startMonitoring: async () => {
     const s = get();
-    if (s.isRecording || s.isMonitoring) return;
+    if (s.isRecording || s.isMonitoring || s.isCountingIn) return;
 
     // Clear any live pitch trace left over from a previous monitor/recording
     // session — DualTuner's own clear runs on its effect cleanup, which is
@@ -71,14 +72,41 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
     } catch (e) {
       console.warn("[monitor] setOutputDevice failed:", e);
     }
+    // Same reroute as the engine, or the count-in click and the metronome
+    // would play through the Communications endpoint the mic just switched to.
+    if (outputId) metronome.setOutputDevice(outputId);
 
     // A loaded track is its own clock (play/pause drive isPlaying); the
     // free-running timer would report "playing" while the track is paused.
     if (get().exerciseMode && !eng.exerciseTrack) eng.startExerciseTimer();
+
+    // With a count-in set, monitoring a song works like Record minus the capture:
+    // pause, count in, then start the track so the singer comes in on the downbeat.
+    // Without one the track stays under the transport's control, as before.
+    const countInBars = get().countInBars;
+    const countIn = countInBars > 0 && !get().exerciseMode && s.song !== null;
+    if (countIn) {
+      eng.pause();
+      // Releases the shared `metronome` from TempoControl's effect before the click claims it.
+      set({ isPlaying: false });
+    }
     set({ isMonitoring: true });
+    if (!countIn) return;
+
+    if (!(await runCountIn(set, countInBpm(get), countInBars))) {
+      // Cancelled from the Record button, which owns the label while counting in;
+      // stopMonitoring has already cleaned up when the monitor button cancelled.
+      if (get().isMonitoring) await get().stopMonitoring();
+      return;
+    }
+    if (get().isMonitoring) get().play();
   },
 
   stopMonitoring: async () => {
+    // Flipped first so a startMonitoring waiting on its count-in sees the stop
+    // when the cancel below resolves it.
+    set({ isMonitoring: false });
+    cancelRunningCountIn(set);
     destroyMicAnalyser();
     const stream = getMonitorStream();
     if (stream) {
@@ -92,7 +120,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
     } catch (e) {
       console.warn("[monitor] setOutputDevice on stop failed:", e);
     }
-    set({ isMonitoring: false });
+    metronome.setOutputDevice(get().selectedOutputDeviceId ?? "");
     useAnalysisStore.getState().clearLivePitch();
   },
 
@@ -141,8 +169,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
     // means the take lands beat-aligned by construction.
     const countInBars = get().countInBars;
     if (countInBars > 0) {
-      const bpm = (song.detectedBpm ?? 120) * get().playbackRate;
-      if (!(await runCountIn(set, bpm, countInBars))) {
+      if (!(await runCountIn(set, countInBpm(get), countInBars))) {
         await abandonAfterCountIn(get, eng, rec);
         return;
       }

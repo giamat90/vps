@@ -7,6 +7,9 @@ function MonitorButton() {
   const isRecording     = usePlayerStore((s) => s.isRecording);
   const startMonitoring = usePlayerStore((s) => s.startMonitoring);
   const stopMonitoring  = usePlayerStore((s) => s.stopMonitoring);
+  const isCountingIn    = usePlayerStore((s) => s.isCountingIn);
+  const countInBars     = usePlayerStore((s) => s.countInBars);
+  const exerciseMode    = usePlayerStore((s) => s.exerciseMode);
   const trackLoaded    = useExerciseStore((s) => s.loadedTrackId !== null);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,10 +31,12 @@ function MonitorButton() {
       <button
         className={`monitor-btn${isMonitoring ? " monitor-btn--active" : ""}`}
         onClick={handleClick}
-        disabled={isRecording}
+        disabled={isRecording || (isCountingIn && !isMonitoring)}
         title={
           isMonitoring
-            ? "Stop microphone monitor"
+            ? isCountingIn ? "Cancel count-in and stop microphone monitor" : "Stop microphone monitor"
+            : countInBars > 0 && !exerciseMode
+            ? `Monitor mic with a ${countInBars}-bar count-in, then play the song (no recording)`
             : trackLoaded
             ? "Monitor mic against the loaded track (no recording)"
             : "Monitor mic in piano roll (no recording)"
