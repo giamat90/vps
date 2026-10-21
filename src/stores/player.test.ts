@@ -1039,6 +1039,100 @@ describe("count-in", () => {
     expect(h.metronome.stop).not.toHaveBeenCalled();
   });
 
+  describe("when monitoring", () => {
+    it("counts in with the click, then plays the song without recording", async () => {
+      store().getState().setCountInBars(1);
+      const pending = store().getState().startMonitoring();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store().getState()).toMatchObject({ isMonitoring: true, isCountingIn: true, countInBeatsRemaining: 4, isPlaying: false });
+      expect(h.metronome.start).toHaveBeenCalledWith(120, 0.05, 0);
+      expect(h.metronome.setOutputDevice).toHaveBeenCalledWith("out-ub");
+      expect(eng().play).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(2000);
+      await pending;
+      expect(h.metronome.stop).toHaveBeenCalled();
+      expect(store().getState()).toMatchObject({ isMonitoring: true, isCountingIn: false, isPlaying: true, isRecording: false });
+      expect(eng().play).toHaveBeenCalled();
+      expect(rec().start).not.toHaveBeenCalled();
+    });
+
+    it("pauses a song that is already playing and resumes it after the count", async () => {
+      store().getState().setCountInBars(1);
+      store().setState({ isPlaying: true });
+      const pending = store().getState().startMonitoring();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(eng().pause).toHaveBeenCalled();
+      expect(store().getState().isPlaying).toBe(false);
+      await vi.advanceTimersByTimeAsync(2000);
+      await pending;
+      expect(store().getState().isPlaying).toBe(true);
+    });
+
+    it("starts the song from the punch-in point", async () => {
+      store().getState().setCountInBars(1);
+      store().setState({ punchIn: 12 });
+      const pending = store().getState().startMonitoring();
+      await vi.advanceTimersByTimeAsync(2000);
+      await pending;
+      expect(eng().seekTo).toHaveBeenCalledWith(12);
+      expect(eng().play).toHaveBeenCalled();
+    });
+
+    it("scales the click by the playback rate like a recording does", async () => {
+      store().setState({ playbackRate: 0.5 });
+      store().getState().setCountInBars(1);
+      void store().getState().startMonitoring();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.metronome.start).toHaveBeenCalledWith(60, 0.05, 0);
+    });
+
+    it("does not count in, nor start the song, when the count-in is off", async () => {
+      await store().getState().startMonitoring();
+      expect(h.metronome.start).not.toHaveBeenCalled();
+      expect(eng().play).not.toHaveBeenCalled();
+      expect(store().getState()).toMatchObject({ isMonitoring: true, isCountingIn: false, isPlaying: false });
+    });
+
+    it("stopping the monitor mid-count cancels the click and never plays", async () => {
+      store().getState().setCountInBars(1);
+      const pending = store().getState().startMonitoring();
+      await vi.advanceTimersByTimeAsync(300);
+      await store().getState().stopMonitoring();
+      await pending;
+      expect(h.metronome.stop).toHaveBeenCalled();
+      expect(eng().play).not.toHaveBeenCalled();
+      expect(store().getState()).toMatchObject({ isMonitoring: false, isCountingIn: false, countInBeatsRemaining: 0, isPlaying: false });
+      expect(mod.getMonitorStream()).toBeNull();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(eng().play).not.toHaveBeenCalled();
+    });
+
+    it("cancelCountIn (the Record button while counting) also ends the monitor session", async () => {
+      store().getState().setCountInBars(1);
+      const pending = store().getState().startMonitoring();
+      await vi.advanceTimersByTimeAsync(300);
+      store().getState().cancelCountIn();
+      await pending;
+      expect(eng().play).not.toHaveBeenCalled();
+      expect(store().getState()).toMatchObject({ isMonitoring: false, isCountingIn: false });
+      expect(mod.getMonitorStream()).toBeNull();
+    });
+
+    it("restores the metronome's output when monitoring stops", async () => {
+      await store().getState().startMonitoring();
+      await store().getState().stopMonitoring();
+      expect(h.metronome.setOutputDevice).toHaveBeenLastCalledWith("");
+    });
+
+    it("is refused while a recording is counting in", async () => {
+      store().setState({ isCountingIn: true });
+      await store().getState().startMonitoring();
+      expect(getUserMedia).not.toHaveBeenCalled();
+      expect(store().getState().isMonitoring).toBe(false);
+    });
+  });
+
   it("refuses to change the bar count while counting in or recording", async () => {
     store().getState().setCountInBars(1);
     store().setState({ isRecording: true });
