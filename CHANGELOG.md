@@ -6,6 +6,12 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.93] - 2026-10-22
+
+### Fixed
+- **A long list of release notes no longer pushes the update buttons off screen.** The "Update available" window is now at most as tall as the window allows and the notes scroll inside it, so Install & Restart and Later stay visible.
+- **The count-in also applies to the Monitor button.** With a count-in set, Monitor now pauses the song, plays the click and then starts the song, like Record without the capture. Before, the count-in only governed Record.
+
 ## [0.0.92] - 2026-10-18
 
 ### Fixed
