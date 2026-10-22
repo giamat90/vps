@@ -3061,6 +3061,7 @@ button.waveform__take-name {
   padding: 2rem 2.5rem;
   min-width: 22rem;
   max-width: 90vw;
+  max-height: 85vh;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -3086,6 +3087,14 @@ button.waveform__take-name {
   margin: 0;
   max-width: 28rem;
   white-space: pre-wrap;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.update-modal__title,
+.update-modal__version,
+.update-modal__actions {
+  flex-shrink: 0;
 }
 .update-modal__actions {
   display: flex;
