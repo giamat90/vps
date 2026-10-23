@@ -171,74 +171,76 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   return (
     <div className="practice-room">
       <LivePitchFeed />
-      <header className="practice-room__header">
-        <button className="practice-room__back" onClick={onBack} aria-label="Back to library">
-          &larr; Back
-        </button>
-        <div className="practice-room__song-info">
-          {isEditingTitle ? (
-            <input
-              className="practice-room__title-input"
-              value={titleValue}
-              autoFocus
-              onChange={(e) => setTitleValue(e.target.value)}
-              onBlur={commitTitle}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitTitle();
-                else if (e.key === "Escape") setIsEditingTitle(false);
-              }}
-            />
-          ) : (
-            <h1
-              className="practice-room__title"
-              onDoubleClick={startEditingTitle}
-              title="Double-click to rename"
-            >
-              {song.title}
-              <button
-                className="practice-room__rename"
-                onClick={startEditingTitle}
-                title="Rename song"
-                aria-label="Rename song"
+      <div className="practice-room__pinned">
+        <header className="practice-room__header">
+          <button className="practice-room__back" onClick={onBack} aria-label="Back to library">
+            &larr; Back
+          </button>
+          <div className="practice-room__song-info">
+            {isEditingTitle ? (
+              <input
+                className="practice-room__title-input"
+                value={titleValue}
+                autoFocus
+                onChange={(e) => setTitleValue(e.target.value)}
+                onBlur={commitTitle}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") commitTitle();
+                  else if (e.key === "Escape") setIsEditingTitle(false);
+                }}
+              />
+            ) : (
+              <h1
+                className="practice-room__title"
+                onDoubleClick={startEditingTitle}
+                title="Double-click to rename"
               >
-                &#9998;
-              </button>
-            </h1>
-          )}
-          <div className="practice-room__meta">
-            {song.detectedBpm && (
-              <span>{Math.round(song.detectedBpm)} BPM</span>
+                {song.title}
+                <button
+                  className="practice-room__rename"
+                  onClick={startEditingTitle}
+                  title="Rename song"
+                  aria-label="Rename song"
+                >
+                  &#9998;
+                </button>
+              </h1>
             )}
-            {song.detectedKey && <span>{song.detectedKey}</span>}
+            <div className="practice-room__meta">
+              {song.detectedBpm && (
+                <span>{Math.round(song.detectedBpm)} BPM</span>
+              )}
+              {song.detectedKey && <span>{song.detectedKey}</span>}
+            </div>
           </div>
-        </div>
-        <PanelMenu
-          store={usePracticePanels}
-          panels={availablePracticePanels({ isInstrument })}
-          fixed={{
-            store: useWaveformPanels,
-            items: waveformMenuItems({ isInstrument }),
-            tags: hiddenTrackTags(waveformVisible, { muted: mutedTracks, soloed: soloedTrack }),
-          }}
-        />
-        <DownloadAllButton song={song} />
-        <SendToPhoneButton song={song} />
-        <ExportMixButton />
-      </header>
+          <PanelMenu
+            store={usePracticePanels}
+            panels={availablePracticePanels({ isInstrument })}
+            fixed={{
+              store: useWaveformPanels,
+              items: waveformMenuItems({ isInstrument }),
+              tags: hiddenTrackTags(waveformVisible, { muted: mutedTracks, soloed: soloedTrack }),
+            }}
+          />
+          <DownloadAllButton song={song} />
+          <SendToPhoneButton song={song} />
+          <ExportMixButton />
+        </header>
 
-      <div className="practice-room__topbar">
-        <TransportControls />
-        <LoopButton />
-        <LoopsMenu />
-        <TempoControl detectedBpm={song.detectedBpm} />
-        <div className="practice-room__topbar-devices">
-          <div className="practice-room__io-group">
-            <MicSelector />
-            <OutputSelector />
+        <div className="practice-room__topbar">
+          <TransportControls />
+          <LoopButton />
+          <LoopsMenu />
+          <TempoControl detectedBpm={song.detectedBpm} />
+          <div className="practice-room__topbar-devices">
+            <div className="practice-room__io-group">
+              <MicSelector />
+              <OutputSelector />
+            </div>
+            <KeyTranspose />
+            <MonitorButton />
+            <RecordButton />
           </div>
-          <KeyTranspose />
-          <MonitorButton />
-          <RecordButton />
         </div>
       </div>
 
