@@ -9,8 +9,8 @@
 ### 1. Read the wiki first
 At every session start, read `wiki/README.md` then the pages relevant to the task. The wiki is the authoritative record of architecture, components, and conventions. After every commit + push, update any wiki pages whose content was changed and commit the wiki updates as a follow-up commit.
 
-### 1a. Every merged PR updates the architecture documents
-After a pull request is merged, update `wiki/uml.md` (and `MPS/wiki/uml-architecture.md` / `shared-architecture.md` when the shared shape changed) from the merged code before calling the work done; if no diagram is affected, say so. MPS rule 22 (`MPS/wiki/conventions.md`).
+### 1a. Every PR updates the docs, UML included
+Every pull request carries its docs: `CLAUDE.md`, the wiki pages it touches and `wiki/uml.md` are updated in the same PR (and `MPS/wiki/uml-architecture.md` / `shared-architecture.md` when the shared shape changed). If no diagram is affected, the PR description says "UML: no change, because ...". MPS rule 22 (`MPS/wiki/conventions.md`).
 
 ### 2. All dimensions must be relative units
 Every CSS size — width, height, font-size, padding, margin, gap — must use `%`, `rem`, `em`, `vw`, `vh`, `fr`, `clamp()`, `min()`, `max()`. **Never `px` for layout dimensions.** This is a hard project rule. If you spot a `px` value in a diff, convert or flag it.
@@ -20,9 +20,6 @@ Default to no comments. Only add one for hidden constraints, workarounds, subtle
 
 ### 4. Never swallow errors silently
 Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log with `console.warn` or `console.error` at minimum. If an error is expected and non-fatal, log it; if it is unexpected, rethrow or surface it to the UI.
-
-### 5. Every PR updates the docs, UML included
-Every pull request carries its docs: `CLAUDE.md`, the wiki pages it touches and `wiki/uml.md` are updated in the same PR (and `MPS/wiki/uml-architecture.md` / `shared-architecture.md` when the shared shape changed). If no diagram is affected, the PR description says "UML: no change, because ...". MPS rule 22 (`MPS/wiki/conventions.md`).
 
 ---
 
