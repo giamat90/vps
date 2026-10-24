@@ -6,6 +6,17 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.95] - 2026-10-24
+
+### Added
+- **Every panel's name is a button that folds it**, like the Lyrics button always did. Click the name to fold the panel down to just that button, click it again to open it. It works on the Pitch Monitor, Short-Term Spectrum, Spectrum comparison, Dynamics, Vibrato, Timing, Coaching and Takes panels in the practice room, and on the spectrogram, short-term spectrum and Recordings on the Free Exercise page. A folded panel is only its button: no legend, no hints, and nothing drawing in the background. Your choice is remembered, and a panel in a window of its own follows it.
+
+### Changed
+- **The keyboard and the piano roll are one panel, called Pitch Monitor** (in the Panels menu and in its own window), with one button that folds both.
+- The Coaching, Vibrato and Timing buttons sit above their card, the way the Lyrics button does.
+- Panels with nothing to show yet (Vibrato and Timing before you pick a take) no longer leave a gap in the page.
+- Uses mps-core v0.16.0.
+
 ## [0.0.94] - 2026-10-24
 
 ### Changed
