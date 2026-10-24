@@ -94,6 +94,8 @@ flowchart TB
     SP --> P8["coach: CoachPanel (rule-based tips)"]
 
     PM["PanelMenu + usePracticePanels (visibility, order)"]
+    TB["SortableTopbar + useTopbarOrder (top bar cards: order, visibility, Cards menu; core useSortableBar)"]
+    TB -.-> PM
     DH["DetachHandle / DockHandle -> useDetachedStore -> detach_panel"]
     PM -.-> SP
     DH -.-> SP

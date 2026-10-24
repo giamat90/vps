@@ -1012,30 +1012,81 @@ body,
   margin-bottom: calc(var(--section-gap) * -1);
 }
 
+/* The top bar is one list of cards, in the user's order, that wraps with the window. There are no fixed
+   lines: a card never breaks across lines, a whole card drops to the next one when it does not fit. */
 .practice-room__topbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem 1rem;
+  gap: 0.4rem 1.25rem;
 }
 
-.practice-room__topbar-devices {
+/* Each section is a card, like the transport's: the user sees at a glance which controls belong together.
+   The transport section is the transport's own card, so it takes no second one. */
+.topbar-section {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  flex-shrink: 0;
   align-items: center;
-  gap: 1rem;
+  gap: 0.5rem 0.75rem;
+  padding: 0.4rem 0.75rem 0.4rem 0.3rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  position: relative;
 }
 
-.practice-room__io-group {
+/* The transport is a card of its own elsewhere; in the bar the section is the card. */
+.practice-room__topbar .transport {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The grip that moves a card anywhere in the bar. The panels under the stems have their own, vertical one
+   (.detach-handle__move); the two never share a drag. */
+.topbar-grip {
+  align-self: stretch;
   display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
+  align-items: center;
+  padding: 0 0.15rem;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  line-height: 1;
+  letter-spacing: -0.2em;
+  cursor: grab;
+  touch-action: none;
+  opacity: 0.4;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.topbar-section:hover .topbar-grip,
+.topbar-grip:focus-visible {
+  opacity: 1;
+}
+
+.topbar-grip:hover {
+  color: var(--accent-hover);
+}
+
+.topbar-section--dragging {
+  z-index: 20;
+  opacity: 0.92;
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.45);
+}
+
+.topbar-section--dragging .topbar-grip {
+  opacity: 1;
+  cursor: grabbing;
+  color: var(--accent);
 }
 
 /* Compact pinned bar: speed, devices and transport sit in rows, not stacks,
    so the pinned block stays about two rows tall. */
 .practice-room__topbar .transport {
-  padding: 0.4rem 0.75rem;
   gap: 1rem;
 }
 
@@ -1050,13 +1101,6 @@ body,
   flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
-}
-
-.practice-room__topbar .practice-room__io-group {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.35rem 0.75rem;
 }
 
 .practice-room__topbar .key-transpose {

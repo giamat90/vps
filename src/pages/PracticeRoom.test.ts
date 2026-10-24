@@ -356,3 +356,40 @@ describe("PracticeRoom waveform area", () => {
     expect(tags(await render({}, undefined, { vocals: false }))).toEqual({ vocals: "solo" });
   });
 });
+
+describe("PracticeRoom top bar cards", () => {
+  const bar = (html: string) => html.split("practice-room__topbar")[1].split("practice-room__body")[0];
+  const seed = (saved: object) => localStorage.setItem("vps_topbar", JSON.stringify(saved));
+
+  it("draws five cards in one wrapping bar, in the default order, each with a grip", async () => {
+    const html = bar(await render());
+    expect(html.match(/class="topbar-section/g)).toHaveLength(5);
+    expect(html.match(/class="topbar-grip"/g)).toHaveLength(5);
+    const ids = shown(html);
+    const at = (c: string) => ids.indexOf(c);
+    expect(at("transport")).toBeLessThan(at("loop"));
+    expect(at("tempo")).toBeLessThan(at("mic"));
+    expect(at("output")).toBeLessThan(at("transpose"));
+  });
+
+  it("draws the cards in the user's order", async () => {
+    seed({ overrides: {}, order: ["transpose", "tempo", "devices", "transport", "loop"] });
+    const ids = shown(bar(await render()));
+    expect(ids.indexOf("transpose")).toBeLessThan(ids.indexOf("tempo"));
+    expect(ids.indexOf("output")).toBeLessThan(ids.indexOf("transport"));
+  });
+
+  it("offers a second menu, Cards, next to Panels, and hiding a card removes only it", async () => {
+    const html = await render();
+    expect([...html.matchAll(/data-ids="([^"]*)"/g)].map((m) => m[1])[1]).toBe("transport,loop,tempo,devices,transpose");
+    seed({ overrides: { loop: false }, order: undefined });
+    const after = bar(await render());
+    expect(after.match(/class="topbar-grip"/g)).toHaveLength(4);
+    expect(after).not.toContain('data-c="loop"');
+    expect(after).toContain('data-c="tempo"');
+  });
+
+  it("is not affected by hiding the panels", async () => {
+    expect(bar(await render(all(false))).match(/class="topbar-section/g)).toHaveLength(5);
+  });
+});
