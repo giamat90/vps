@@ -5,7 +5,7 @@ import { createPanelStore } from "@giamat90/mps-core/panels";
 // loaded recording is drawn into: it is collapsed, never unmounted, because the
 // audio engine draws into that element.
 export const EXERCISE_PANELS = [
-  { id: "keyboard", label: "Piano keyboard", defaultVisible: true },
+  { id: "keyboard", label: "Pitch Monitor", defaultVisible: true },
   { id: "track", label: "Loaded track", defaultVisible: true },
   { id: "pianoRoll", label: "Piano roll", defaultVisible: true },
   { id: "spectrogram", label: "Spectrogram", defaultVisible: true },

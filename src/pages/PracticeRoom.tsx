@@ -14,8 +14,7 @@ import RecordButton from "../components/recording/RecordButton";
 import MonitorButton from "../components/recording/MonitorButton";
 import MicSelector from "../components/recording/MicSelector";
 import TakeList from "../components/recording/TakeList";
-import PianoRoll from "../components/analysis/PianoRoll";
-import PianoKeyboard from "../components/analysis/PianoKeyboard";
+import PitchMonitorPanel from "../components/analysis/PitchMonitorPanel";
 import DynamicsCurve from "../components/analysis/DynamicsCurve";
 import ShortTermSpectrumComparisonPanel from "../components/analysis/ShortTermSpectrumComparisonPanel";
 import VibratoCard from "../components/analysis/VibratoCard";
@@ -53,12 +52,7 @@ function PanelView({ id, songId }: { id: PracticePanelId; songId: string }) {
     case "takes":
       return <TakeList />;
     case "pianoRoll":
-      return (
-        <>
-          <PianoKeyboard />
-          <PianoRoll />
-        </>
-      );
+      return <PitchMonitorPanel />;
     case "spectrum":
       return <ShortTermSpectrumComparisonPanel />;
     case "dynamics":

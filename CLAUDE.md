@@ -122,6 +122,7 @@ VPS/
 │   │   ├── analysis/
 │   │   │   ├── PianoRoll.tsx       VoceVista-style pitch ribbon (song+take+live)
 │   │   │   ├── PianoKeyboard.tsx   horizontal piano with live pitch highlight
+│   │   │   ├── PitchMonitorPanel.tsx  the practice room's pitch panel: PianoKeyboard + PianoRoll under one title button
 │   │   │   ├── DualTuner.tsx       real-time pitch tuner (song vs singer)
 │   │   │   ├── DynamicsCurve.tsx   RMS dynamics over time
 │   │   │   ├── VibratoCard.tsx     vibrato rate/depth/regularity
@@ -134,6 +135,7 @@ VPS/
 │   │   ├── lyrics/
 │   │   │   └── LyricsPanel.tsx     synced lyrics: paste/find online/sync, karaoke view, click-to-seek
 │   │   ├── panels/
+│   │   │   ├── PanelTitle.tsx  a panel's name as the button that folds it (the Lyrics panel's button)
 │   │   │   └── PanelMenu.tsx  Panels menu in the practice-room / Free Exercise header: tick which panels are shown; lists the waveform area and its tracks first
 │   │   ├── settings/
 │   │   │   └── YouTubeCookiesControl.tsx  Sign in to YouTube (private window → cookies file, see wiki/youtube-signin.md) or pick a cookies.txt; avoids the flaky live-browser cookie fallback
@@ -167,6 +169,7 @@ VPS/
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
 │   │   ├── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
 │   │   ├── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
+│   │   ├── collapsed.ts       which panels are folded down to their title button (createCollapseStore from mps-core, `vps_collapsed`); `usePanelCollapse(id)`
 │   │   ├── waveforms.ts       whether the waveform area is shown and whether each track is expanded or shrunk to its strip (`vps_waveforms`); hidden = collapsed, never unmounted
 │   │   └── exercisePanels.ts  which Free Exercise panels are visible (`vps_exercise_panels`)
 │   ├── windows/           detachable panels (spike): VPS-specific state, commands and streams on top of `@giamat90/mps-core/windows` — see wiki/detachable-panels.md

@@ -25,6 +25,8 @@ import {
   drawTrackSpectrogramWindow,
   fillFormantTicks,
 } from "../../lib/spectrogramDraw";
+import PanelTitle from "../panels/PanelTitle";
+import { usePanelCollapse } from "../../stores/collapsed";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
@@ -230,6 +232,8 @@ function drawFrame(canvas: HTMLCanvasElement, state: RenderState, flags: Omit<Fr
 }
 
 export default function SpectrogramPanel() {
+  const collapse = usePanelCollapse("spectrogram");
+  const { open } = collapse;
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
@@ -299,11 +303,12 @@ export default function SpectrogramPanel() {
   }, [isRecording, isMonitoring, trackActive, shouldScroll, staticMode, trackSpectrogram]);
 
   useEffect(() => {
+    if (!open) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -311,7 +316,7 @@ export default function SpectrogramPanel() {
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, []);
+  }, [open]);
 
   // ── drag-to-seek — same semantics as PianoRoll's main-canvas drag, so
   // both widgets scrub the shared engine/store time in the same way. Only
@@ -341,24 +346,28 @@ export default function SpectrogramPanel() {
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
-        <span className="analysis-panel__label">Spectrum</span>
-        <span className="analysis-panel__hint">
-          {isComputingSpectrogram
-            ? "computing…"
-            : isRecording || isMonitoring || trackActive
-            ? "live"
-            : "off"}
-        </span>
+        <PanelTitle collapse={collapse}>Spectrum</PanelTitle>
+        {open && (
+          <span className="analysis-panel__hint">
+            {isComputingSpectrogram
+              ? "computing…"
+              : isRecording || isMonitoring || trackActive
+              ? "live"
+              : "off"}
+          </span>
+        )}
       </div>
-      <canvas
-        ref={canvasRef}
-        className="analysis-panel__canvas spectro-panel__canvas"
-        style={{ cursor: trackActive && !isRecording ? "grab" : "default" }}
-        onMouseDown={onCanvasMouseDown}
-        onMouseMove={onCanvasMouseMove}
-        onMouseUp={onCanvasMouseUp}
-        onMouseLeave={onCanvasMouseUp}
-      />
+      {open && (
+        <canvas
+          ref={canvasRef}
+          className="analysis-panel__canvas spectro-panel__canvas"
+          style={{ cursor: trackActive && !isRecording ? "grab" : "default" }}
+          onMouseDown={onCanvasMouseDown}
+          onMouseMove={onCanvasMouseMove}
+          onMouseUp={onCanvasMouseUp}
+          onMouseLeave={onCanvasMouseUp}
+        />
+      )}
     </div>
   );
 }

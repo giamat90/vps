@@ -2411,25 +2411,31 @@ button.waveform__take-name {
 }
 
 /* Vibrato Card */
+/* A panel whose content sits in a card keeps its title button outside the card, like the Lyrics button. */
+.panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .vibrato-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.vibrato-card__body {
   background: var(--bg-secondary);
   border-radius: 8px;
   padding: 0.6rem 0.75rem;
-  margin-top: 0.5rem;
 }
 
 .vibrato-card__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-bottom: 0.5rem;
-}
-
-.vibrato-card__title {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .vibrato-card__info-btn {
@@ -2522,18 +2528,16 @@ button.waveform__take-name {
 
 /* Timing Chart */
 .timing-chart {
-  background: var(--bg-secondary);
-  border-radius: 8px;
-  padding: 0.6rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   margin-top: 0.5rem;
 }
 
-.timing-chart__title {
-  font-size: 0.75rem;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  margin-bottom: 0.4rem;
+.timing-chart__body {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
 }
 
 .timing-chart__svg {
@@ -2573,12 +2577,18 @@ button.waveform__take-name {
 
 /* Coach Panel */
 .coach-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.coach-panel__body {
   background: var(--bg-secondary);
   border-radius: 8px;
   padding: 0.75rem;
 }
 
-.coach-panel--empty {
+.coach-panel__body--empty {
   color: var(--text-secondary);
   font-size: 0.85rem;
   text-align: center;
@@ -2588,7 +2598,7 @@ button.waveform__take-name {
 .coach-panel__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 0.5rem;
 }
 
@@ -4042,8 +4052,13 @@ button.waveform__take-name {
   font-size: 0.85rem;
 }
 
-/* A panel that rendered nothing (vibrato without a take) leaves only its handle: hide that too. */
+/* A panel that rendered nothing (vibrato without a take) leaves only its handle: hide that too, and
+   its slot, or every empty one adds a row gap to the stack. */
 .detachable > .detach-handle:only-child {
+  display: none;
+}
+
+.sortable-panel:has(> .detachable > .detach-handle:only-child) {
   display: none;
 }
 

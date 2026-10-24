@@ -2,8 +2,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { detachedTitle, dockSafely, useBridgeRun } from "@giamat90/mps-core/hooks";
 import { createRemoteSpectrumSource } from "../audio/spectrumSource";
 import DynamicsCurve from "../components/analysis/DynamicsCurve";
-import PianoKeyboard from "../components/analysis/PianoKeyboard";
-import PianoRoll from "../components/analysis/PianoRoll";
+import PitchMonitorPanel from "../components/analysis/PitchMonitorPanel";
 import ShortTermSpectrumComparisonPanel from "../components/analysis/ShortTermSpectrumComparisonPanel";
 import TimingChart from "../components/analysis/TimingChart";
 import VibratoCard from "../components/analysis/VibratoCard";
@@ -20,7 +19,7 @@ import type { DetachablePanel } from "./protocol";
 import { installSpectrumSource } from "./spectrumRegistry";
 
 const TITLES: Record<DetachablePanel, string> = {
-  pianoRoll: "Piano roll",
+  pianoRoll: "Pitch Monitor",
   lyrics: "Lyrics",
   takes: "Takes",
   spectrum: "Spectrum comparison",
@@ -42,8 +41,7 @@ function PanelBody({ panel, songId }: { panel: DetachablePanel; songId: string }
     case "pianoRoll":
       return (
         <div className="detached-host__stack">
-          <PianoKeyboard />
-          <PianoRoll />
+          <PitchMonitorPanel />
         </div>
       );
     case "lyrics":

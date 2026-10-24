@@ -6,10 +6,14 @@ import { getSpectrumSource } from "../../windows/spectrumRegistry";
 import { drawComparisonFrame } from "../../lib/spectroComparison";
 import { COLOR_SONG, COLOR_SONG_ALT, COLOR_TAKE, COLOR_LIVE } from "./PianoKeyboard";
 import { useVoiceViewStore } from "../../stores/voiceView";
+import PanelTitle from "../panels/PanelTitle";
+import { usePanelCollapse } from "../../stores/collapsed";
 
 const COLORS = { song: COLOR_SONG, songAlt: COLOR_SONG_ALT, take: COLOR_TAKE, live: COLOR_LIVE };
 
 export default function ShortTermSpectrumComparisonPanel() {
+  const collapse = usePanelCollapse("spectrumComparison");
+  const { open } = collapse;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const songSTSpectrum = useAnalysisStore((s) => s.songSTSpectrum);
   const takeSTSpectrum = useAnalysisStore((s) => s.takeSTSpectrum);
@@ -56,15 +60,15 @@ export default function ShortTermSpectrumComparisonPanel() {
     };
 
     drawRef.current();
-  }, [songSTSpectrum, takeSTSpectrum, isRecording, isMonitoring]);
+  }, [open, songSTSpectrum, takeSTSpectrum, isRecording, isMonitoring]);
 
   useEffect(() => {
-    if (!isLoaded && !isRecording && !isMonitoring) return;
+    if (!open || (!isLoaded && !isRecording && !isMonitoring)) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded, isRecording, isMonitoring]);
+  }, [open, isLoaded, isRecording, isMonitoring]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -72,29 +76,31 @@ export default function ShortTermSpectrumComparisonPanel() {
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, []);
+  }, [open]);
 
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
-        <span className="analysis-panel__label">Short-Term Spectrum</span>
-        <div className="analysis-panel__legend">
-          <span className="legend-dot legend-dot--song" />
-          <span>Song</span>
-          {(isRecording || isMonitoring) ? (
-            <>
-              <span className="legend-dot legend-dot--live" />
-              <span>Live</span>
-            </>
-          ) : takeSTSpectrum && (
-            <>
-              <span className="legend-dot legend-dot--take" />
-              <span>Your voice</span>
-            </>
-          )}
-        </div>
+        <PanelTitle collapse={collapse}>Short-Term Spectrum</PanelTitle>
+        {open && (
+          <div className="analysis-panel__legend">
+            <span className="legend-dot legend-dot--song" />
+            <span>Song</span>
+            {(isRecording || isMonitoring) ? (
+              <>
+                <span className="legend-dot legend-dot--live" />
+                <span>Live</span>
+              </>
+            ) : takeSTSpectrum && (
+              <>
+                <span className="legend-dot legend-dot--take" />
+                <span>Your voice</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
-      <canvas ref={canvasRef} className="analysis-panel__canvas short-term-spectrum-panel__canvas" />
+      {open && <canvas ref={canvasRef} className="analysis-panel__canvas short-term-spectrum-panel__canvas" />}
     </div>
   );
 }

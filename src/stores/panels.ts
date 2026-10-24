@@ -6,7 +6,7 @@ import { createPanelStore } from "@giamat90/mps-core/panels";
 export const PRACTICE_PANELS = [
   { id: "lyrics", label: "Lyrics", defaultVisible: true },
   { id: "takes", label: "Takes", defaultVisible: true },
-  { id: "pianoRoll", label: "Piano roll", defaultVisible: true },
+  { id: "pianoRoll", label: "Pitch Monitor", defaultVisible: true },
   { id: "spectrum", label: "Spectrum comparison", defaultVisible: false },
   { id: "dynamics", label: "Dynamics", defaultVisible: false },
   { id: "vibrato", label: "Vibrato", defaultVisible: true },

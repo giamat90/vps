@@ -1,4 +1,6 @@
 import { useRef, useEffect } from "react";
+import PanelTitle from "../panels/PanelTitle";
+import { usePanelCollapse } from "../../stores/collapsed";
 import { useAnalysisStore } from "../../stores/analysis";
 import { useVoiceViewStore } from "../../stores/voiceView";
 import { MAIN_VOICES, isMainVoice } from "../../lib/voices";
@@ -149,7 +151,14 @@ function drawRoll(canvas: HTMLCanvasElement, windowMin: { current: number }, d: 
 
 // ─── component ───────────────────────────────────────────────────────────────
 
-export default function PianoRoll() {
+interface PianoRollProps {
+  /** False inside the Pitch Monitor panel, whose own button folds the roll with the keyboard. */
+  collapsible?: boolean;
+}
+
+export default function PianoRoll({ collapsible = true }: PianoRollProps) {
+  const collapse         = usePanelCollapse("pianoRoll");
+  const open             = !collapsible || collapse.open;
   const canvasRef        = useRef<HTMLCanvasElement>(null);
   const rulerRef         = useRef<HTMLCanvasElement>(null);
   const songPitch        = useAnalysisStore((s) => s.songPitch);
@@ -208,15 +217,15 @@ export default function PianoRoll() {
     };
 
     drawRef.current();
-  }, [songPitch, songPitchAlt, showMultipleLines, takePitch, livePitch, isLoaded, punchIn, punchOut, isRecording]);
+  }, [open, songPitch, songPitchAlt, showMultipleLines, takePitch, livePitch, isLoaded, punchIn, punchOut, isRecording]);
 
   useEffect(() => {
-    if (!isLoaded && !exerciseMode) return;
+    if (!open || (!isLoaded && !exerciseMode)) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded, exerciseMode]);
+  }, [open, isLoaded, exerciseMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -226,7 +235,7 @@ export default function PianoRoll() {
     ro.observe(canvas);
     if (ruler) ro.observe(ruler);
     return () => ro.disconnect();
-  }, []);
+  }, [open]);
 
   // ── ruler mouse handlers (punch region) ─────────────────────────────────────
 
@@ -341,30 +350,36 @@ export default function PianoRoll() {
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
-        <span className="analysis-panel__label">Piano Roll</span>
-        <div className="analysis-panel__legend">
-          <span className="legend-dot legend-dot--song-ribbon" />
-          <span>{songLabel}</span>
-          {showMultipleLines && hasSecondVoice && (
-            <>
-              <span className="legend-dot legend-dot--song-alt" />
-              <span>Second voice</span>
-            </>
-          )}
-          {takePitch.length > 0 && (
-            <>
-              <span className="legend-dot legend-dot--take" />
-              <span>Your voice</span>
-            </>
-          )}
-          {isRecording && (
-            <>
-              <span className="legend-dot legend-dot--live" />
-              <span>Live</span>
-            </>
-          )}
-        </div>
-        {!exerciseMode && (
+        {collapsible ? (
+          <PanelTitle collapse={collapse}>Piano Roll</PanelTitle>
+        ) : (
+          <span className="analysis-panel__label">Piano Roll</span>
+        )}
+        {open && (
+          <div className="analysis-panel__legend">
+            <span className="legend-dot legend-dot--song-ribbon" />
+            <span>{songLabel}</span>
+            {showMultipleLines && hasSecondVoice && (
+              <>
+                <span className="legend-dot legend-dot--song-alt" />
+                <span>Second voice</span>
+              </>
+            )}
+            {takePitch.length > 0 && (
+              <>
+                <span className="legend-dot legend-dot--take" />
+                <span>Your voice</span>
+              </>
+            )}
+            {isRecording && (
+              <>
+                <span className="legend-dot legend-dot--live" />
+                <span>Live</span>
+              </>
+            )}
+          </div>
+        )}
+        {open && !exerciseMode && (
           <div className="piano-roll__voices">
             <label className="piano-roll__main-voice">
               <span>Main line</span>
@@ -394,26 +409,30 @@ export default function PianoRoll() {
           </div>
         )}
       </div>
-      <div className="piano-roll__ruler-wrap">
-        <canvas
-          ref={rulerRef}
-          className="piano-roll__ruler"
-          onMouseDown={onRulerMouseDown}
-          onMouseMove={onRulerMouseMove}
-          onMouseUp={onRulerMouseUp}
-          onMouseLeave={onRulerMouseLeave}
-          style={{ cursor: isRecording ? "default" : "crosshair" }}
-        />
-      </div>
-      <canvas
-        ref={canvasRef}
-        className="analysis-panel__canvas analysis-panel__canvas--piano-roll"
-        style={{ cursor: isRecording ? "default" : "grab" }}
-        onMouseDown={onCanvasMouseDown}
-        onMouseMove={onCanvasMouseMove}
-        onMouseUp={onCanvasMouseUp}
-        onMouseLeave={onCanvasMouseUp}
-      />
+      {open && (
+        <>
+          <div className="piano-roll__ruler-wrap">
+            <canvas
+              ref={rulerRef}
+              className="piano-roll__ruler"
+              onMouseDown={onRulerMouseDown}
+              onMouseMove={onRulerMouseMove}
+              onMouseUp={onRulerMouseUp}
+              onMouseLeave={onRulerMouseLeave}
+              style={{ cursor: isRecording ? "default" : "crosshair" }}
+            />
+          </div>
+          <canvas
+            ref={canvasRef}
+            className="analysis-panel__canvas analysis-panel__canvas--piano-roll"
+            style={{ cursor: isRecording ? "default" : "grab" }}
+            onMouseDown={onCanvasMouseDown}
+            onMouseMove={onCanvasMouseMove}
+            onMouseUp={onCanvasMouseUp}
+            onMouseLeave={onCanvasMouseUp}
+          />
+        </>
+      )}
     </div>
   );
 }
