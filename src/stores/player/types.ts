@@ -1,4 +1,5 @@
 import type { StateCreator } from "zustand";
+import type { CountInSlice } from "@giamat90/mps-core/countIn";
 import type { ExerciseTake, Song, Take } from "../../lib/types";
 import type { TakePlayback } from "@giamat90/mps-core/takes";
 
@@ -141,17 +142,10 @@ export interface RecordingSlice {
   isRecording: boolean;
   isSavingTake: boolean;
   isMonitoring: boolean;
-  // Count-in: bars of click played before startRecording actually starts
-  // capturing (0 = off). Session-only, not persisted per song.
-  countInBars: 0 | 1 | 2;
-  isCountingIn: boolean;
-  countInBeatsRemaining: number;
   startRecording: () => Promise<void>;
   stopRecording: () => Promise<void>;
   startMonitoring: () => Promise<void>;
   stopMonitoring: () => Promise<void>;
-  setCountInBars: (bars: 0 | 1 | 2) => void;
-  cancelCountIn: () => void;
 }
 
 export interface ExerciseSlice {
@@ -172,6 +166,7 @@ export type PlayerStore = SongSlice &
   PunchSlice &
   DevicesSlice &
   TakesSlice &
+  CountInSlice &
   RecordingSlice &
   ExerciseSlice;
 

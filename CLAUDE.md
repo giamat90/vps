@@ -106,7 +106,8 @@ VPS/
 │   │   │   ├── SendToPhoneDialog.tsx  Send over Wi-Fi (QR code, progress, network picker) or save the practice pack as a file; see wiki/practice-pack.md
 │   │   │   ├── QrCode.tsx          SVG QR code (dark on white in every theme), drawn from `src/lib/qr.ts`
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
-│   │   │   ├── TransportControls.tsx  play/pause/stop + volume sliders
+│   │   │   ├── TransportControls.tsx  play/pause/stop + time; Play counts in when the count-in is set
+│   │   │   ├── CountInButton.tsx   ⏱ count-in bars (headless `useCountInButton`); counts in Play, Record and Monitor
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
 │   │   │   ├── OutputSelector.tsx  audio output device picker
@@ -157,8 +158,8 @@ VPS/
 │   │   └── exerciseSpectrogram.ts  precomputes a loaded Free Exercise track's whole spectrogram once, for a centered drag-to-seek view
 │   ├── stores/
 │   │   ├── player/            the player store, one zustand slice per concern composed in `index.ts` (public API unchanged: `usePlayerStore`, `getEngine`, `getMicAnalyser`, …); see "Player store shape"
-│   │   │   ├── song.ts, transport.ts, mixer.ts, timeline.ts, punch.ts, devices.ts, takes.ts, recording.ts, exercise.ts   slices
-│   │   │   ├── recordingFlow.ts   steps of startRecording (open mic, pin output, count-in, latency)
+│   │   │   ├── song.ts, transport.ts, mixer.ts, timeline.ts, punch.ts, devices.ts, takes.ts, countIn.ts, recording.ts, exercise.ts   slices
+│   │   │   ├── recordingFlow.ts   steps of startRecording (open mic, pin output, latency)
 │   │   │   ├── singletons.ts      engine / recorder / mic analyser, outside Zustand
 │   │   │   ├── volume.ts          effectiveVolume, buildMixSources, pushTakeAudio
 │   │   │   ├── persistence.ts     localStorage: take prefs, recording offsets
@@ -207,7 +208,7 @@ VPS/
 
 ## Shared code (`@giamat90/mps-core`)
 
-Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), `spectrum` (FFT, dB curve helpers, F0 and F1-F3 estimator), note/frequency maths (`music`), autocorrelation pitch of one sample window (`pitch`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
+Code that is identical in VPS and SPS lives in `github.com/giamat90/mps-core`, pinned by tag in `package.json` and `sidecar/requirements*.txt`: `metronome`, `recorder`, `countIn` (the count-in slice, plans and tempo), `metronomeSync`, `zoomPan`, `shortcuts` (global key handler), `loops` (named loops, bar sections), `spectrum` (FFT, dB curve helpers, F0 and F1-F3 estimator), note/frequency maths (`music`), autocorrelation pitch of one sample window (`pitch`), the updater store, the lyrics slice (types, timing, IPC wrappers, store), `createPanelStore` (headless show/hide store for optional panels), `youtube` (sign-in IPC wrappers, `cookiesSource`, `isSessionExpiredError`) plus the Rust crate `mps-youtube-signin` (the in-app YouTube sign-in, a Cargo git dependency pinned by `rev`/`tag` in `src-tauri/Cargo.toml`), and in the sidecar `mps_core.lyrics`, `mps_core.version_check` and `AppIdentity`. **Do not copy those back into this repository and do not edit them in `node_modules`**: change them in the mps-core repository, tag, and bump the pin here and in SPS. See `wiki/shared-core.md`.
 
 ## Data model
 
@@ -499,7 +500,7 @@ Horizontal key strip. Same 40-semitone sliding window over C0–C7 as PianoRoll.
 
 ## Player store shape (`src/stores/player/`)
 
-One store, nine slices (`song`, `transport`, `mixer`, `timeline`, `punch`, `devices`, `takes`, `recording`, `exercise`), each a `Slice<…>` creator in its own file and composed in `index.ts`. Slices call each other through `get()`; the shared field/action interfaces are in `types.ts`. Key state fields (abbreviated):
+One store, ten slices (`song`, `transport`, `mixer`, `timeline`, `punch`, `devices`, `takes`, `countIn`, `recording`, `exercise`), each a `Slice<…>` creator in its own file and composed in `index.ts`. Slices call each other through `get()`; the shared field/action interfaces are in `types.ts`. Key state fields (abbreviated):
 
 ```ts
 song: Song | null

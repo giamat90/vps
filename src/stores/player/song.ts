@@ -87,6 +87,7 @@ export const createSongSlice: Slice<SongSlice> = (set, get) => ({
   isTransposing: false,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
+    get().cancelCountIn();
     const eng = getEngine();
     if (!(await eng.load(song.directory, vocalsEl, instrumentalEl))) return;
     bindEngine(eng, set, get);
@@ -100,6 +101,7 @@ export const createSongSlice: Slice<SongSlice> = (set, get) => ({
   },
 
   cleanup: () => {
+    get().cancelCountIn();
     getEngine().destroy();
     getRecorder().dispose();
     set({

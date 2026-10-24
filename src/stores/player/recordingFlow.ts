@@ -1,6 +1,5 @@
 import type { VocalRecorder } from "@giamat90/mps-core/recorder";
 import { metronome } from "@giamat90/mps-core/metronome";
-import { countInDurationSeconds } from "@giamat90/mps-core/metronomeSync";
 import type { AudioEngine } from "../../audio/engine";
 import { pickHardwareOutput } from "../../audio/outputDevice";
 import { destroyMicAnalyser, session } from "./singletons";
@@ -44,57 +43,6 @@ export async function pinHardwareOutput(get: StoreGet, eng: AudioEngine, failure
     console.warn(failureMessage, e);
   }
   return outputId;
-}
-
-// The click follows the tempo the singer hears: detected BPM scaled by the playback rate.
-export function countInBpm(get: StoreGet): number {
-  return (get().song?.detectedBpm ?? 120) * get().playbackRate;
-}
-
-// Plays N bars of click at the song's tempo before capture (or monitored
-// playback) begins. Resolves true when the count finished, false when
-// cancelCountIn aborted it.
-export function runCountIn(set: StoreSet, bpm: number, bars: number): Promise<boolean> {
-  const totalBeats = bars * 4;
-  const beatIntervalMs = (60 / bpm) * 1000;
-  return new Promise<boolean>((resolve) => {
-    let remaining = totalBeats;
-    session.countInResolve = resolve;
-    set({ isCountingIn: true, countInBeatsRemaining: remaining });
-    metronome.start(bpm, 0.05, 0);
-    session.countInIntervalId = window.setInterval(() => {
-      remaining -= 1;
-      set({ countInBeatsRemaining: Math.max(0, remaining) });
-    }, beatIntervalMs);
-    session.countInTimeoutId = window.setTimeout(() => {
-      session.countInTimeoutId = null;
-      if (session.countInIntervalId !== null) {
-        window.clearInterval(session.countInIntervalId);
-        session.countInIntervalId = null;
-      }
-      metronome.stop();
-      set({ isCountingIn: false, countInBeatsRemaining: 0 });
-      session.countInResolve = null;
-      resolve(true);
-    }, countInDurationSeconds(bpm, bars) * 1000);
-  });
-}
-
-export function cancelRunningCountIn(set: StoreSet): void {
-  if (session.countInResolve === null) return;
-  if (session.countInTimeoutId !== null) {
-    window.clearTimeout(session.countInTimeoutId);
-    session.countInTimeoutId = null;
-  }
-  if (session.countInIntervalId !== null) {
-    window.clearInterval(session.countInIntervalId);
-    session.countInIntervalId = null;
-  }
-  metronome.stop();
-  set({ isCountingIn: false, countInBeatsRemaining: 0 });
-  const resolve = session.countInResolve;
-  session.countInResolve = null;
-  resolve(false);
 }
 
 // Cancelled mid-count: abandon this recording attempt, releasing the mic
