@@ -6,6 +6,15 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.96] - 2026-10-24
+
+### Added
+- **The count-in also counts in Play.** With the clock button set to 1 or 2 bars, Play clicks the bars in first and then starts the song (from the punch-in point if there is one); resuming from a pause counts in again. The Play button shows the beats left; click Play, press Space or click Stop to cancel the count. Record and Monitor count in as before, and a recording started during the count takes over.
+
+### Changed
+- The clock button moved from beside the Record button to the transport bar, since it now counts in Play as well.
+- Uses mps-core v0.17.0, which holds the count-in for both apps.
+
 ## [0.0.95] - 2026-10-24
 
 ### Added
