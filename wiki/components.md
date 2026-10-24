@@ -18,14 +18,14 @@ App
 ├── player/
 │   ├── Waveform           — 3-track waveform display (vocals + instrumental + take), each row with mute/solo/volume controls
 │   ├── TimeRuler          — canvas time ruler with drag-to-select punch region
-│   ├── TransportControls  — play/pause/stop + elapsed/total time (no volume controls — those live per-track in Waveform)
+│   ├── TransportControls  — skip, Stop, Play, Record, skip, ⏱ count-in, elapsed/total time (no volume controls — those live per-track in Waveform)
 │   ├── TempoControl       — BPM-first speed control (editable BPM value + editable x-rate)
 │   ├── KeyTranspose       — semitone transpose UI
 │   └── OutputSelector     — audio output device picker
 ├── recording/
 │   ├── CountInButton      — ⏱ count-in bars for Play, Record and Monitor (in the transport row)
-│   ├── RecordButton       — start/stop recording (song practice)
-│   ├── MonitorButton      — toggle live mic monitoring (no save)
+│   ├── RecordButton       — start/stop recording (song practice); rendered by TransportControls
+│   ├── MonitorButton      — labelled 🎧 toggle for live mic monitoring (no save); sits between Input and Output
 │   ├── MicSelector        — input device picker (labelled "Input")
 │   ├── TakeList           — list of song takes with delete
 │   └── ExerciseTakeList   — list of exercise takes; click to expand audio player
@@ -184,7 +184,9 @@ Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
 <button onClick={isRecording ? () => void stopRecording() : stop}>
 ```
 
-Slimmed down to play/pause/stop + elapsed/total time — volume sliders were moved onto each waveform track's own row (see `Waveform` below). Sits inside the sticky `practice-room__topbar` (see `PracticeRoom` layout).
+Slimmed down to skip/stop/play/record + elapsed/total time — volume sliders were moved onto each waveform track's own row (see `Waveform` below). Sits inside the sticky `practice-room__topbar` (see `PracticeRoom` layout).
+
+**Record lives here (2026-10-24).** `TransportControls` renders `RecordButton` directly after Play, the Stop, Play, Record order of Pro Tools, Logic, Cubase and Reaper: recording is a global transport action, not a device setting, so it belongs with the transport and not with the input selectors (where it sat until then, after Monitor). The cluster reads skip, Stop, Play, Record, skip, ⏱, time. `RecordButton` stays its own component (hook, store and tests are unchanged); only where it is rendered moved. Pinned by `TransportControls.test.ts`, which fails if Record leaves the cluster or changes place.
 
 **Play with a count-in.** `togglePlay()` is the transport's Play: with `countInBars > 0` and a song loaded it runs `runCountIn(countInPlan(get), "play")` first and calls `play()` only when the count finished; `isPlaying` stays `false` during the count, the Play button shows `countInBeatsRemaining` (`.transport__btn--counting-in`, pulsing) and reads "Cancel count-in", and pressing Play (or Space, the one shortcut that stays live while counting in) again cancels it without ever starting the song. Resuming from a pause counts in too; punch-loop wrap-arounds and the punch-out rewind do not (they never pass through `togglePlay`). `stop()`, `loadSong()` and `cleanup()` cancel a running count. `togglePlay()` leaves a recording's or a monitor's count-in to the Record/Monitor button. `play()` itself never counts in: Monitor's own count and the recording flow end in it.
 
@@ -206,13 +208,17 @@ Rendered in `PracticeRoom.tsx`'s topbar directly after `<TransportControls />`, 
 
 Starts recording via `startRecording()`. If recording is already active, clicking stops via `stopRecording()`. Displays a pulsing red indicator while `isRecording` is true.
 
+Rendered by `TransportControls` (see there), not by the page. A `2.25rem` ring, the size of the other transport buttons, drawn in the **`--record` token** (`#ef4444`, with `--record-soft` for the active tint and `--record-glow` for the glow in `polish.css`) rather than the accent: record is red in every app whatever its accent, which matters in SPS where the accent is amber. Active = square pulsing dot on a tinted ring; counting in = amber ring with the beat number; saving = amber spinner and an "Analyzing…" label. The status label and the error sit inline in the transport bar, so the error is clipped to `12rem` with an ellipsis and carries the full message in its `title` (it keeps `role="alert"`, so assistive technology reads all of it).
+
 **Count-in (the ⏱ in the transport bar, see `CountInButton` under TransportControls).** One session-only setting, `countInBars` 0 → 1 → 2 → 0 (not persisted per song), counts in Play, Record and Monitor alike; it is independent of the 🥁 metronome toggle in `TempoControl`. The count is the `countIn` slice (`stores/player/countIn.ts`, wrapping mps-core's `createCountInSlice`; `countInPlan(get)` builds the plan): `runCountIn(plan, purpose)` clicks the shared `metronome` with `steadyCountIn(countInBpm(song.detectedBpm, playbackRate), bars)` (four beats a bar, flat, not phase-locked to `metronomeOffset`, first click 50 ms after the start), counts `countInBeatsRemaining` down with one timeout per beat, and resolves `true` when the count ends, `false` when `cancelCountIn()` aborts it or a second `runCountIn` replaces it. `countInFor` (`"play" | "record" | "monitor"`) says which button owns the countdown: the Record button shows it for `"record"` and `"monitor"`, the Play button for `"play"`.
 
 `startRecording()` counts in after the mic is open and the output pinned (`runCountIn(…, "record")`), then starts the engine and the recorder; the click stops the instant capture starts (silence during the take, even if `countInBars` was armed), a deliberate product decision. Clicking Record during the countdown calls `cancelCountIn()`; a `false` result makes `startRecording()` release the mic (`abandonAfterCountIn`) and return without ever setting `isRecording`. It also sets `isPlaying: false` synchronously after `eng.pause()`, so TempoControl's metronome effect releases the shared `metronome` singleton before the count-in claims it. A recording started during the Play count-in replaces that count (a new `runCountIn` cancels the running one, so the song never starts twice).
 
 ### MonitorButton
 
-Toggles live mic monitoring via `startMonitoring()` / `stopMonitoring()`. Displays a pulsing blue circle while `isMonitoring` is true — this stays true across pause/play; the button reflects "mic session open", not "trace visible". Disabled (grayed out) while `isRecording` is true. Starting a recording automatically stops monitoring first.
+Toggles live mic monitoring via `startMonitoring()` / `stopMonitoring()`. A labelled pill, 🎧 **Monitor** (icon `aria-hidden`, so the name is "Monitor"), with `aria-pressed`; while `isMonitoring` is true it is filled blue (`--info`, dark text) and pulses — this stays true across pause/play; the button reflects "mic session open", not "trace visible". Disabled (grayed out) while `isRecording` is true. Starting a recording automatically stops monitoring first.
+
+**Placement (2026-10-24).** It sits in the input strip, between `MicSelector` and `OutputSelector` (Input, Monitor, Output), the way DAWs put input monitoring beside the input field (Logic's "I", Reaper's speaker, Ableton's In/Auto/Off). It used to be a `2.75rem` circle at the far end of the topbar next to Record. Free Exercise already had it beside the mic selector. `PracticeRoom.test.ts` pins the order.
 
 **Count-in (song practice only).** The ⏱ button also governs the monitor. With `countInBars > 0`, `startMonitoring()` is Record minus the capture: it opens the mic, pins the hardware output (for the engine and the `metronome` singleton), pauses the song (`isPlaying: false` synchronously, same reason as above), plays the click for N bars via `runCountIn(…, "monitor")`, then calls `play()` (which honours `punchIn` and, being the plain start, does not count in a second time). With the count-in off the monitor behaves as before: mic only, the transport starts the song. During the count `isMonitoring` and `isCountingIn` are both true; clicking the monitor button again (or the Record button, which reads "Cancel count-in") cancels it. `stopMonitoring()` sets `isMonitoring: false` first, then `cancelCountIn()`, so the waiting `startMonitoring()` sees the stop and never plays; a cancel that came from the Record button instead makes `startMonitoring()` call `stopMonitoring()` itself. The monitor button is disabled while a count-in it did not start is running, and `startMonitoring()` refuses to start then.
 
@@ -306,13 +312,13 @@ Renders `TimeRuler` at the top, then up to three stacked tracks, each with a `.w
 
 Call `fetchAudioDevices()` / `fetchOutputDevices()` on mount to populate device lists. Before the first `getUserMedia` call, `enumerateDevices()` returns devices with empty labels and indistinguishable `deviceId`s. As soon as `getUserMedia` grants permission — whether from clicking **Monitor** or **Record** — the store re-enumerates and pushes the labelled list so named devices (e.g. "Focusrite USB Audio") appear immediately.
 
-`MicSelector`'s label reads **"Input"** (not "Mic"). In `PracticeRoom`'s topbar the two are stacked — `MicSelector` above `OutputSelector` — inside `practice-room__io-group`, with both labels given a shared `min-width` so the two `<select>` elements align at the same x position.
+`MicSelector`'s label reads **"Input"** (not "Mic"). In `PracticeRoom`'s topbar the two sit in one row inside `practice-room__io-group` with `MonitorButton` between them (Input, Monitor, Output), the labels' `min-width` reset to `0` and the row centred on one baseline.
 
 ### KeyTranspose
 
 Displays the current `transpose` value in semitones with ±12 range. Triggers `setTranspose(n)` which pauses playback, calls the Python sidecar to generate shifted WAVs, then reloads the engine with the new files.
 
-While `isTransposing` is true, the displayed value is **not** replaced with a placeholder like `"…"`. Instead a local `pendingTranspose` state holds the target semitone value the instant a button is clicked, displayed immediately with a `key-transpose__value--pending` class that pulses (`opacity` 0.35 ↔ 0.9, 0.9s loop) until the pitch-shift resolves — so the user sees where the control is headed rather than a blank/frozen indicator. Sits in `practice-room__topbar-devices`, to the right of the Input/Output stack.
+While `isTransposing` is true, the displayed value is **not** replaced with a placeholder like `"…"`. Instead a local `pendingTranspose` state holds the target semitone value the instant a button is clicked, displayed immediately with a `key-transpose__value--pending` class that pulses (`opacity` 0.35 ↔ 0.9, 0.9s loop) until the pitch-shift resolves — so the user sees where the control is headed rather than a blank/frozen indicator. Sits in `practice-room__topbar-devices`, to the right of the Input/Output strip. In the topbar it is one row like Speed and Input/Output (label, `-`, value, `+`, Reset), centred on the same line as them (`.practice-room__topbar .key-transpose` is `flex-direction: row`); it used to be a label stacked over the buttons, which stood taller than its neighbours.
 
 ### PianoRoll
 
@@ -490,9 +496,9 @@ Song practice page. Requires a processed song.
 ┌─ practice-room__header ───────────────────────────────┐
 │  ← Back   Song Title   BPM / Key                      │
 ├─ practice-room__topbar (pinned with the header) ──────┤
-│  TransportControls · TempoControl ·                   │
-│  [Input / Output (stacked)] · KeyTranspose ·           │
-│  MonitorButton · RecordButton                          │
+│  TransportControls (skip · Stop · Play · ⏺ Record) ·  │
+│  TempoControl · [Input · 🎧 Monitor · Output] ·        │
+│  KeyTranspose                                          │
 ├─ practice-room__body → practice-room__main (one column)┤
 │  Waveform (vocals + instrumental + take,              │
 │            mute/solo/volume per track row)            │
@@ -510,9 +516,9 @@ Song practice page. Requires a processed song.
 └───────────────────────────────────────────────────────┘
 ```
 
-**Topbar:** `practice-room__topbar` sits between the header and the body — above `practice-room__main` — and consolidates every transport/recording control that used to be split across a controls row and a transport row inside the scrollable main column: `TransportControls` (play/stop/time), `TempoControl`, the Input/Output device pair (stacked in `practice-room__io-group`), `KeyTranspose`, `MonitorButton`, and `RecordButton`. It's `position: sticky; top: 0` so it stays visible while the column below it scrolls — though in practice `.practice-room` itself doesn't scroll (only `practice-room__main` does), so the sticky rule is a safety net rather than load-bearing.
+**Topbar:** `practice-room__topbar` sits between the header and the body — above `practice-room__main` — and consolidates every transport/recording control that used to be split across a controls row and a transport row inside the scrollable main column: `TransportControls` (skip/stop/play/record/time), `TempoControl`, the input strip (Input, `MonitorButton`, Output, in a row in `practice-room__io-group`) and `KeyTranspose`. It's `position: sticky; top: 0` so it stays visible while the column below it scrolls — though in practice `.practice-room` itself doesn't scroll (only `practice-room__main` does), so the sticky rule is a safety net rather than load-bearing.
 
-**Layout:** one vertical column (`practice-room__main`) with no side widgets. **The page is the one scroll region** (2026-10-24): `.practice-room` is `overflow-y: auto` with no top padding, its children never shrink, and no section has a scroll box or height cap of its own (the takes slot used to be capped at `16rem`). The header and the topbar are wrapped in `practice-room__pinned` (`position: sticky; top: 0`), so the title, Panels menu and export buttons stay with the transport while the rest scrolls under them. Inside it the topbar is compact: speed, BPM and × on one row beside the transport, and input, output, transpose, monitor and record on a second row, about a quarter of the window height. Plain wheel over a waveform scrolls the page; ctrl+wheel zooms and shift+wheel pans (those two call `preventDefault`, nothing else does). Free Exercise scrolls the same way: `.exercise-page` scrolls, its header is sticky at the top and the record/import bar sticky at the bottom. The column holds: the waveforms, then every optional panel in the order the user chose (see "Panel order" below; default lyrics, takes, piano roll, spectrum, dynamics, vibrato, timing, coach). A panel that is hidden, detached or not yet possible is not rendered, so hiding a panel always gives its space back. The old `practice-room__analysis` and `practice-room__feedback` groups no longer exist: any panel can sit between any others. The `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__main`) for the scroll to engage.
+**Layout:** one vertical column (`practice-room__main`) with no side widgets. **The page is the one scroll region** (2026-10-24): `.practice-room` is `overflow-y: auto` with no top padding, its children never shrink, and no section has a scroll box or height cap of its own (the takes slot used to be capped at `16rem`). The header and the topbar are wrapped in `practice-room__pinned` (`position: sticky; top: 0`), so the title, Panels menu and export buttons stay with the transport while the rest scrolls under them. Inside it the topbar is compact: speed, BPM and × on one row beside the transport, and input, monitor, output and transpose on a second row (Record is in the transport on the first), about a quarter of the window height. Plain wheel over a waveform scrolls the page; ctrl+wheel zooms and shift+wheel pans (those two call `preventDefault`, nothing else does). Free Exercise scrolls the same way: `.exercise-page` scrolls, its header is sticky at the top and the record/import bar sticky at the bottom. The column holds: the waveforms, then every optional panel in the order the user chose (see "Panel order" below; default lyrics, takes, piano roll, spectrum, dynamics, vibrato, timing, coach). A panel that is hidden, detached or not yet possible is not rendered, so hiding a panel always gives its space back. The old `practice-room__analysis` and `practice-room__feedback` groups no longer exist: any panel can sit between any others. The `min-height: 0` chain must be present at every ancestor (`html/body/#root → .app → .practice-room → .practice-room__body → .practice-room__main`) for the scroll to engage.
 
 **Analysis panel:** Visible when `isAnalysisLoaded` is true and either `showAnalysis` is toggled on, `isRecording`, or `isMonitoring`. `showAnalysis` is set automatically when the user selects a take, **and on mount for `kind: "instrument"` songs** — an instrument practice track exists to be pitched against, so its piano-pitch ribbon + Pitch Monitor open without waiting for a take, and the tab drops the "(select take)" hint. `PianoKeyboard` renders `<DualTuner />` internally, so the tuner *is* present here (comparing the live mic against the song/piano pitch) — despite older revisions of this note claiming it was ExercisePage-only. For instrument songs the PianoRoll/PitchMonitor legend reads "Piano" instead of "Song".
 

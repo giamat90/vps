@@ -77,9 +77,9 @@ flowchart TB
 
     subgraph pr["PracticeRoom"]
         direction TB
-        TOP["Transport: TransportControls, TempoControl, KeyTranspose,<br/>LoopButton, LoopsMenu, OutputSelector, Export / Send buttons"]
+        TOP["Transport: TransportControls (with RecordButton and CountInButton), TempoControl, KeyTranspose,<br/>LoopButton, LoopsMenu, Export / Send buttons"]
         WF["Waveform (vocals, instrumental)"]
-        REC["Recording: RecordButton, MonitorButton, MicSelector"]
+        REC["Input strip: MicSelector, MonitorButton, OutputSelector<br/>(RecordButton is in the Transport)"]
         SP["SortablePanels (drag to reorder)"]
     end
     PR --> pr

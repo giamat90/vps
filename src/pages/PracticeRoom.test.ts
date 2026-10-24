@@ -109,8 +109,25 @@ beforeEach(() => {
 describe("PracticeRoom panels", () => {
   it("always shows the waveform, transport and recording controls", async () => {
     expect(shown(await render(all(false)))).toEqual(
-      expect.arrayContaining(["waveform", "transport", "loop", "tempo", "mic", "output", "transpose", "monitor", "record"]),
+      expect.arrayContaining(["waveform", "transport", "loop", "tempo", "mic", "output", "transpose", "monitor"]),
     );
+  });
+
+  it("leaves Record to the transport: the topbar no longer renders it", async () => {
+    expect(shown(await render())).not.toContain("record");
+  });
+
+  it("puts Monitor between the Input and Output selectors, one input strip", async () => {
+    const ids = shown(await render());
+    expect(ids.indexOf("mic")).toBeLessThan(ids.indexOf("monitor"));
+    expect(ids.indexOf("monitor")).toBeLessThan(ids.indexOf("output"));
+    expect(ids.indexOf("output") - ids.indexOf("mic")).toBe(2);
+  });
+
+  it("lays the topbar out as tempo, then the input strip, then Transpose", async () => {
+    const ids = shown(await render());
+    expect(ids.indexOf("tempo")).toBeLessThan(ids.indexOf("mic"));
+    expect(ids.indexOf("output")).toBeLessThan(ids.indexOf("transpose"));
   });
 
   it("starts with the default panels", async () => {

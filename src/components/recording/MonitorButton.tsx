@@ -31,6 +31,7 @@ function MonitorButton() {
       <button
         className={`monitor-btn${isMonitoring ? " monitor-btn--active" : ""}`}
         onClick={handleClick}
+        aria-pressed={isMonitoring}
         disabled={isRecording || (isCountingIn && !isMonitoring)}
         title={
           isMonitoring
@@ -42,9 +43,10 @@ function MonitorButton() {
             : "Monitor mic in piano roll (no recording)"
         }
       >
-        🎤
+        <span className="monitor-btn__icon" aria-hidden="true">🎧</span>
+        <span className="monitor-btn__label">Monitor</span>
       </button>
-      {error && <span className="monitor-btn__error">{error}</span>}
+      {error && <span className="monitor-btn__error" role="alert" title={error}>{error}</span>}
     </div>
   );
 }
