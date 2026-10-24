@@ -19,6 +19,8 @@ import {
 import { computeMagnitudeSpectrumDb, estimateVoice, type VoiceEstimate } from "@giamat90/mps-core/spectrum";
 import { referenceF0 } from "../../audio/analysisUtils";
 import { useAnalysisStore } from "../../stores/analysis";
+import PanelTitle from "../panels/PanelTitle";
+import { usePanelCollapse } from "../../stores/collapsed";
 
 // Matches the mic analyser's fftSize (see getMicAnalyser in stores/player.ts)
 // so live and buffer-snapshot data are the same resolution.
@@ -127,6 +129,8 @@ function drawFrame(canvas: HTMLCanvasElement, state: PanelState, flags: FrameFla
 }
 
 export default function ShortTermSpectrumPanel() {
+  const collapse = usePanelCollapse("shortTermSpectrum");
+  const { open } = collapse;
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const isRecording  = usePlayerStore((s) => s.isRecording);
   const isMonitoring = usePlayerStore((s) => s.isMonitoring);
@@ -162,11 +166,12 @@ export default function ShortTermSpectrumPanel() {
   }, [isRecording, isMonitoring, trackActive]);
 
   useEffect(() => {
+    if (!open) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [open]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -174,17 +179,19 @@ export default function ShortTermSpectrumPanel() {
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, []);
+  }, [open]);
 
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
-        <span className="analysis-panel__label">Short-Term Spectrum</span>
-        <span className="analysis-panel__hint">
-          {isRecording || isMonitoring || trackActive ? "live" : "off"}
-        </span>
+        <PanelTitle collapse={collapse}>Short-Term Spectrum</PanelTitle>
+        {open && (
+          <span className="analysis-panel__hint">
+            {isRecording || isMonitoring || trackActive ? "live" : "off"}
+          </span>
+        )}
       </div>
-      <canvas ref={canvasRef} className="analysis-panel__canvas short-term-spectrum-panel__canvas" />
+      {open && <canvas ref={canvasRef} className="analysis-panel__canvas short-term-spectrum-panel__canvas" />}
     </div>
   );
 }

@@ -32,6 +32,7 @@ App
 │   ├── DualTuner          — real-time pitch tuner (reference vs. singer)
 │   ├── PianoKeyboard      — horizontal piano key strip with live/song/take highlight
 │   ├── PianoRoll          — scrolling pitch ribbon display (song + take + live; optional second-voice ribbon)
+│   ├── PitchMonitorPanel  — the practice room's `pianoRoll` panel: PianoKeyboard with PianoRoll under it, one title button
 │   ├── SpectrogramPanel   — scrolling live mic spectrogram (Free Exercise only)
 │   ├── ShortTermSpectrumPanel — real-time spectral snapshot of the live mic (Free Exercise)
 │   ├── ShortTermSpectrumComparisonPanel — song vs. take vs. live spectral envelope overlay (PracticeRoom)
@@ -495,7 +496,7 @@ Song practice page. Requires a processed song.
 │    LyricsPanel         (`lyrics`, non-instrument)     │
 │    TakeList            (`takes`, slot class           │
 │                         `practice-room__takes`)       │
-│    PianoKeyboard + PianoRoll (`pianoRoll`)*           │
+│    PitchMonitorPanel   (`pianoRoll`)*                 │
 │    ShortTermSpectrumComparisonPanel (`spectrum`)*     │
 │    DynamicsCurve       (`dynamics`)*                  │
 │    VibratoCard · TimingChart · CoachPanel             │
@@ -625,14 +626,14 @@ The practice room has more on it than anyone wants at once, so everything option
 |---|---|---|
 | `lyrics` | `LyricsPanel` (never offered for instrument tracks) | on |
 | `takes` | `TakeList` | on |
-| `pianoRoll` | `PianoKeyboard` + `PianoRoll` | on |
+| `pianoRoll` | **Pitch Monitor**: `PitchMonitorPanel` = `PianoKeyboard` with `PianoRoll` under it (one panel, one title button) | on |
 | `spectrum` | `ShortTermSpectrumComparisonPanel` | off |
 | `dynamics` | `DynamicsCurve` | off |
 | `vibrato` | `VibratoCard` | on |
 | `timing` | `TimingChart` | off |
 | `coach` | `CoachPanel` | on |
 
-Always on: transport, tempo, mic/output, transpose, monitor, record. The waveform area is also not in this list (see "Waveforms and single tracks" below). The piano roll, spectrum and dynamics only appear once the song analysis has loaded. There is no side column: everything is one vertical stack. The table is the default order.
+Always on: transport, tempo, mic/output, transpose, monitor, record. The waveform area is also not in this list (see "Waveforms and single tracks" below). The Pitch Monitor, spectrum and dynamics only appear once the song analysis has loaded. There is no side column: everything is one vertical stack. The table is the default order.
 
 ### Panel order
 
@@ -648,7 +649,7 @@ Rules for a panel:
 - A panel that is on but has nothing to show (vibrato without a take) still renders nothing, as before.
 - Add a panel by adding it to `PRACTICE_PANELS` (its default is a product decision), rendering it behind `visible.<id>` in `PracticeRoom`, and extending `PracticeRoom.test.ts`.
 - Known limit: hiding Lyrics while a sync is running unmounts the panel (its cleanup clears the lyrics store). The sync still finishes and is saved; showing the panel again loads the result.
-- The piano roll's ruler also sets the punch region; with it hidden, use the main timeline ruler.
+- The piano roll's ruler (in the Pitch Monitor panel) also sets the punch region; with it hidden, use the main timeline ruler.
 
 ### Waveforms and single tracks
 
@@ -662,7 +663,17 @@ The waveform area can be hidden as a whole, and the vocals / instrumental wavefo
 
 ### Free Exercise page
 
-The Free Exercise page has the same menu (`Panels n/8`), without the move hint. State: `useExercisePanels` in `src/stores/exercisePanels.ts`, persisted under `vps_exercise_panels`, everything on by default. Ids: `keyboard`, `track`, `pianoRoll`, `spectrogram`, `spectrum`, `dynamics`, `vibrato`, `recordings`. Everything is unmounted when hidden except `track`, the strip a loaded recording is drawn into, which is collapsed in height only (same reason as the waveforms). The analysis area disappears when all five views in it are hidden. These panels are not movable or detachable.
+The Free Exercise page has the same menu (`Panels n/8`), without the move hint. State: `useExercisePanels` in `src/stores/exercisePanels.ts`, persisted under `vps_exercise_panels`, everything on by default. Here the keyboard (menu name **Pitch Monitor**) and the piano roll are two panels, each with its own title button. Ids: `keyboard`, `track`, `pianoRoll`, `spectrogram`, `spectrum`, `dynamics`, `vibrato`, `recordings`. Everything is unmounted when hidden except `track`, the strip a loaded recording is drawn into, which is collapsed in height only (same reason as the waveforms). The analysis area disappears when all five views in it are hidden. These panels are not movable or detachable.
+
+## Folding a panel to its title
+
+Every panel's name is a button, the one the Lyrics panel always had (`PanelTitle`, class `analysis-tab`, lit while the panel is open). Clicking it folds the panel down to that title and opens it again. State: `useCollapsedPanels` in `src/stores/collapsed.ts`, a `createCollapseStore` from `@giamat90/mps-core/panels`, persisted under `vps_collapsed` as the list of folded ids; `usePanelCollapse(id)` is `useCollapsiblePanel` from `@giamat90/mps-core/hooks` bound to it. Panels start open.
+
+- **Keyed by the panel's own id**, not by page, so the practice room, the Free Exercise page and a panel in a window of its own agree (the window re-reads the store when the main window writes). Ids: `pitchMonitor` (the practice room's whole Pitch Monitor panel: its button, on the keyboard, folds the roll with it, and the roll shows a plain "Piano Roll" label), `spectrumComparison` (practice room), `pianoRoll` (Free Exercise only, where the roll is a panel of its own), `shortTermSpectrum`, `spectrogram`, `recordings` (Free Exercise), and `dynamics`, `vibrato`, `timing`, `coach`, `takes` in both. The Lyrics panel keeps its own `open` (closed until it has lyrics).
+- **A folded panel is not drawn and does not run.** Canvas panels render their canvas only while open, and their rAF loop and ResizeObserver effects list `open` as a dependency, so folding stops the loop and unfolding re-attaches it to the new canvas (the spectrogram's scrolled history starts again). Everything in the header that belongs to the body goes with it: the legend (Song / Your voice / Live), the spectrum hints, the piano roll's voice controls, the Coaching "See Tips" and the vibrato info button; a folded panel is its title button and nothing else.
+- **The button sits outside the card.** Panels whose content is a card (Coaching, Vibrato, Timing) draw the title button above the card in a `panel-bar`, the way the Lyrics button sits above its card; folded, only the button is left. Controls stay in the card. `polish.css` draws the card's outline on `.vibrato-card__body` / `.coach-panel__body`, not on the wrapper, or the outline would enclose the button.
+- **A panel that renders nothing leaves no gap.** Vibrato and Timing return `null` without a take; the `.sortable-panel:has(> .detachable > .detach-handle:only-child)` rule hides their slot (the handle was already hidden), otherwise each empty slot adds a row gap to the stack.
+- **This is not the Panels menu.** The menu decides whether a panel is mounted at all; folding is the quick way to make one small without losing its place or order. The waveform areas are not folded this way: they own the audio engine's containers and keep their own collapse (MPS rule 15).
 
 ## Second voice in the PianoRoll (2026-10-11)
 

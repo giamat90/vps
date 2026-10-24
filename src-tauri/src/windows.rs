@@ -10,7 +10,7 @@ use crate::storage;
 
 /// Mirrors `DETACHABLE_PANELS` in src/windows/protocol.ts (a contract test compares them).
 const PANELS: &[PanelSpec] = &[
-    PanelSpec { id: "pianoRoll", title: "Piano roll", width: 1000.0, height: 460.0 },
+    PanelSpec { id: "pianoRoll", title: "Pitch Monitor", width: 1000.0, height: 460.0 },
     PanelSpec { id: "lyrics", title: "Lyrics", width: 560.0, height: 640.0 },
     PanelSpec { id: "takes", title: "Takes", width: 420.0, height: 560.0 },
     PanelSpec { id: "spectrum", title: "Spectrum comparison", width: 900.0, height: 420.0 },

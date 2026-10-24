@@ -15,6 +15,8 @@ import { AUDIO_EXTENSIONS } from "../components/upload/DropZone";
 import { usePlayerStore } from "../stores/player";
 import { useExerciseStore } from "../stores/exercise";
 import { EXERCISE_PANELS, EXERCISE_ANALYSIS_PANELS, useExercisePanels } from "../stores/exercisePanels";
+import PanelTitle from "../components/panels/PanelTitle";
+import { usePanelCollapse } from "../stores/collapsed";
 
 interface ExercisePageProps {
   onBack: () => void;
@@ -47,6 +49,7 @@ function ExercisePage({ onBack }: ExercisePageProps) {
 
   const visible = useExercisePanels((s) => s.visible);
   const [recError, setRecError] = useState<string | null>(null);
+  const recordings = usePanelCollapse("recordings");
   const [importError, setImportError] = useState<string | null>(null);
   const trackContainerRef = useRef<HTMLDivElement>(null);
 
@@ -199,8 +202,10 @@ function ExercisePage({ onBack }: ExercisePageProps) {
 
       {visible.recordings && (
         <div className="exercise-page__takes">
-          <h2 className="exercise-page__takes-title">Recordings</h2>
-          <ExerciseTakeList trackContainerRef={trackContainerRef} />
+          <h2 className="exercise-page__takes-title">
+            <PanelTitle collapse={recordings}>Recordings</PanelTitle>
+          </h2>
+          {recordings.open && <ExerciseTakeList trackContainerRef={trackContainerRef} />}
         </div>
       )}
     </div>

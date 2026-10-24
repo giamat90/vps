@@ -2,10 +2,14 @@ import { useRef, useEffect } from "react";
 import { useAnalysisStore } from "../../stores/analysis";
 import { usePlayerStore } from "../../stores/player";
 import { getPlaybackTime } from "../../windows/playbackClock";
+import PanelTitle from "../panels/PanelTitle";
+import { usePanelCollapse } from "../../stores/collapsed";
 
 const WINDOW_S = 10;
 
 export default function DynamicsCurve() {
+  const collapse = usePanelCollapse("dynamics");
+  const { open } = collapse;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const songDynamics = useAnalysisStore((s) => s.songDynamics);
   const takeDynamics = useAnalysisStore((s) => s.takeDynamics);
@@ -92,12 +96,12 @@ export default function DynamicsCurve() {
     };
 
     drawRef.current();
-  }, [songDynamics, takeDynamics, isLoaded, exerciseMode]);
+  }, [open, songDynamics, takeDynamics, isLoaded, exerciseMode]);
 
   // Effect 2: drive canvas at native frame rate via rAF — bypasses React entirely
   // during playback so no re-renders, no closure allocation, no GC pressure.
   useEffect(() => {
-    if (!isLoaded && !exerciseMode) return;
+    if (!open || (!isLoaded && !exerciseMode)) return;
     let rafId: number;
     const tick = () => {
       drawRef.current();
@@ -105,37 +109,39 @@ export default function DynamicsCurve() {
     };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded, exerciseMode]);
+  }, [open, isLoaded, exerciseMode]);
 
-  // Effect 3: wire ResizeObserver once per canvas lifetime — no deps.
+  // Effect 3: wire ResizeObserver once per canvas lifetime; a folded panel has no canvas.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, []);
+  }, [open]);
 
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
-        <span className="analysis-panel__label">Dynamics (RMS)</span>
-        <div className="analysis-panel__legend">
-          {!exerciseMode && (
-            <>
-              <span className="legend-dot legend-dot--song" />
-              <span>Song</span>
-            </>
-          )}
-          {takeDynamics.length > 0 && (
-            <>
-              <span className="legend-dot legend-dot--dynamics" />
-              <span>Take</span>
-            </>
-          )}
-        </div>
+        <PanelTitle collapse={collapse}>Dynamics (RMS)</PanelTitle>
+        {open && (
+          <div className="analysis-panel__legend">
+            {!exerciseMode && (
+              <>
+                <span className="legend-dot legend-dot--song" />
+                <span>Song</span>
+              </>
+            )}
+            {takeDynamics.length > 0 && (
+              <>
+                <span className="legend-dot legend-dot--dynamics" />
+                <span>Take</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
-      <canvas ref={canvasRef} className="analysis-panel__canvas analysis-panel__canvas--sm" />
+      {open && <canvas ref={canvasRef} className="analysis-panel__canvas analysis-panel__canvas--sm" />}
     </div>
   );
 }

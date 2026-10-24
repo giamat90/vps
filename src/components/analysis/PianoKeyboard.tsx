@@ -14,6 +14,8 @@ import {
 } from "../../lib/constants";
 import { startPreviewNote, startPreview, endPreview, getPreviewState, type PreviewVoice } from "../../audio/notePreview";
 import type { PitchPoint } from "../../lib/types";
+import PanelTitle from "../panels/PanelTitle";
+import { usePanelCollapse } from "../../stores/collapsed";
 
 const BLACK_PC  = new Set([1, 3, 6, 8, 10]);
 
@@ -190,6 +192,8 @@ function drawKeyboard(
 }
 
 export default function PianoKeyboard() {
+  const collapse = usePanelCollapse("pitchMonitor");
+  const { open } = collapse;
   const canvasRef   = useRef<HTMLCanvasElement>(null);
   const songPitch   = useAnalysisStore((s) => s.songPitch);
   const songPitchAlt = useAnalysisStore((s) => s.songPitchAlt);
@@ -242,18 +246,18 @@ export default function PianoKeyboard() {
     };
 
     drawRef.current();
-  }, [songPitch, songPitchAlt, showMultipleLines, takePitch, livePitch, isLoaded]);
+  }, [open, songPitch, songPitchAlt, showMultipleLines, takePitch, livePitch, isLoaded]);
 
   useEffect(() => {
     // Same gate as PianoRoll: in Free Exercise, isLoaded (song-analysis flag)
     // never becomes true, so exerciseMode keeps the tick loop running whenever
     // a loaded track or live mic can be feeding takePitch/livePitch.
-    if (!isLoaded && !exerciseMode) return;
+    if (!open || (!isLoaded && !exerciseMode)) return;
     let rafId: number;
     const tick = () => { drawRef.current(); rafId = requestAnimationFrame(tick); };
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
-  }, [isLoaded, exerciseMode]);
+  }, [open, isLoaded, exerciseMode]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -261,7 +265,7 @@ export default function PianoKeyboard() {
     const ro = new ResizeObserver(() => drawRef.current());
     ro.observe(canvas);
     return () => ro.disconnect();
-  }, []);
+  }, [open]);
 
   const onKeyboardMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (isRecording) return;
@@ -293,34 +297,40 @@ export default function PianoKeyboard() {
   return (
     <div className="analysis-panel">
       <div className="analysis-panel__header">
-        <span className="analysis-panel__label">Pitch Monitor</span>
-        <div className="analysis-panel__legend">
-          <span className="legend-dot legend-dot--song" />
-          <span>{songLabel}</span>
-          {takePitch.length > 0 && (
-            <>
-              <span className="legend-dot legend-dot--take" />
-              <span>Your voice</span>
-            </>
-          )}
-          {isRecording && (
-            <>
-              <span className="legend-dot legend-dot--live" />
-              <span>Live</span>
-            </>
-          )}
-        </div>
+        <PanelTitle collapse={collapse}>Pitch Monitor</PanelTitle>
+        {open && (
+          <div className="analysis-panel__legend">
+            <span className="legend-dot legend-dot--song" />
+            <span>{songLabel}</span>
+            {takePitch.length > 0 && (
+              <>
+                <span className="legend-dot legend-dot--take" />
+                <span>Your voice</span>
+              </>
+            )}
+            {isRecording && (
+              <>
+                <span className="legend-dot legend-dot--live" />
+                <span>Live</span>
+              </>
+            )}
+          </div>
+        )}
       </div>
-      <DualTuner />
-      <canvas
-        ref={canvasRef}
-        className="analysis-panel__canvas analysis-panel__canvas--keyboard"
-        style={{ cursor: isRecording ? "default" : "pointer" }}
-        onMouseDown={onKeyboardMouseDown}
-        onMouseMove={onKeyboardMouseMove}
-        onMouseUp={onKeyboardMouseUp}
-        onMouseLeave={onKeyboardMouseUp}
-      />
+      {open && (
+        <>
+          <DualTuner />
+          <canvas
+            ref={canvasRef}
+            className="analysis-panel__canvas analysis-panel__canvas--keyboard"
+            style={{ cursor: isRecording ? "default" : "pointer" }}
+            onMouseDown={onKeyboardMouseDown}
+            onMouseMove={onKeyboardMouseMove}
+            onMouseUp={onKeyboardMouseUp}
+            onMouseLeave={onKeyboardMouseUp}
+          />
+        </>
+      )}
     </div>
   );
 }

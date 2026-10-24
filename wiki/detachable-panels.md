@@ -1,6 +1,6 @@
 # Detachable panels (spike)
 
-Any panel of the practice room can be dragged out into a window of its own, for a second monitor: Takes, Lyrics, Piano roll (with its keyboard and tuner gauge), Spectrum comparison, Dynamics, Vibrato, Timing and Coach. On branch `spike/detachable-panels`, not released. See "Not done" for what is missing.
+Any panel of the practice room can be dragged out into a window of its own, for a second monitor: Takes, Lyrics, Pitch Monitor (the keyboard with its tuner gauge, and the piano roll), Spectrum comparison, Dynamics, Vibrato, Timing and Coach. On branch `spike/detachable-panels`, not released. See "Not done" for what is missing.
 
 ## The model
 
