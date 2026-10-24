@@ -9,6 +9,9 @@
 ### 1. Read the wiki first
 At every session start, read `wiki/README.md` then the pages relevant to the task. The wiki is the authoritative record of architecture, components, and conventions. After every commit + push, update any wiki pages whose content was changed and commit the wiki updates as a follow-up commit.
 
+### 1a. Every merged PR updates the architecture documents
+After a pull request is merged, update `wiki/uml.md` (and `MPS/wiki/uml-architecture.md` / `shared-architecture.md` when the shared shape changed) from the merged code before calling the work done; if no diagram is affected, say so. MPS rule 22 (`MPS/wiki/conventions.md`).
+
 ### 2. All dimensions must be relative units
 Every CSS size — width, height, font-size, padding, margin, gap — must use `%`, `rem`, `em`, `vw`, `vh`, `fr`, `clamp()`, `min()`, `max()`. **Never `px` for layout dimensions.** This is a hard project rule. If you spot a `px` value in a diff, convert or flag it.
 
@@ -46,7 +49,7 @@ export PATH="$USERPROFILE/.cargo/bin:$PATH"
 ```
 PowerShell has it automatically after a normal rustup install. Prefer PowerShell for Rust/Tauri commands.
 
-**User audio hardware:** Behringer UM2 USB interface, Rode NT1 condenser mic (phantom power from UM2), headphones on UM2 output. The UM2 appears as `"2-Behringer USB WDM Audio"` in Windows device lists.
+**User audio hardware:** Focusrite USB audio interface, Rode NT1 condenser mic, headphones on the interface's output. It appears as `"Analogue 1 + 2 (Focusrite USB Audio)"` in Windows input lists (WASAPI, 2 inputs, 48 kHz).
 
 ---
 

@@ -168,11 +168,11 @@ VPS/
 
 ## Audio Device Testing
 
-To test recording with a USB audio interface (e.g., Behringer UM2):
+To test recording with a USB audio interface (e.g., a Focusrite):
 
 1. Plug in the interface before starting the app.
-2. In the app, open the microphone selector and choose the UM2 input (e.g., `"Line In (2-Behringer USB WDM Audio)"`).
-3. Start recording — the app will automatically pin audio output to the UM2's headphone output to avoid the Windows Communications Device routing issue.
+2. In the app, open the microphone selector and choose the interface's input (e.g., `"Analogue 1 + 2 (Focusrite USB Audio)"`).
+3. Start recording — the app will automatically pin audio output to the interface's headphone output to avoid the Windows Communications Device routing issue.
 
 If you hear silence during recording, check the browser console for `[recording]` log lines showing which output device was selected.
 
