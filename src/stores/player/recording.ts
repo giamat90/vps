@@ -1,15 +1,13 @@
 import { showTake } from "@giamat90/mps-core/takes";
 import { saveTake } from "../../lib/tauri";
 import { useAnalysisStore } from "../analysis";
+import { countInPlan } from "./countIn";
 import {
   abandonAfterCountIn,
-  cancelRunningCountIn,
-  countInBpm,
   openRecorderMic,
   pinHardwareOutput,
   releaseRecorderMic,
   resolveRecordingLatency,
-  runCountIn,
 } from "./recordingFlow";
 import { destroyMicAnalyser, getEngine, getMonitorStream, getRecorder, session, setMonitorStream } from "./singletons";
 import { selectionOf } from "./takes";
@@ -45,9 +43,6 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
   isRecording: false,
   isSavingTake: false,
   isMonitoring: false,
-  countInBars: 0,
-  isCountingIn: false,
-  countInBeatsRemaining: 0,
 
   startMonitoring: async () => {
     const s = get();
@@ -93,7 +88,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
     set({ isMonitoring: true });
     if (!countIn) return;
 
-    if (!(await runCountIn(set, countInBpm(get), countInBars))) {
+    if (!(await get().runCountIn(countInPlan(get), "monitor"))) {
       // Cancelled from the Record button, which owns the label while counting in;
       // stopMonitoring has already cleaned up when the monitor button cancelled.
       if (get().isMonitoring) await get().stopMonitoring();
@@ -106,7 +101,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
     // Flipped first so a startMonitoring waiting on its count-in sees the stop
     // when the cancel below resolves it.
     set({ isMonitoring: false });
-    cancelRunningCountIn(set);
+    get().cancelCountIn();
     destroyMicAnalyser();
     const stream = getMonitorStream();
     if (stream) {
@@ -169,7 +164,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
     // means the take lands beat-aligned by construction.
     const countInBars = get().countInBars;
     if (countInBars > 0) {
-      if (!(await runCountIn(set, countInBpm(get), countInBars))) {
+      if (!(await get().runCountIn(countInPlan(get), "record"))) {
         await abandonAfterCountIn(get, eng, rec);
         return;
       }
@@ -248,11 +243,4 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
       throw e;
     }
   },
-
-  setCountInBars: (bars) => {
-    if (get().isCountingIn || get().isRecording) return;
-    set({ countInBars: bars });
-  },
-
-  cancelCountIn: () => cancelRunningCountIn(set),
 });

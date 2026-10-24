@@ -1,5 +1,10 @@
+import { countInPlan } from "./countIn";
 import { getEngine } from "./singletons";
-import type { Slice, TransportSlice } from "./types";
+import type { Slice, StoreGet, TransportSlice } from "./types";
+
+async function playAfterCountIn(get: StoreGet): Promise<void> {
+  if (await get().runCountIn(countInPlan(get), "play")) get().play();
+}
 
 export const createTransportSlice: Slice<TransportSlice> = (set, get) => ({
   isPlaying: false,
@@ -25,15 +30,24 @@ export const createTransportSlice: Slice<TransportSlice> = (set, get) => ({
     set({ isPlaying: false });
   },
 
+  // The transport's Play button: with a count-in set it counts in first. play() itself starts at once
+  // (Monitor counts in on its own, and the recording flow starts the engine directly).
   togglePlay: () => {
-    if (get().isPlaying) {
-      get().pause();
+    const s = get();
+    if (s.isCountingIn) {
+      // Only the count-in before Play is the transport's to cancel; a recording's or a monitor's belongs to its own button.
+      if (s.countInFor === "play") s.cancelCountIn();
+    } else if (s.isPlaying) {
+      s.pause();
+    } else if (s.countInBars > 0 && s.song && !s.isRecording) {
+      void playAfterCountIn(get);
     } else {
-      get().play();
+      s.play();
     }
   },
 
   stop: () => {
+    get().cancelCountIn();
     getEngine().stop();
     set({ isPlaying: false, currentTime: 0 });
   },

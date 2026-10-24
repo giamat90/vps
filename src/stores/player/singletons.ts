@@ -10,7 +10,7 @@ let micAnalyserCtx: AudioContext | null = null;
 let micAnalyser: AnalyserNode | null = null;
 
 // Per-recording values that outlive a single action call: stopRecording reads what
-// startRecording captured, and cancelCountIn reaches the promise startRecording awaits.
+// startRecording captured.
 export const session = {
   // Captured when recording starts so stopRecording can pass it to saveTake
   recordingStartPos: 0,
@@ -18,9 +18,6 @@ export const session = {
   recordingLatencyS: 0,
   // Output device the last recording was routed to; only for [drift-check] diagnostics.
   recordingOutputId: "",
-  countInTimeoutId: null as number | null,
-  countInIntervalId: null as number | null,
-  countInResolve: null as ((completed: boolean) => void) | null,
 };
 
 function ensureMicAnalyser(stream: MediaStream): AnalyserNode | null {

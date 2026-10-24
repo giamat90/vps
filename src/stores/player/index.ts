@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { installAudioSync } from "./audioSync";
+import { createCountInSlice } from "./countIn";
 import { createDevicesSlice } from "./devices";
 import { createExerciseSlice } from "./exercise";
 import { createMixerSlice } from "./mixer";
@@ -19,6 +20,7 @@ export const usePlayerStore = create<PlayerStore>()((...a) => ({
   ...createPunchSlice(...a),
   ...createDevicesSlice(...a),
   ...createTakesSlice(...a),
+  ...createCountInSlice(...a),
   ...createRecordingSlice(...a),
   ...createExerciseSlice(...a),
 }));
