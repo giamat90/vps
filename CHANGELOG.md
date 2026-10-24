@@ -6,6 +6,12 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.98] - 2026-10-24
+
+### Added
+- **The top bar is made of cards you can move.** Transport, Loop, Tempo, Input and output, and Transpose are five cards in one list that wraps with the window. Drag a card by its ⋮⋮ grip anywhere in the bar (or focus the grip and use the arrow keys); double-click a grip to put the cards back in the usual order. This is separate from moving the panels below.
+- **A Cards menu next to Panels** hides and restores the cards of the top bar.
+
 ## [0.0.97] - 2026-10-24
 
 ### Changed
