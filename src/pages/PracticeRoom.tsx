@@ -10,7 +10,6 @@ import { installPlayerShortcuts } from "@giamat90/mps-core/hooks";
 import TempoControl from "../components/player/TempoControl";
 import KeyTranspose from "../components/player/KeyTranspose";
 import OutputSelector from "../components/player/OutputSelector";
-import RecordButton from "../components/recording/RecordButton";
 import MonitorButton from "../components/recording/MonitorButton";
 import MicSelector from "../components/recording/MicSelector";
 import TakeList from "../components/recording/TakeList";
@@ -229,11 +228,10 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
           <div className="practice-room__topbar-devices">
             <div className="practice-room__io-group">
               <MicSelector />
+              <MonitorButton />
               <OutputSelector />
             </div>
             <KeyTranspose />
-            <MonitorButton />
-            <RecordButton />
           </div>
         </div>
       </div>

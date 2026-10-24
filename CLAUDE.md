@@ -18,6 +18,9 @@ Default to no comments. Only add one for hidden constraints, workarounds, subtle
 ### 4. Never swallow errors silently
 Empty catch blocks (`catch {}`, `.catch(() => {})`) are forbidden. Always log with `console.warn` or `console.error` at minimum. If an error is expected and non-fatal, log it; if it is unexpected, rethrow or surface it to the UI.
 
+### 5. Every PR updates the docs, UML included
+Every pull request carries its docs: `CLAUDE.md`, the wiki pages it touches and `wiki/uml.md` are updated in the same PR (and `MPS/wiki/uml-architecture.md` / `shared-architecture.md` when the shared shape changed). If no diagram is affected, the PR description says "UML: no change, because ...". MPS rule 22 (`MPS/wiki/conventions.md`).
+
 ---
 
 ## Tech stack
@@ -106,7 +109,7 @@ VPS/
 │   │   │   ├── SendToPhoneDialog.tsx  Send over Wi-Fi (QR code, progress, network picker) or save the practice pack as a file; see wiki/practice-pack.md
 │   │   │   ├── QrCode.tsx          SVG QR code (dark on white in every theme), drawn from `src/lib/qr.ts`
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
-│   │   │   ├── TransportControls.tsx  play/pause/stop + time; Play counts in when the count-in is set
+│   │   │   ├── TransportControls.tsx  skip, Stop, Play, Record (renders RecordButton), time; Play counts in when the count-in is set
 │   │   │   ├── CountInButton.tsx   ⏱ count-in bars (headless `useCountInButton`); counts in Play, Record and Monitor
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
@@ -114,9 +117,9 @@ VPS/
 │   │   │   ├── LoopButton.tsx      punch-loop toggle (standalone, beside TransportControls)
 │   │   │   └── LoopsMenu.tsx       saved named loops + bar sections (practice-room topbar)
 │   │   ├── recording/
-│   │   │   ├── RecordButton.tsx    start/stop recording
+│   │   │   ├── RecordButton.tsx    start/stop recording (rendered inside TransportControls, in the `--record` red)
 │   │   │   ├── MicSelector.tsx     microphone input picker
-│   │   │   ├── MonitorButton.tsx   live mic monitoring toggle
+│   │   │   ├── MonitorButton.tsx   live mic monitoring toggle: a labelled 🎧 pill between the Input and Output selectors
 │   │   │   ├── RecordingOffsetControl.tsx  latency calibration wizard (click-clap)
 │   │   │   ├── TakeList.tsx        take list with select/rename/delete
 │   │   │   └── ExerciseTakeList.tsx  Free Exercise take list

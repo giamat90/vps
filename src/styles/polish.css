@@ -351,20 +351,15 @@ input[type="range"]:focus-visible {
 }
 
 .record-btn {
-  box-shadow: 0 0 0 0 rgba(233, 69, 96, 0);
+  box-shadow: 0 0 0 0 transparent;
 }
 
 .record-btn:hover:not(:disabled) {
-  box-shadow: var(--shadow-glow);
+  box-shadow: 0 0 1rem var(--record-glow);
 }
 
 .record-btn--active {
-  background: var(--accent-soft);
-  box-shadow: 0 0 1.1rem rgba(233, 69, 96, 0.5);
-}
-
-.monitor-btn {
-  border-color: var(--info);
+  box-shadow: 0 0 1.1rem var(--record-glow);
 }
 
 .count-in-btn {
