@@ -24,11 +24,13 @@ import LivePitchFeed from "../components/analysis/LivePitchFeed";
 import DetachHandle from "../components/panels/DetachHandle";
 import PanelMenu from "../components/panels/PanelMenu";
 import SortablePanels from "../components/panels/SortablePanels";
+import SortableTopbar from "../components/panels/SortableTopbar";
 import { useLibraryStore } from "../stores/library";
 import { usePlayerStore } from "../stores/player";
 import { useAnalysisStore } from "../stores/analysis";
 import { useDetachedStore } from "../stores/detached";
 import { availablePracticePanels, usePracticePanels, type PracticePanelId } from "../stores/panels";
+import { TOPBAR_CARDS, TOPBAR_MENU_LABELS, useTopbarOrder } from "../stores/topbar";
 import { hiddenTrackTags, useWaveformPanels, waveformMenuItems } from "../stores/waveforms";
 import type { DetachablePanel } from "../windows/protocol";
 import { useMainBridge } from "../windows/useMainBridge";
@@ -107,6 +109,8 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
 
   const visible = usePracticePanels((s) => s.visible);
   const order = usePracticePanels((s) => s.order);
+  const topbarOrder = useTopbarOrder((s) => s.order);
+  const cardVisible = useTopbarOrder((s) => s.visible);
   const waveformVisible = useWaveformPanels((s) => s.visible);
   const detached = useDetachedStore((s) => s.detached);
 
@@ -215,25 +219,39 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
               tags: hiddenTrackTags(waveformVisible, { muted: mutedTracks, soloed: soloedTrack }),
             }}
           />
+          <PanelMenu store={useTopbarOrder} panels={TOPBAR_CARDS} labels={TOPBAR_MENU_LABELS} />
           <DownloadAllButton song={song} />
           <SendToPhoneButton song={song} />
           <ExportMixButton />
         </header>
 
-        <div className="practice-room__topbar">
-          <TransportControls />
-          <LoopButton />
-          <LoopsMenu />
-          <TempoControl detectedBpm={song.detectedBpm} />
-          <div className="practice-room__topbar-devices">
-            <div className="practice-room__io-group">
-              <MicSelector />
-              <MonitorButton />
-              <OutputSelector />
-            </div>
-            <KeyTranspose />
-          </div>
-        </div>
+        <SortableTopbar ids={topbarOrder.filter((id) => cardVisible[id])}>
+          {(id) => {
+            switch (id) {
+              case "transport":
+                return <TransportControls />;
+              case "loop":
+                return (
+                  <>
+                    <LoopButton />
+                    <LoopsMenu />
+                  </>
+                );
+              case "tempo":
+                return <TempoControl detectedBpm={song.detectedBpm} />;
+              case "devices":
+                return (
+                  <>
+                    <MicSelector />
+                    <MonitorButton />
+                    <OutputSelector />
+                  </>
+                );
+              case "transpose":
+                return <KeyTranspose />;
+            }
+          }}
+        </SortableTopbar>
       </div>
 
       <div className="practice-room__body">

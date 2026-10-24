@@ -140,7 +140,8 @@ VPS/
 │   │   │   └── LyricsPanel.tsx     synced lyrics: paste/find online/sync, karaoke view, click-to-seek
 │   │   ├── panels/
 │   │   │   ├── PanelTitle.tsx  a panel's name as the button that folds it (the Lyrics panel's button)
-│   │   │   └── PanelMenu.tsx  Panels menu in the practice-room / Free Exercise header: tick which panels are shown; lists the waveform area and its tracks first
+│   │   │   ├── SortableTopbar.tsx  the pinned top bar: its cards in the user's order, wrapping with the window, each with a ⋮⋮ grip that moves it anywhere in the bar (shared `useSortableBar`, own drag context, double-click a grip restores the usual order)
+│   │   │   └── PanelMenu.tsx  Panels menu in the practice-room / Free Exercise header: tick which panels are shown; lists the waveform area and its tracks first; with `labels` it is also the Cards menu of the top bar
 │   │   ├── settings/
 │   │   │   └── YouTubeCookiesControl.tsx  Sign in to YouTube (private window → cookies file, see wiki/youtube-signin.md) or pick a cookies.txt; avoids the flaky live-browser cookie fallback
 │   │   └── updater/               auto-update UI (tauri-plugin-updater)
@@ -173,6 +174,7 @@ VPS/
 │   │   ├── exercise.ts        Free Exercise mode state (Zustand)
 │   │   ├── settings.ts        app settings: YouTube cookies path, collapsed library folders (Zustand, localStorage-persisted)
 │   │   ├── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
+│   │   ├── topbar.ts          the order and visibility of the top bar's cards (`vps_topbar`): Transport, Loop, Tempo, Input and output, Transpose; apart from `panels.ts`
 │   │   ├── collapsed.ts       which panels are folded down to their title button (createCollapseStore from mps-core, `vps_collapsed`); `usePanelCollapse(id)`
 │   │   ├── waveforms.ts       whether the waveform area is shown and whether each track is expanded or shrunk to its strip (`vps_waveforms`); hidden = collapsed, never unmounted
 │   │   └── exercisePanels.ts  which Free Exercise panels are visible (`vps_exercise_panels`)
