@@ -6,6 +6,14 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.97] - 2026-10-24
+
+### Changed
+- **Record moved into the transport bar**, right after Play (skip, Stop, Play, Record, skip), the order of Pro Tools, Logic, Cubase and Reaper. It is always red, whatever the theme.
+- **Monitor is a labelled 🎧 button between Input and Output**, filled blue while it is on, so the input strip reads Input, Monitor, Output.
+- **Transpose is one row** like Speed and the devices, instead of a label stacked over its buttons.
+- A long error message in the bar is cut with an ellipsis; hover it to read the whole text.
+
 ## [0.0.96] - 2026-10-24
 
 ### Added
