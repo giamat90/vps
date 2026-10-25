@@ -88,7 +88,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "app"
-version = "0.0.98"
+version = "0.0.99"
 dependencies = [
  "chrono",
  "dirs",
@@ -2211,7 +2211,7 @@ dependencies = [
 [[package]]
 name = "mps-detached-windows"
 version = "0.1.0"
-source = "git+https://github.com/giamat90/mps-core?tag=v0.18.0#b0f040b5820f226e5f1fb9741e34f6576b81a4fd"
+source = "git+https://github.com/giamat90/mps-core?tag=v0.19.0#c3632d4d154d6fa3b7a48fefa549c586fd8d3d1c"
 dependencies = [
  "log",
  "serde",
@@ -2222,7 +2222,7 @@ dependencies = [
 [[package]]
 name = "mps-sidecar"
 version = "0.1.0"
-source = "git+https://github.com/giamat90/mps-core?tag=v0.18.0#b0f040b5820f226e5f1fb9741e34f6576b81a4fd"
+source = "git+https://github.com/giamat90/mps-core?tag=v0.19.0#c3632d4d154d6fa3b7a48fefa549c586fd8d3d1c"
 dependencies = [
  "log",
  "serde",
@@ -2232,7 +2232,7 @@ dependencies = [
 [[package]]
 name = "mps-youtube-signin"
 version = "0.7.0"
-source = "git+https://github.com/giamat90/mps-core?tag=v0.18.0#b0f040b5820f226e5f1fb9741e34f6576b81a4fd"
+source = "git+https://github.com/giamat90/mps-core?tag=v0.19.0#c3632d4d154d6fa3b7a48fefa549c586fd8d3d1c"
 dependencies = [
  "log",
  "tauri",
