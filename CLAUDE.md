@@ -100,6 +100,7 @@ VPS/
 │   │   ├── upload/
 │   │   │   ├── DropZone.tsx       file picker → pending-file confirm (Cancel/Analyze) → processSong (song or instrument track)
 │   │   │   ├── YouTubeImport.tsx  URL paste → importYoutube
+│   │   │   ├── ImportQueue.tsx    the running import's progress + the numbered list of imports waiting (× removes one); imports line up in the library store, one separation at a time, in memory only
 │   │   │   └── ImportOptions.tsx  track-kind (song/instrument) + high-quality chip card above DropZone/YouTubeImport, mirrors SPS's StemPicker visual style
 │   │   ├── player/
 │   │   │   ├── Waveform.tsx        3-track waveform display + take loading
