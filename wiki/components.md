@@ -14,7 +14,8 @@ App
 │   └── ExercisePage       — free exercise (no song; piano roll + record)
 ├── upload/
 │   ├── DropZone           — drag-and-drop audio file import
-│   └── YouTubeImport      — paste-and-import YouTube URL
+│   ├── YouTubeImport      — paste-and-import YouTube URL
+│   └── ImportQueue        — the running import's progress and the numbered list of waiting ones
 ├── player/
 │   ├── Waveform           — 3-track waveform display (vocals + instrumental + take), each row with mute/solo/volume controls
 │   ├── TimeRuler          — canvas time ruler with drag-to-select punch region
@@ -59,13 +60,17 @@ Manages the song list, import/upload flow, and error state.
 |-------|------|-------------|
 | `songs` | `Song[]` | All songs in the library |
 | `folders` | `Folder[]` | All folders in the library |
-| `processing` | `ProcessingStatus \| null` | Active processing job (null when idle) |
+| `processing` | `ProcessingStatus \| null` | The import running now (null when idle) |
+| `processingLabel` | `string \| null` | What `processing` is about: the file name or the link |
+| `queue` | `QueuedImport[]` | Imports waiting their turn, oldest first (`id`, `label`, `source`); the running one is not in it |
 | `isLoading` | `boolean` | Initial fetch in progress |
-| `error` | `string \| null` | Last friendly error message (cleared on next import attempt) |
+| `error` | `string \| null` | Last friendly error message (cleared when an import starts on an idle queue; kept, with the new one appended, while others wait) |
 
 `uploadSong(filePath, highQuality?)` and `importYoutube(url, highQuality?)` both accept an optional `highQuality` flag (default `false`), threaded straight through to the Rust commands → sidecar → `processor.process()`'s Demucs model choice (`htdemucs_ft` vs `htdemucs`). `LibraryPage` owns the toggle's state and passes it down to both `DropZone` and `YouTubeImport`.
 
-Actions: `fetchSongs`, `uploadSong`, `importYoutube`, `deleteSong`, `renameSong`, `fetchFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `reorderFolders`, `moveSongs`, `clearError`, `initProgressListener`. See [Library Folders](#library-folders-drag-and-drop) below for the folder-related actions.
+**Import queue.** The backend separates one song at a time, so `uploadSong` and `importYoutube` line up behind a running import instead of being refused: each returns a promise that settles when *that* import ends, and the store runs them in the order given. The options (`highQuality`, `trackKind`, the cookies path) are taken when the import is queued, so the import options can be changed for the next song while one is running. A failed import does not stop the line; when others are waiting (or it waited itself) its message starts with its file name or link. `removeFromQueue(id)` drops a waiting import; the running one cannot be stopped (no cancel in `process_song` yet). The queue lives in memory only: closing the app drops the waiting imports. `retryableYoutubeImport` is a single slot, so after several expired-session links only the last is offered for "Sign in again and retry". Design and limits: [mps-core architecture](../../core/wiki/architecture.md).
+
+Actions: `fetchSongs`, `uploadSong`, `importYoutube`, `removeFromQueue`, `deleteSong`, `renameSong`, `fetchFolders`, `createFolder`, `renameFolder`, `deleteFolder`, `reorderFolders`, `moveSongs`, `clearError`, `initProgressListener`. See [Library Folders](#library-folders-drag-and-drop) below for the folder-related actions.
 
 Both `uploadSong` and `importYoutube` set an initial `processing` state ("Preparing…" / "Connecting…" at 0%) before calling the Tauri command, eliminating the dead-time gap before the sidecar sends its first progress event.
 
@@ -616,11 +621,15 @@ Two icon buttons sit on each row, both `e.stopPropagation()`-guarded so clicking
 
 ### YouTubeImport
 
-Input + button for pasting a YouTube URL. Validates the URL client-side with a regex before calling `importYoutube(url, highQuality)` on the library store (`highQuality` passed down as a prop from `LibraryPage`). Disabled while any processing job is active. Errors from the store are shown as a dismissible red banner in `LibraryPage`.
+Input + button for pasting a YouTube URL. Validates the URL client-side with a regex before calling `importYoutube(url, highQuality)` on the library store (`highQuality` passed down as a prop from `LibraryPage`). Never disabled by a running import: the link is queued and the box is emptied at once. Errors from the store are shown as a dismissible red banner in `LibraryPage`.
 
 ### DropZone
 
-Click-to-browse file picker (native `open()` dialog filtered to audio extensions) that calls `uploadSong(filePath, highQuality, trackKind)` on the library store. Shows a progress bar driven by `processing.progress` while a job is active; disabled during processing. `highQuality` and `trackKind` are passed down as props from `LibraryPage`. When `trackKind === "instrument"` the idle label reads "Upload a practice track" instead of "Upload a song".
+Click-to-browse file picker (native `open()` dialog filtered to audio extensions) that calls `uploadSong(filePath, highQuality, trackKind)` on the library store. Stays usable while an import runs (the file is queued); the progress moved to `ImportQueue`. `highQuality` and `trackKind` are passed down as props from `LibraryPage`.
+
+### ImportQueue
+
+Under the two import controls in `LibraryPage` (`components/upload/ImportQueue.tsx`, CSS `.import-queue*`). Renders nothing when idle. While an import runs: its `processingLabel`, percent, stage and a progress bar from `processing`. Below it the numbered list of waiting imports, each with a × that calls `removeFromQueue(id)`. Plain markup over the store fields, so there is no hook for it in mps-core. When `trackKind === "instrument"` the idle label reads "Upload a practice track" instead of "Upload a song".
 
 **Instrument practice track import:** `LibraryPage` renders a `library-page__track-kind-toggle` radio group above `DropZone` — "Song (separate vocals & instrumental)" vs. "Instrument practice track (piano/guitar melody)" — backed by local `trackKind` state (`"vocal" | "instrument"`, default `"vocal"`). Selecting "instrument" also disables the high-quality checkbox (Demucs quality is irrelevant when separation is skipped) and threads `trackKind` through `uploadSong` → `processSong(filePath, highQuality, trackKind)` → Tauri `process_song(track_kind: Option<String>)` → sidecar `skipSeparation`. See [Data Model: Song.kind](data-model.md#song) and [Python Sidecar: process](python-sidecar.md#process) for the rest of the pipeline.
 
