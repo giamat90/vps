@@ -35,6 +35,15 @@ The window shows a remote page, which this app has not done before.
 
 An import that carried a cookies file and was turned down in a way a fresh sign-in can fix (bot check, 403, "cookies are no longer valid"; `isSessionExpiredError`) sets `sessionExpired` in the library store, and the error banner shows **Sign in again and retry**. One click opens the sign-in window, stores the new cookies path and repeats the same import with it (`signInAndRetryYoutube`). If the fresh session is turned down too, the message blames the network/VPN and no second offer is made. The window is never opened without a click (a window appearing by itself is surprising and can be missed behind the app); cancelling keeps the offer. Private or removed videos do not trigger it.
 
+
+## When nobody is signed in
+
+An import with no saved sign-in that YouTube turns down in a way a sign-in can fix sets `signInNeeded` (not `sessionExpired`), and the banner offers **Sign in to YouTube and retry**, the same `signInAndRetryYoutube` path. Closing the window keeps the offer.
+
+## While the import runs
+
+The cookie cascade (cookies file, none, Chrome, Firefox, Edge, Brave, Opera) names each attempt in the stage ("downloading (attempt 2 of 7: Chrome cookies)") and restarts the bar at each. yt-dlp runs with short timeouts and retries (`mps_core.yt_download.FAST_FAIL_OPTS`) and no new attempt starts after 180 s, so a blocked video fails in minutes, not tens of minutes. A download of unknown size reports progress `-1`; the UI shows a sliding bar (`progress-bar--indeterminate`) instead of a percentage.
+
 ## Hand test checklist
 
 1. Settings → YouTube account → Sign in to YouTube: window opens on Google's page.
