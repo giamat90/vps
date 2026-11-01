@@ -493,6 +493,7 @@ flowchart TB
 sequenceDiagram
     actor U as User
     participant UP as DropZone / YouTubeImport
+    participant IQ as ImportQueue
     participant LS as library store
     participant I as ipc.generated
     participant R as commands.rs
@@ -501,6 +502,11 @@ sequenceDiagram
 
     U->>UP: drop file or paste link
     UP->>LS: process(file, kind: vocal or instrument)
+    opt another import is running
+        LS-->>IQ: queue (waits, in memory only)
+        U->>IQ: x removes a waiting import
+        Note over LS: starts when the one before it ends, even if that one failed
+    end
     LS->>I: processSong(...)
     I->>R: invoke("process_song")
     R->>R: pitch::for_track(skip_separation)
@@ -508,6 +514,7 @@ sequenceDiagram
     loop stages
         P-->>R: progress (separate, pitch, key, spectrogram)
         R-->>LS: event "processing-progress"
+        LS-->>IQ: running import: label, stage, percent
     end
     P->>FS: vocals.wav, instrumental.wav
     P-->>R: result (pitch, key, bpm, spectrogram)

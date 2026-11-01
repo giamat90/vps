@@ -20,6 +20,7 @@ import {
 import DropZone from "../components/upload/DropZone";
 import YouTubeImport from "../components/upload/YouTubeImport";
 import ImportOptions from "../components/upload/ImportOptions";
+import ImportQueue from "../components/upload/ImportQueue";
 import RecordingOffsetControl from "../components/recording/RecordingOffsetControl";
 import YouTubeCookiesControl from "../components/settings/YouTubeCookiesControl";
 import { exportStem, pitchShiftSong } from "../lib/tauri";
@@ -331,7 +332,7 @@ function RootDropZone({ isDropTarget, children }: { isDropTarget: boolean; child
 
 function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
   const {
-    isLoading, error, sessionExpired, isProcessing, hasContent, sortedFolders, rootSongs, songsByFolder,
+    isLoading, error, sessionExpired, hasContent, sortedFolders, rootSongs, songsByFolder,
     searching, matches, folderNameOf, deleteSong, renameSong, renameFolder, deleteFolder, clearError,
     signInAndRetryYoutube, dropTarget, handleDragOver, handleDragCancel, handleDragEnd, showAbout, openAbout, closeAbout, showSettings, toggleSettings,
     appVersion, highQuality, setHighQuality, query, setQuery, clearQuery, isCreatingFolder, startCreatingFolder,
@@ -391,12 +392,12 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
           onTrackKindChange={setTrackKind}
           highQuality={highQuality}
           onHighQualityChange={setHighQuality}
-          disabled={isProcessing}
         />
         <div className="library-page__import-sources">
           <DropZone highQuality={highQuality} trackKind={trackKind} />
           <YouTubeImport highQuality={highQuality} />
         </div>
+        <ImportQueue />
       </div>
 
       {showSettings && (
@@ -413,7 +414,6 @@ function LibraryPage({ onSelectSong, onGoToExercise }: LibraryPageProps) {
             <button
               className="library-page__error-action"
               onClick={signInAndRetryYoutube}
-              disabled={isProcessing}
             >
               Sign in again and retry
             </button>

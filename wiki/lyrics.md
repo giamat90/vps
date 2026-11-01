@@ -62,6 +62,7 @@ The wrong-length results are kept because the duration filter (15 s) is a guess 
 - `@giamat90/mps-core/lyrics` (`timing.ts`): pure timing logic. `activeLineIndex` (binary search; a line lights one lead-in early so it is exactly where a click seeks to, and stays lit up to 4 s after it ends), `activeWordIndex`, `lineSeekTime`.
 - `@giamat90/mps-core/lyrics` (`store.ts`): load/find/sync/remove, progress subscription, and stale-result protection (a result for a song that is no longer open is dropped).
 - `src/components/lyrics/LyricsPanel.tsx`: tab + editor + karaoke view. Store selectors return the *index*, not the time, so the list re-renders only when the line or word changes rather than 30 times a second.
+- Layout: docked, the karaoke view is capped at `15rem` (`.lyrics-view`) because the practice page scrolls and a docked panel has no height of its own. In a detached window the panel fills the window body and the view scrolls inside it (`.detached-host__body .lyrics-view`).
 
 ## Accuracy: what was measured
 
