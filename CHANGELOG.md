@@ -6,6 +6,11 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.102] - 2026-11-03
+
+### Added
+- **The lyrics can stop following the song.** A new "Follow song: on/off" button next to Edit and Remove turns off the lit line and word and the automatic scrolling, so the lyrics stay still. Clicking a line still jumps to it. It is on by default, and the choice is kept for every song.
+
 ## [0.0.101] - 2026-11-01
 
 ### Fixed
