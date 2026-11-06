@@ -1,7 +1,9 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
 import { pitchShiftSong } from "../../lib/tauri";
 import type { AudioEngine } from "../../audio/engine";
 import type { Song } from "../../lib/types";
 import { useAnalysisStore } from "../analysis";
+import { useActivityStore } from "../activity";
 import { getEngine, getRecorder } from "./singletons";
 import type { Slice, SongSlice, StoreGet, StoreSet } from "./types";
 import { applyEffectiveVolumes } from "./volume";
@@ -85,11 +87,19 @@ export const createSongSlice: Slice<SongSlice> = (set, get) => ({
   duration: 0,
   transpose: 0,
   isTransposing: false,
+  isLoadingSong: false,
 
   loadSong: async (song, vocalsEl, instrumentalEl) => {
     get().cancelCountIn();
     const eng = getEngine();
-    if (!(await eng.load(song.directory, vocalsEl, instrumentalEl))) return;
+    set({ isLoadingSong: true });
+    let loaded: boolean;
+    try {
+      loaded = await useActivityStore.getState().track("Opening song…", () => eng.load(song.directory, vocalsEl, instrumentalEl));
+    } finally {
+      set({ isLoadingSong: false });
+    }
+    if (!loaded) return;
     bindEngine(eng, set, get);
     const baselinePxPerSec = eng.getMinPxPerSec();
     eng.zoomAll(baselinePxPerSec, 0);
@@ -113,6 +123,7 @@ export const createSongSlice: Slice<SongSlice> = (set, get) => ({
       outputDevices: [],
       transpose: 0,
       isTransposing: false,
+      isLoadingSong: false,
       isRecording: false,
       isSavingTake: false,
       isMonitoring: false,
@@ -127,7 +138,7 @@ export const createSongSlice: Slice<SongSlice> = (set, get) => ({
 
   setTranspose: async (semitones) => {
     const { song } = get();
-    if (!song) return;
+    if (!song || operationLocks(get()).transpose !== null) return;
 
     getEngine().pause();
     set({ isTransposing: true, isPlaying: false });
@@ -147,8 +158,7 @@ export const createSongSlice: Slice<SongSlice> = (set, get) => ({
       }
 
       const eng = getEngine();
-      eng.loadVocalsFromPath(vocalsPath);
-      eng.loadInstrumentalFromPath(instrumentalPath);
+      await Promise.all([eng.loadVocalsFromPath(vocalsPath), eng.loadInstrumentalFromPath(instrumentalPath)]);
       set({ transpose: semitones, isTransposing: false });
     } catch (e) {
       set({ isTransposing: false });

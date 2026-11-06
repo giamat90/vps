@@ -1,3 +1,4 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
 import { useState } from "react";
 import { usePlayerStore } from "../../stores/player";
 import { useExerciseStore } from "../../stores/exercise";
@@ -11,6 +12,7 @@ function MonitorButton() {
   const countInBars     = usePlayerStore((s) => s.countInBars);
   const exerciseMode    = usePlayerStore((s) => s.exerciseMode);
   const trackLoaded    = useExerciseStore((s) => s.loadedTrackId !== null);
+  const lockReason      = usePlayerStore((s) => operationLocks(s).monitor);
   const [error, setError] = useState<string | null>(null);
 
   const handleClick = async () => {
@@ -32,9 +34,11 @@ function MonitorButton() {
         className={`monitor-btn${isMonitoring ? " monitor-btn--active" : ""}`}
         onClick={handleClick}
         aria-pressed={isMonitoring}
-        disabled={isRecording || (isCountingIn && !isMonitoring)}
+        disabled={isRecording || (isCountingIn && !isMonitoring) || (lockReason !== null && !isMonitoring)}
         title={
-          isMonitoring
+          lockReason !== null && !isMonitoring
+            ? lockReason
+            : isMonitoring
             ? isCountingIn ? "Cancel count-in and stop microphone monitor" : "Stop microphone monitor"
             : countInBars > 0 && !exerciseMode
             ? `Monitor mic with a ${countInBars}-bar count-in, then play the song (no recording)`

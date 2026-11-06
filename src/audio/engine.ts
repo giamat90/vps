@@ -714,10 +714,24 @@ export class AudioEngine {
     this._stopTimeUpdate();
   }
 
-  loadInstrumentalFromPath(filePath: string): void {
-    if (!this.instrumental) return;
+  async loadInstrumentalFromPath(filePath: string): Promise<void> {
+    const ws = this.instrumental;
+    if (!ws) return;
     const url = convertFileSrc(filePath.replace(/\\/g, "/"));
-    this.instrumental.load(url);
+    await new Promise<void>((resolve, reject) => {
+      const unsubReady = ws.on("ready", () => {
+        unsubReady();
+        unsubError();
+        resolve();
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const unsubError = ws.on("error", (err: any) => {
+        unsubReady();
+        unsubError();
+        reject(new Error(err?.message ?? String(err)));
+      });
+      ws.load(url);
+    });
   }
 
   setLoop(start: number, end: number): void {

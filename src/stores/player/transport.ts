@@ -1,3 +1,4 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
 import { countInPlan } from "./countIn";
 import { getEngine } from "./singletons";
 import type { Slice, StoreGet, TransportSlice } from "./types";
@@ -15,6 +16,7 @@ export const createTransportSlice: Slice<TransportSlice> = (set, get) => ({
   isLooping: false,
 
   play: () => {
+    if (operationLocks(get()).playback !== null) return;
     const eng = getEngine();
     const { punchIn } = get();
     if (punchIn !== null) {
@@ -34,6 +36,7 @@ export const createTransportSlice: Slice<TransportSlice> = (set, get) => ({
   // (Monitor counts in on its own, and the recording flow starts the engine directly).
   togglePlay: () => {
     const s = get();
+    if (operationLocks(s).playback !== null) return;
     if (s.isCountingIn) {
       // Only the count-in before Play is the transport's to cancel; a recording's or a monitor's belongs to its own button.
       if (s.countInFor === "play") s.cancelCountIn();
@@ -47,13 +50,14 @@ export const createTransportSlice: Slice<TransportSlice> = (set, get) => ({
   },
 
   stop: () => {
+    if (operationLocks(get()).playback !== null) return;
     get().cancelCountIn();
     getEngine().stop();
     set({ isPlaying: false, currentTime: 0 });
   },
 
   seek: (time) => {
-    if (get().isRecording) return;
+    if (get().isRecording || operationLocks(get()).playback !== null) return;
     getEngine().seekTo(time);
     set({ currentTime: time });
   },

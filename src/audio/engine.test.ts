@@ -374,8 +374,26 @@ describe("loadVocalsFromPath", () => {
 
   it("loadInstrumentalFromPath loads the asset URL", async () => {
     const { engine, instrumental } = await loadedEngine();
-    engine.loadInstrumentalFromPath("C:\\p\\i.wav");
+    const loading = engine.loadInstrumentalFromPath("C:\\p\\i.wav");
     expect(instrumental.load).toHaveBeenCalledWith("asset://C:/p/i.wav");
+    instrumental.emit("ready");
+    await expect(loading).resolves.toBeUndefined();
+  });
+
+  it("loadInstrumentalFromPath settles only when the file is ready, and rejects when it fails", async () => {
+    const { engine, instrumental } = await loadedEngine();
+    let settled = false;
+    const loading = engine.loadInstrumentalFromPath("/i.wav").then(() => (settled = true));
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    instrumental.emit("ready");
+    await loading;
+    expect(settled).toBe(true);
+
+    const bad = engine.loadInstrumentalFromPath("/bad.wav");
+    await Promise.resolve();
+    instrumental.emit("error", new Error("corrupt"));
+    await expect(bad).rejects.toThrow("corrupt");
   });
 });
 

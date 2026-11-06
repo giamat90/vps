@@ -1,3 +1,4 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
 import { hideTake, reconcileTakes, showTake, toggleTake, type TakeSelection } from "@giamat90/mps-core/takes";
 import { deleteTakeApi, listTakes, renameTakeApi, setTakeManualOffsetApi } from "../../lib/tauri";
 import { useAnalysisStore } from "../analysis";
@@ -67,7 +68,7 @@ export const createTakesSlice: Slice<TakesSlice> = (set, get) => ({
 
   deleteTake: async (takeId) => {
     const { song } = get();
-    if (!song) return;
+    if (!song || operationLocks(get()).takeEdit !== null) return;
     await deleteTakeApi(song.id, takeId);
     const next = hideTake(selectionOf(get()), takeId);
     set({
@@ -80,7 +81,7 @@ export const createTakesSlice: Slice<TakesSlice> = (set, get) => ({
 
   deleteAllTakes: async () => {
     const { song, takes } = get();
-    if (!song || takes.length === 0) return;
+    if (!song || takes.length === 0 || operationLocks(get()).takeEdit !== null) return;
     const { deleted, failure } = await deleteEach(song.id, takes.map((t) => t.id));
     const remaining = takes.filter((t) => !deleted.has(t.id)).map((t) => t.id);
     const next = reconcileTakes(selectionOf(get()), remaining);
@@ -95,7 +96,7 @@ export const createTakesSlice: Slice<TakesSlice> = (set, get) => ({
 
   renameTake: async (takeId, name) => {
     const { song } = get();
-    if (!song) return;
+    if (!song || operationLocks(get()).takeEdit !== null) return;
     const updated = await renameTakeApi(song.id, takeId, name);
     set({ takes: get().takes.map((t) => (t.id === takeId ? updated : t)) });
   },

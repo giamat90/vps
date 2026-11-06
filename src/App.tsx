@@ -3,6 +3,7 @@ import LibraryPage from "./pages/LibraryPage";
 import PracticeRoom from "./pages/PracticeRoom";
 import ExercisePage from "./pages/ExercisePage";
 import UpdateDialog from "./components/updater/UpdateDialog";
+import ActivityIndicator from "./components/activity/ActivityIndicator";
 import { useUpdaterStore } from "@giamat90/mps-core/updater";
 
 type Route = { page: "library" } | { page: "practice"; songId: string } | { page: "exercise" };
@@ -31,6 +32,7 @@ function App() {
         />
       )}
       <UpdateDialog />
+      <ActivityIndicator />
     </div>
   );
 }
