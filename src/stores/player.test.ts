@@ -1999,3 +1999,160 @@ describe("a take's own mixer", () => {
     expect(out.sources.filter((x) => !x.isTake)).toEqual(before.sources.filter((x) => !x.isTake));
   });
 });
+
+
+// ─── operation locks ───────────────────────────────────────────────────────
+
+describe("operation locks", () => {
+  it("setTranspose is refused while recording, monitoring, counting in or saving a take", async () => {
+    await loadedSong();
+    h.api.pitchShiftSong.mockResolvedValue({ vocalsPath: "a", instrumentalPath: "b" });
+    for (const busy of [{ isRecording: true }, { isMonitoring: true }, { isCountingIn: true }, { isSavingTake: true }]) {
+      store().setState({ isRecording: false, isMonitoring: false, isCountingIn: false, isSavingTake: false, ...busy });
+      await store().getState().setTranspose(2);
+    }
+    expect(h.api.pitchShiftSong).not.toHaveBeenCalled();
+    expect(store().getState().transpose).toBe(0);
+  });
+
+  it("a second setTranspose is refused while one is running", async () => {
+    await loadedSong();
+    let release!: (v: unknown) => void;
+    h.api.pitchShiftSong.mockReturnValue(new Promise((r) => { release = r; }));
+    const first = store().getState().setTranspose(1);
+    await store().getState().setTranspose(4);
+    expect(h.api.pitchShiftSong).toHaveBeenCalledTimes(1);
+    release({ vocalsPath: "a", instrumentalPath: "b" });
+    await first;
+    expect(store().getState().transpose).toBe(1);
+  });
+
+  it("isTransposing stays true until both tracks have finished reloading", async () => {
+    await loadedSong();
+    let ready!: () => void;
+    eng().loadInstrumentalFromPath.mockReturnValue(new Promise<void>((r) => { ready = r; }));
+    h.api.pitchShiftSong.mockResolvedValue({ vocalsPath: "a", instrumentalPath: "b" });
+    const pending = store().getState().setTranspose(2);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store().getState().isTransposing).toBe(true);
+    ready();
+    await pending;
+    expect(store().getState().isTransposing).toBe(false);
+  });
+
+  it("play, togglePlay, seek and startRecording do nothing while transposing", async () => {
+    await loadedSong();
+    store().setState({ isTransposing: true });
+    store().getState().play();
+    store().getState().togglePlay();
+    store().getState().seek(10);
+    await store().getState().startRecording();
+    expect(eng().play).not.toHaveBeenCalled();
+    expect(eng().seekTo).not.toHaveBeenCalled();
+    expect(h.rec.init).not.toHaveBeenCalled();
+  });
+
+  it("isLoadingSong is set while the song loads and cleared afterwards, even on failure", async () => {
+    let release!: (v: boolean) => void;
+    const first = store().getState().loadSong(song(), {} as HTMLElement, {} as HTMLElement);
+    await first;
+    expect(store().getState().isLoadingSong).toBe(false);
+    eng().load.mockReturnValue(new Promise<boolean>((r) => { release = r; }));
+    const second = store().getState().loadSong(song(), {} as HTMLElement, {} as HTMLElement);
+    expect(store().getState().isLoadingSong).toBe(true);
+    release(true);
+    await second;
+    expect(store().getState().isLoadingSong).toBe(false);
+    eng().load.mockRejectedValue(new Error("bad"));
+    await expect(store().getState().loadSong(song(), {} as HTMLElement, {} as HTMLElement)).rejects.toThrow("bad");
+    expect(store().getState().isLoadingSong).toBe(false);
+  });
+
+  it("deleteTake and renameTake are refused while a take is being saved", async () => {
+    await loadedSong();
+    store().setState({ takes: [take()], isSavingTake: true });
+    await store().getState().deleteTake("t1");
+    await store().getState().renameTake("t1", "x");
+    expect(h.api.deleteTakeApi).not.toHaveBeenCalled();
+    expect(h.api.renameTakeApi).not.toHaveBeenCalled();
+  });
+});
+
+
+// ─── the remembered audio setup ────────────────────────────────────────────
+
+describe("remembered audio setup", () => {
+  const KEY = "vps_settings";
+  const saved = () => JSON.parse(localStorage.getItem(KEY) ?? "{}").audioSetup;
+  const seed = (audioSetup: unknown) => localStorage.setItem(KEY, JSON.stringify({ audioSetup }));
+
+  it("picking an input or an output is saved with its name", async () => {
+    await freshModule();
+    await store().getState().fetchAudioDevices();
+    await store().getState().fetchOutputDevices();
+    store().getState().setAudioDevice("mic-ub");
+    await store().getState().setOutputDevice("out-ub");
+    expect(saved()).toEqual({
+      input: { id: "mic-ub", label: "Microphone (2-Behringer USB WDM Audio)" },
+      output: { id: "out-ub", label: expect.stringContaining("Speakers") },
+    });
+  });
+
+  it("picking the system default forgets the choice", async () => {
+    seed({ input: { id: "mic-ub", label: "x" }, output: { id: "out-ub", label: "y" } });
+    await freshModule();
+    await store().getState().fetchAudioDevices();
+    await store().getState().fetchOutputDevices();
+    store().getState().setAudioDevice(null);
+    await store().getState().setOutputDevice(null);
+    expect(saved()).toEqual({ input: null, output: null });
+  });
+
+  it("a new session starts on the saved devices, and the output reaches the audio engine", async () => {
+    seed({ input: { id: "mic-ub", label: "x" }, output: { id: "out-ub", label: "y" } });
+    await freshModule();
+    expect(store().getState().selectedDeviceId).toBeNull();
+    await store().getState().fetchAudioDevices();
+    await store().getState().fetchOutputDevices();
+    expect(store().getState()).toMatchObject({ selectedDeviceId: "mic-ub", selectedOutputDeviceId: "out-ub" });
+    expect(eng().setOutputDevice).toHaveBeenCalledWith("out-ub");
+  });
+
+  it("keeps a saved device that is not connected, and uses the default meanwhile", async () => {
+    const gone = { id: "usb-gone", label: "USB Mic" };
+    seed({ input: gone, output: { id: "out-gone", label: "Old Speakers" } });
+    await freshModule();
+    await store().getState().fetchAudioDevices();
+    await store().getState().fetchOutputDevices();
+    expect(store().getState()).toMatchObject({ selectedDeviceId: null, selectedOutputDeviceId: null });
+    expect(saved().input).toEqual(gone);
+  });
+
+  it("finds the device again by name when its id changed, and saves the new id", async () => {
+    seed({ input: { id: "old-id", label: "Microphone (2-Behringer USB WDM Audio)" }, output: null });
+    await freshModule();
+    await store().getState().fetchAudioDevices();
+    expect(store().getState().selectedDeviceId).toBe("mic-ub");
+    expect(saved().input.id).toBe("mic-ub");
+  });
+
+  it("picks the saved device up when it is plugged in later", async () => {
+    seed({ input: { id: "mic-new", label: "New Mic" }, output: null });
+    await freshModule();
+    await store().getState().fetchAudioDevices();
+    expect(store().getState().selectedDeviceId).toBeNull();
+    currentDevices = [...DEVICES, device("audioinput", "mic-new", "New Mic")];
+    deviceChange!();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store().getState().selectedDeviceId).toBe("mic-new");
+  });
+
+  it("does not override what the user picked in this session", async () => {
+    seed({ input: { id: "mic-ub", label: "x" }, output: null });
+    await freshModule();
+    await store().getState().fetchAudioDevices();
+    store().getState().setAudioDevice(null);
+    await store().getState().fetchAudioDevices();
+    expect(store().getState().selectedDeviceId).toBeNull();
+  });
+});

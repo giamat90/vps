@@ -1,3 +1,5 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
+import { useActivityStore } from "../../stores/activity";
 import { useEffect, useRef, useState, type ChangeEvent, type FocusEvent, type KeyboardEvent } from "react";
 import { usePlayerStore, getEngine, takesSilenced, type TrackKey } from "../../stores/player";
 import { useAnalysisStore } from "../../stores/analysis";
@@ -324,6 +326,7 @@ function Waveform({ song }: WaveformProps) {
   const setMuteTakesWhileRecording = usePlayerStore((s) => s.setMuteTakesWhileRecording);
   const syncTrackVolumes      = usePlayerStore((s) => s.syncTrackVolumes);
   const deleteAllTakes        = usePlayerStore((s) => s.deleteAllTakes);
+  const takeEditLock          = usePlayerStore((s) => operationLocks(s).takeEdit);
   const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false);
   const [deletingAll, setDeletingAll] = useState(false);
   const isLoading        = useRef(false);
@@ -392,7 +395,7 @@ function Waveform({ song }: WaveformProps) {
       const rail = takeRails.current.get(take.id);
       if (!rail || loadedTakes.current.get(take.id) === rail) continue;
       loadedTakes.current.set(take.id, rail);
-      eng.loadTakeTrack(take.id, take.filepath, rail, take.startPosition, take.audioOffset ?? 0, take.manualOffset ?? 0)
+      useActivityStore.getState().track("Loading take…", () => eng.loadTakeTrack(take.id, take.filepath, rail, take.startPosition, take.audioOffset ?? 0, take.manualOffset ?? 0))
         .then(() => syncTrackVolumes())
         .catch((e: unknown) => {
           if (loadedTakes.current.get(take.id) === rail) loadedTakes.current.delete(take.id);
@@ -519,8 +522,8 @@ function Waveform({ song }: WaveformProps) {
               type="button"
               className="waveform__takes-delete"
               onClick={() => setConfirmingDeleteAll(true)}
-              disabled={takes.length === 0 || deletingAll}
-              title="Delete all the recorded takes"
+              disabled={takes.length === 0 || deletingAll || takeEditLock !== null}
+              title={takeEditLock ?? "Delete all the recorded takes"}
               aria-label="Delete all takes"
             >
               &times;

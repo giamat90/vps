@@ -1,3 +1,4 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
 import { showTake } from "@giamat90/mps-core/takes";
 import { saveTake } from "../../lib/tauri";
 import { useAnalysisStore } from "../analysis";
@@ -46,7 +47,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
 
   startMonitoring: async () => {
     const s = get();
-    if (s.isRecording || s.isMonitoring || s.isCountingIn) return;
+    if (s.isRecording || s.isMonitoring || s.isCountingIn || operationLocks(s).monitor !== null) return;
 
     // Clear any live pitch trace left over from a previous monitor/recording
     // session — DualTuner's own clear runs on its effect cleanup, which is
@@ -121,7 +122,7 @@ export const createRecordingSlice: Slice<RecordingSlice> = (set, get) => ({
 
   startRecording: async () => {
     const { song } = get();
-    if (!song) return;
+    if (!song || operationLocks(get()).record !== null) return;
 
     // With "mute takes while recording" on (the default), drop the selected take
     // before recording a new one: every take stays saved (takes.json is never

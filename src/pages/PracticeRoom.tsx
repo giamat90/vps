@@ -1,3 +1,4 @@
+import { operationLocks } from "@giamat90/mps-core/locks";
 import { useEffect, useState, type ReactNode } from "react";
 import Waveform from "../components/player/Waveform";
 import DownloadAllButton from "../components/player/DownloadAllButton";
@@ -79,6 +80,7 @@ interface PracticeRoomProps {
 function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
   const songs = useLibraryStore((s) => s.songs);
   const cleanup = usePlayerStore((s) => s.cleanup);
+  const leaveLock = usePlayerStore((s) => operationLocks(s).leave);
   const takes = usePlayerStore((s) => s.takes);
   const activeTakeId = usePlayerStore((s) => s.activeTakeId);
   const mutedTracks = usePlayerStore((s) => s.mutedTracks);
@@ -170,7 +172,13 @@ function PracticeRoom({ songId, onBack }: PracticeRoomProps) {
       <LivePitchFeed />
       <div className="practice-room__pinned">
         <header className="practice-room__header">
-          <button className="practice-room__back" onClick={onBack} aria-label="Back to library">
+          <button
+            className="practice-room__back"
+            onClick={onBack}
+            disabled={leaveLock !== null}
+            title={leaveLock ?? undefined}
+            aria-label="Back to library"
+          >
             &larr; Back
           </button>
           <div className="practice-room__song-info">
