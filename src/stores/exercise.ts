@@ -1,3 +1,4 @@
+import { useActivityStore } from "./activity";
 import { create } from "zustand";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import type { ExerciseTake } from "../lib/types";
@@ -72,7 +73,7 @@ export const useExerciseStore = create<ExerciseState & ExerciseActions>((set, ge
   setActiveExerciseTake: (id) => set({ activeExerciseTakeId: id }),
 
   loadExerciseTakeIntoTrack: async (take, container) => {
-    await getEngine().loadExerciseTrack(take.filepath, container);
+    await useActivityStore.getState().track("Loading track…", () => getEngine().loadExerciseTrack(take.filepath, container));
     // Monitoring started before the load is running the free timer; the track
     // is the clock from here on.
     if (usePlayerStore.getState().isMonitoring) getEngine().stopExerciseTimer();

@@ -22,6 +22,7 @@ export interface SongSlice {
   duration: number;
   transpose: number;
   isTransposing: boolean;
+  isLoadingSong: boolean;
   loadSong: (song: Song, vocalsEl: HTMLElement, instrumentalEl: HTMLElement) => Promise<void>;
   cleanup: () => void;
   setTranspose: (semitones: number) => Promise<void>;
