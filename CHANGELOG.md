@@ -12,6 +12,7 @@ Releases before 0.1.62 are not itemised; see `git log` and the tags.
 - Controls that would race a running procedure are now disabled (still visible, the reason in the tooltip) and their store actions refuse: while a song loads or a transpose runs, playback, Record, Monitor, a second transpose, exports and Back are locked; while a take is analyzing, a new recording, transpose, take rename/delete and Back are locked; while recording, monitoring or counting in, transpose is locked. The engine's `loadInstrumentalFromPath` now resolves when the file is ready, so a transpose no longer reports done before the audio is swapped.
 
 ### Added
+- One audio setup for every song: the input and output you pick are remembered across songs and restarts. Settings (the gear in the library) has a "Default audio setup" with the two pickers and "Use the system defaults"; a remembered device that is not connected is named there and used again when it returns. The output picker no longer needs an open song. The recording latency is kept per input, so it follows the input.
 - The window says what it is busy with: a thin bar across the top and a pill at the bottom left ("Transposing…", "Opening song…", "Analyzing take…", exports). It appears only after 0.3 s, so quick actions show nothing, and it names the last started task and counts the others. Work that already had its own progress (imports, lyrics sync, updates) keeps it.
 
 ## [0.0.99] - 2026-10-25

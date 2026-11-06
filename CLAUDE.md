@@ -177,6 +177,7 @@ VPS/
 │   │   ├── panels.ts          which practice-room panels are visible (createPanelStore from mps-core, `vps_panels`)
 │   │   ├── topbar.ts          the order and visibility of the top bar's cards (`vps_topbar`): Transport, Loop, Tempo, Input and output, Transpose; apart from `panels.ts`
 │   │   ├── collapsed.ts       which panels are folded down to their title button (createCollapseStore from mps-core, `vps_collapsed`); `usePanelCollapse(id)`
+│   │   ├── (audio setup)      the picked input and output are saved in `settings.ts` (`audioSetup`, by id and name) by `setAudioDevice` / `setOutputDevice` and restored by the devices slice whenever the device lists are known; `components/settings/AudioSetupControl.tsx` is the Settings section
 │   │   ├── (operation locks)  `operationLocks` from `@giamat90/mps-core/locks` guards the player store's play/seek/record/transpose/take actions and disables the matching controls; `isLoadingSong` and `isTransposing` feed it
 │   │   ├── activity.ts        what the window is busy with (createActivityStore from mps-core); slow IPC commands arrive through `lib/trackedInvoke.ts` + `lib/activityLabels.ts`, other waits call `track` themselves; shown by `components/activity/ActivityIndicator.tsx`
 │   │   ├── waveforms.ts       whether the waveform area is shown and whether each track is expanded or shrunk to its strip (`vps_waveforms`); hidden = collapsed, never unmounted
