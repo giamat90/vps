@@ -67,3 +67,7 @@ Details in [Lyrics Sync](lyrics.md#tests). In short: the alignment algorithm is 
 - Bumped the short-term-spectrum resolution → change `N_BINS` (Python) and `ST_SPECTRUM_MIN_BINS` (Rust) together; a test fails if they diverge.
 - Bumped the yt-dlp floor → change `MIN_YT_DLP_VERSION` in `mps-core` (`version_check.py`), then both requirements files here and in SPS (see MPS conventions #10); `tests/test_yt_dlp_floor.py` fails if they disagree.
 - Shared code (metronome, recorder, zoom/pan, updater store, lyrics engine and slice, version check) is tested in `mps-core`; see [Shared code](shared-core.md). Its tests no longer run here.
+
+## CI cost
+
+CI cost assumes this repo is public; revisit triggers before changing visibility. PR runs cancel older runs on the same branch; docs-only changes (`wiki/**`, `**.md`) start no test job.
