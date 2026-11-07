@@ -2,7 +2,7 @@
 
 **Directory:** `src/components/`
 
-> **Logic in mps-core hooks.** `MicSelector`, `OutputSelector`, `KeyTranspose`, `TempoControl`, `LoopButton`, `RecordButton`, `CountInButton`, `TransportControls`, `ExportMixButton` and `DownloadAllButton` hold markup and CSS classes only; their state, effects and handlers are `@giamat90/mps-core/hooks` (`useMicSelect`, `useOutputSelect`, `useKeyTranspose`, `useTempoControl`, `useLoopToggle`, `useCountInButton`, `useRecordButton`, `useTransportControls`, `useExportMix`, `useDownloadAll`), which take the player store and the IPC functions as arguments. What differs between VPS and SPS is an option (`stopEndsRecording`, the `watch` selectors of the mix export, `trackEntries`) or stays in the markup (aria-labels, wording).
+> **Logic in mps-core hooks.** `MicSelector`, `OutputSelector`, `KeyTranspose`, `TempoControl`, `LoopButton`, `RecordButton`, `CountInButton`, `TransportControls`, `ExportMixButton` and `DownloadAllButton` hold markup and CSS classes only; their state, effects and handlers are `@giamat90/mps-core/hooks` (`useMicSelect`, `useOutputSelect`, `useKeyTranspose`, `useTempoControl`, `useLoopToggle`, `useCountInButton`, `useRecordButton`, `useTransportControls`, `useMasterVolume`, `useExportMix`, `useDownloadAll`), which take the player store and the IPC functions as arguments. What differs between VPS and SPS is an option (`stopEndsRecording`, the `watch` selectors of the mix export, `trackEntries`) or stays in the markup (aria-labels, wording).
 
 ## Component Tree
 
@@ -19,7 +19,7 @@ App
 ├── player/
 │   ├── Waveform           — 3-track waveform display (vocals + instrumental + take), each row with mute/solo/volume controls
 │   ├── TimeRuler          — canvas time ruler with drag-to-select punch region
-│   ├── TransportControls  — skip, Stop, Play, Record, skip, ⏱ count-in, elapsed/total time (no volume controls — those live per-track in Waveform)
+│   ├── TransportControls  — skip, Stop, Play, Record, skip, ⏱ count-in, elapsed/total time, master volume (the per-track volumes live in Waveform)
 │   ├── TempoControl       — BPM-first speed control (editable BPM value + editable x-rate)
 │   ├── KeyTranspose       — semitone transpose UI
 │   └── OutputSelector     — audio output device picker
@@ -182,6 +182,8 @@ See [Architecture: Auto-Update](architecture.md#auto-update) for the endpoint/si
 
 A search box in the Library toolbar (`LibraryPage.tsx`) filters songs as you type; Escape clears it. `filterSongs` in `src/lib/librarySearch.ts` (ported from SPS, 2026-10-12) matches when **every** word of the query appears in the title, artist, detected key, tempo (`93 bpm`), the folder's name or the word `instrument` for instrument tracks; case and accents are ignored. While a query is active the folder/drag-and-drop view is replaced by a flat result list in library order (root songs, then each folder's), each result tagged with its folder; there is no reordering during a search. Not shared through `mps-core`: SPS's `Song` has no `artist` or `kind`, so the haystacks differ.
 ### TransportControls
+
+**Master volume (2026-11-07).** `MasterVolume` (`components/player/MasterVolume.tsx`, headless `useMasterVolume`) sits at the right end of the transport bar: a speaker button (click mutes and brings the level back) and a 0 to 100% slider. It is the `masterVolume` field of the mixer slice (`setMasterVolume` clamps, saves to `localStorage` key `mps_master_volume`, and pushes the volumes), multiplied into the gain `applyEffectiveVolumes` gives the player, so a track's own slider, mute and solo keep their meaning and a mixed-down export (`buildMixSources`) ignores it. It covers the song tracks and the takes; the metronome, the count-in and the live monitor keep their own levels. Pinned by the mixer tests in `stores/player.test.ts` and `TransportControls.test.ts`.
 
 Stop button routes to `stopRecording()` during recording, `stop()` otherwise:
 

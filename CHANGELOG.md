@@ -6,6 +6,14 @@ All notable changes to VPS are recorded here, newest first. Format follows
 Every version bump must add an entry here in the same `chore: release` commit.
 Releases before 0.1.62 are not itemised; see `git log` and the tags.
 
+## [0.0.104] - 2026-11-07
+
+### Added
+- A master volume: a speaker button and a 0 to 100% slider at the right end of the transport bar. It sits above every track and the takes, so one control sets the listening level while the balance between tracks stays as it is; the track sliders, mute and solo work as before. The speaker mutes and brings the level back. The level is kept across songs and restarts. It does not change an exported mix, the metronome, the count-in or the live monitor.
+
+### Changed
+- Shared code updated to mps-core 0.24.0 (the master volume module and hook).
+
 ## [0.0.103] - 2026-11-06
 
 ### Fixed

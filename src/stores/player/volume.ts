@@ -1,3 +1,4 @@
+import { applyMaster } from "@giamat90/mps-core/master";
 import { audibleTakes } from "@giamat90/mps-core/takes";
 import type { MixSource } from "../../lib/tauri";
 import { getEngine } from "./singletons";
@@ -113,17 +114,20 @@ export function buildMixSources(state: MixState): {
   };
 }
 
+// The master level is applied here, on the way to the player, and not in effectiveVolume:
+// an exported mix (buildMixSources) keeps the tracks' own balance whatever the listening level.
 export function applyEffectiveVolumes(state: {
   vocalsVolume: number;
   instrumentalVolume: number;
   takeVolume: number;
+  masterVolume: number;
   mutedTracks: Record<TrackKey, boolean>;
   soloedTrack: TrackKey | null;
 }): void {
   const eng = getEngine();
-  eng.setVocalsVolume(effectiveVolume("vocals", state.vocalsVolume, state.mutedTracks, state.soloedTrack));
-  eng.setInstrumentalVolume(effectiveVolume("instrumental", state.instrumentalVolume, state.mutedTracks, state.soloedTrack));
-  eng.setTakeVolume(effectiveVolume("take", state.takeVolume, state.mutedTracks, state.soloedTrack));
+  eng.setVocalsVolume(applyMaster(effectiveVolume("vocals", state.vocalsVolume, state.mutedTracks, state.soloedTrack), state.masterVolume));
+  eng.setInstrumentalVolume(applyMaster(effectiveVolume("instrumental", state.instrumentalVolume, state.mutedTracks, state.soloedTrack), state.masterVolume));
+  eng.setTakeVolume(applyMaster(effectiveVolume("take", state.takeVolume, state.mutedTracks, state.soloedTrack), state.masterVolume));
 }
 
 export function pushTakeAudio(state: PlayerStore): void {
