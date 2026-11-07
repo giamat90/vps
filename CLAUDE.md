@@ -111,6 +111,7 @@ VPS/
 │   │   │   ├── QrCode.tsx          SVG QR code (dark on white in every theme), drawn from `src/lib/qr.ts`
 │   │   │   ├── TimeRuler.tsx       punch region ruler (canvas)
 │   │   │   ├── TransportControls.tsx  skip, Stop, Play, Record (renders RecordButton), time; Play counts in when the count-in is set
+│   │   │   ├── MasterVolume.tsx    master volume: speaker button + slider at the right end of the transport (headless `useMasterVolume`; the level is `masterVolume` in the mixer slice)
 │   │   │   ├── CountInButton.tsx   ⏱ count-in bars (headless `useCountInButton`); counts in Play, Record and Monitor
 │   │   │   ├── TempoControl.tsx    BPM-first speed control + metronome toggle
 │   │   │   ├── KeyTranspose.tsx    semitone transpose UI
@@ -520,6 +521,7 @@ playbackRate: number
 vocalsVolume: number
 instrumentalVolume: number
 takeVolume: number
+masterVolume: number      // listening level above every track, 0-1, kept in localStorage; not in an exported mix
 isLooping: boolean        // legacy A/B loop (loopStart/loopEnd)
 transpose: number         // active semitone shift
 isTransposing: boolean

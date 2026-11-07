@@ -412,6 +412,42 @@ describe("mixer", () => {
     expect(eng().setTakeVolume).toHaveBeenLastCalledWith(0.9);
   });
 
+  it("master volume scales every track on its way to the engine and leaves the sliders alone", () => {
+    store().getState().setVocalsVolume(0.8);
+    store().getState().setInstrumentalVolume(0.5);
+    store().getState().setTakeVolume(1);
+    store().getState().setMasterVolume(0.5);
+    expect(eng().setVocalsVolume).toHaveBeenLastCalledWith(0.4);
+    expect(eng().setInstrumentalVolume).toHaveBeenLastCalledWith(0.25);
+    expect(eng().setTakeVolume).toHaveBeenLastCalledWith(0.5);
+    expect(store().getState().vocalsVolume).toBe(0.8);
+  });
+
+  it("master volume 0 silences everything, and raising it again restores the balance", () => {
+    store().getState().setVocalsVolume(0.6);
+    store().getState().setMasterVolume(0);
+    expect(eng().setVocalsVolume).toHaveBeenLastCalledWith(0);
+    expect(eng().setInstrumentalVolume).toHaveBeenLastCalledWith(0);
+    store().getState().setMasterVolume(1);
+    expect(eng().setVocalsVolume).toHaveBeenLastCalledWith(0.6);
+  });
+
+  it("master volume works with mute and solo", () => {
+    store().getState().setMasterVolume(0.5);
+    store().getState().toggleSolo("vocals");
+    expect(eng().setVocalsVolume).toHaveBeenLastCalledWith(0.5);
+    expect(eng().setInstrumentalVolume).toHaveBeenLastCalledWith(0);
+  });
+
+  it("master volume is clamped, kept for the next start, and not part of an exported mix", () => {
+    store().getState().setMasterVolume(3);
+    expect(store().getState().masterVolume).toBe(1);
+    store().getState().setMasterVolume(0.3);
+    expect(localStorage.getItem("mps_master_volume")).toBe("0.3");
+    const out = mod.buildMixSources({ ...store().getState(), vocalsVolume: 0.5, duration: 200 })!;
+    expect(out.sources[0].gain).toBe(0.5);
+  });
+
   it("mute silences the engine but remembers the slider, so unmute restores it exactly", () => {
     store().getState().setVocalsVolume(0.35);
     store().getState().toggleMute("vocals");

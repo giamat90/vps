@@ -1,3 +1,4 @@
+import { clampMaster, loadMasterVolume, saveMasterVolume } from "@giamat90/mps-core/master";
 import { applyEffectiveVolumes } from "./volume";
 import type { MixerSlice, Slice } from "./types";
 
@@ -5,6 +6,7 @@ export const createMixerSlice: Slice<MixerSlice> = (set, get) => ({
   vocalsVolume: 1.0,
   instrumentalVolume: 1.0,
   takeVolume: 1.0,
+  masterVolume: loadMasterVolume(),
   mutedTracks: { vocals: false, instrumental: false, take: false },
   soloedTrack: null,
 
@@ -20,6 +22,13 @@ export const createMixerSlice: Slice<MixerSlice> = (set, get) => ({
 
   setTakeVolume: (v) => {
     set({ takeVolume: v });
+    applyEffectiveVolumes(get());
+  },
+
+  setMasterVolume: (v) => {
+    const masterVolume = clampMaster(v);
+    set({ masterVolume });
+    saveMasterVolume(masterVolume);
     applyEffectiveVolumes(get());
   },
 

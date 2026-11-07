@@ -52,11 +52,14 @@ export interface MixerSlice {
   vocalsVolume: number;
   instrumentalVolume: number;
   takeVolume: number;
+  /** The level above every track; the listening level, kept across songs. */
+  masterVolume: number;
   mutedTracks: Record<TrackKey, boolean>;
   soloedTrack: TrackKey | null;
   setVocalsVolume: (v: number) => void;
   setInstrumentalVolume: (v: number) => void;
   setTakeVolume: (v: number) => void;
+  setMasterVolume: (v: number) => void;
   toggleMute: (track: TrackKey) => void;
   toggleSolo: (track: TrackKey) => void;
   syncTrackVolumes: () => void;
